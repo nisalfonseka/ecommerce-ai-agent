@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, type TestContext } from "vitest";
-import type { Capability } from "../capabilities";
+import { CAPABILITIES, type Capability } from "../capabilities";
 import { ATTRIBUTION_ATTRIBUTE, type Cart, type CartLine, CartSchema } from "../cart";
 import { ListProductsResultSchema, ProductSchema, SearchProductsResultSchema } from "../catalog";
 import { CheckoutHandoffSchema } from "../checkout";
@@ -28,7 +28,12 @@ function onlyLine(cart: Cart): CartLine {
   return line;
 }
 
-/** Registers the contract test suite every CommerceProvider adapter must pass. */
+/**
+ * Registers the contract test suite every CommerceProvider adapter must pass.
+ *
+ * `setup` runs before every test, including ones that end up skipped, and must return a provider with
+ * fresh, isolated state so tests cannot affect each other.
+ */
 export function describeProviderConformance(name: string, setup: () => Promise<ConformanceSubject>): void {
   describe(`CommerceProvider conformance: ${name}`, () => {
     let provider: CommerceProvider;
@@ -49,6 +54,23 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
     it("declares a lowercase platform id and at least one capability", () => {
       expect(provider.platform).toMatch(/^[a-z0-9-]+$/);
       expect(provider.capabilities.size).toBeGreaterThan(0);
+    });
+
+    it("methods for undeclared capabilities throw NOT_SUPPORTED", async (ctx) => {
+      const probes: Record<Capability, () => Promise<unknown>> = {
+        "catalog.search": () => provider.searchProducts({ query: f.searchTerm }),
+        "catalog.read": () => provider.getProduct(f.productId),
+        "catalog.list": () => provider.listProducts({}),
+        "inventory.read": () => provider.getInventory([f.inStockVariantId]),
+        "cart.write": () => provider.createCart({}, writeKey()),
+        "checkout.handoff": () => provider.createCheckout("conformance-cart", writeKey()),
+        "orders.lookup": () => provider.lookupOrder({ orderNumber: f.orderNumber, identity: f.orderOwner }),
+      };
+      const undeclared = CAPABILITIES.filter((capability) => !provider.capabilities.has(capability));
+      if (undeclared.length === 0) ctx.skip();
+      for (const capability of undeclared) {
+        await expectCommerceError(probes[capability](), "NOT_SUPPORTED");
+      }
     });
 
     // catalog -------------------------------------------------------------
@@ -160,6 +182,25 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
         provider.addCartLines(
           cart.id,
           { lines: [{ variantId: f.outOfStockVariantId, quantity: 1 }] },
+          writeKey(),
+        ),
+        "OUT_OF_STOCK",
+      );
+      expect((await provider.getCart(cart.id))?.lines).toHaveLength(0);
+    });
+
+    it("is atomic: a multi-line add with one failing line changes nothing", async (ctx) => {
+      needs(ctx, "cart.write");
+      const cart = await newCart();
+      await expectCommerceError(
+        provider.addCartLines(
+          cart.id,
+          {
+            lines: [
+              { variantId: f.inStockVariantId, quantity: 1 },
+              { variantId: f.outOfStockVariantId, quantity: 1 },
+            ],
+          },
           writeKey(),
         ),
         "OUT_OF_STOCK",
