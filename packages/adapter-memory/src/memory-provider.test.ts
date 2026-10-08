@@ -1,7 +1,8 @@
 import type { VerifiedIdentity } from "@ace/contracts";
-import { CommerceError } from "@ace/contracts";
+import { CAPABILITIES } from "@ace/contracts";
 import { describe, expect, it } from "vitest";
 import { availabilityFor, MemoryCommerceProvider } from "./memory-provider";
+import { defaultSeed } from "./seed";
 
 const verifiedAt = "2026-10-01T00:00:00.000Z";
 const byEmail = (email: string): VerifiedIdentity => ({ method: "email_otp", email, verifiedAt });
@@ -62,10 +63,9 @@ describe("MemoryCommerceProvider — catalog and inventory", () => {
     expect((await provider.listProducts({ updatedSince: "2030-01-01T00:00:00.000Z" })).items).toEqual([]);
   });
 
-  it("does not declare cart capabilities yet", async () => {
+  it("declares every capability", () => {
     const provider = new MemoryCommerceProvider();
-    expect(provider.capabilities.has("cart.write")).toBe(false);
-    await expect(provider.getCart("x")).rejects.toBeInstanceOf(CommerceError);
+    expect([...provider.capabilities].sort()).toEqual([...CAPABILITIES].sort());
   });
 });
 
@@ -98,5 +98,100 @@ describe("MemoryCommerceProvider — orders", () => {
     const order = await provider.lookupOrder({ orderNumber: "ACE-1001", identity });
     if (order) order.status = "cancelled";
     expect((await provider.lookupOrder({ orderNumber: "ACE-1001", identity }))?.status).toBe("shipped");
+  });
+});
+
+describe("MemoryCommerceProvider — carts", () => {
+  let counter = 0;
+  const key = () => ({ idempotencyKey: `test-key-${++counter}` });
+  const add = (variantId: string, quantity: number) => ({ lines: [{ variantId, quantity }] });
+
+  it("refuses to create a cart in a currency the store does not sell", async () => {
+    const provider = new MemoryCommerceProvider();
+    await expect(provider.createCart({ currency: "USD" }, key())).rejects.toMatchObject({
+      code: "INVALID_INPUT",
+    });
+  });
+
+  it("refuses more units than are in stock and reports what is available", async () => {
+    const provider = new MemoryCommerceProvider();
+    const cart = await provider.createCart({}, key());
+    await expect(provider.addCartLines(cart.id, add("p_wrap_dress_black_m", 5), key())).rejects.toMatchObject(
+      {
+        code: "OUT_OF_STOCK",
+        details: { variantId: "p_wrap_dress_black_m", available: 4 },
+      },
+    );
+    expect((await provider.getCart(cart.id))?.lines).toEqual([]);
+  });
+
+  it("is atomic: one failing line in a multi-line add changes nothing", async () => {
+    const provider = new MemoryCommerceProvider();
+    const cart = await provider.createCart({}, key());
+    const input = {
+      lines: [
+        { variantId: "p_kurta_navy_m", quantity: 1 },
+        { variantId: "p_linen_shirt_black_l", quantity: 1 },
+      ],
+    };
+    await expect(provider.addCartLines(cart.id, input, key())).rejects.toMatchObject({
+      code: "OUT_OF_STOCK",
+    });
+    expect((await provider.getCart(cart.id))?.itemCount).toBe(0);
+  });
+
+  it("rejects merges that would exceed the per-line maximum", async () => {
+    const seed = defaultSeed();
+    seed.stock.p_oxford_shirt_white_m = 50;
+    const provider = new MemoryCommerceProvider({ seed });
+    const cart = await provider.createCart({}, key());
+    await provider.addCartLines(cart.id, add("p_oxford_shirt_white_m", 20), key());
+    await expect(
+      provider.addCartLines(cart.id, add("p_oxford_shirt_white_m", 1), key()),
+    ).rejects.toMatchObject({
+      code: "INVALID_INPUT",
+    });
+  });
+
+  it("rejects an update to more units than are in stock", async () => {
+    const provider = new MemoryCommerceProvider();
+    const cart = await provider.createCart({}, key());
+    const added = await provider.addCartLines(cart.id, add("p_wrap_dress_black_l", 1), key());
+    const lineId = added.lines[0]?.id ?? "";
+    await expect(provider.updateCartLine(cart.id, { lineId, quantity: 2 }, key())).rejects.toMatchObject({
+      code: "OUT_OF_STOCK",
+    });
+  });
+
+  it("scopes idempotency keys to the cart", async () => {
+    const provider = new MemoryCommerceProvider();
+    const a = await provider.createCart({}, key());
+    const b = await provider.createCart({}, key());
+    const shared = key();
+    await provider.addCartLines(a.id, add("p_kurta_navy_m", 1), shared);
+    const resultB = await provider.addCartLines(b.id, add("p_kurta_navy_m", 1), shared);
+    expect(resultB.id).toBe(b.id);
+    expect(resultB.itemCount).toBe(1);
+  });
+
+  it("keeps carts separate between provider instances", async () => {
+    const first = new MemoryCommerceProvider();
+    const second = new MemoryCommerceProvider();
+    const cart = await first.createCart({}, key());
+    expect(await second.getCart(cart.id)).toBeNull();
+  });
+
+  it("builds the checkout URL from the configured base", async () => {
+    const provider = new MemoryCommerceProvider({ checkoutBaseUrl: "https://shop.test/pay" });
+    const cart = await provider.createCart({}, key());
+    await provider.addCartLines(cart.id, add("p_kurta_navy_m", 1), key());
+    const handoff = await provider.createCheckout(cart.id, key());
+    expect(handoff).toEqual({ cartId: cart.id, url: `https://shop.test/pay/${cart.id}`, expiresAt: null });
+  });
+
+  it("uses the injected clock for updatedAt", async () => {
+    const provider = new MemoryCommerceProvider({ now: () => new Date("2026-10-08T12:00:00.000Z") });
+    const cart = await provider.createCart({}, key());
+    expect(cart.updatedAt).toBe("2026-10-08T12:00:00.000Z");
   });
 });

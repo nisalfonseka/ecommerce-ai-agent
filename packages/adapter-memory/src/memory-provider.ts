@@ -1,12 +1,17 @@
 import {
   type AddCartLinesInput,
+  AddCartLinesInputSchema,
   type Availability,
+  addMoney,
+  CAPABILITIES,
   type Capability,
   type Cart,
+  type CartLine,
   type CheckoutHandoff,
   CommerceError,
   type CommerceProvider,
   type CreateCartInput,
+  CreateCartInputSchema,
   GetInventoryInputSchema,
   type InventoryLevel,
   identityMatches,
@@ -17,13 +22,19 @@ import {
   type ListProductsResult,
   type LookupOrderInput,
   LookupOrderInputSchema,
+  MAX_LINE_QUANTITY,
+  money,
+  multiplyMoney,
   type Order,
   type Product,
   parseInput,
   type SearchProductsInput,
   type SearchProductsResult,
   type UpdateCartLineInput,
+  UpdateCartLineInputSchema,
+  type Variant,
   type WriteOptions,
+  WriteOptionsSchema,
 } from "@ace/contracts";
 import { decodeCursor, encodeCursor } from "./cursor";
 import { searchCatalog } from "./search";
@@ -43,23 +54,30 @@ export interface MemoryProviderOptions {
   checkoutBaseUrl?: string;
 }
 
-const READ_CAPABILITIES: Capability[] = [
-  "catalog.search",
-  "catalog.read",
-  "catalog.list",
-  "inventory.read",
-  "orders.lookup",
-];
+interface StoredLine {
+  id: string;
+  variantId: string;
+  quantity: number;
+}
 
-const notYet = (operation: string) => new CommerceError("NOT_SUPPORTED", `memory provider: ${operation}`);
+interface StoredCart {
+  id: string;
+  currency: string;
+  attributes: Record<string, string>;
+  lines: StoredLine[];
+  updatedAt: string;
+}
 
 export class MemoryCommerceProvider implements CommerceProvider {
   readonly platform = "memory";
-  readonly capabilities: ReadonlySet<Capability> = new Set<Capability>(READ_CAPABILITIES);
+  readonly capabilities: ReadonlySet<Capability> = new Set<Capability>(CAPABILITIES);
 
   protected readonly seed: MemorySeed;
   protected readonly now: () => Date;
   protected readonly checkoutBaseUrl: string;
+  private readonly carts = new Map<string, StoredCart>();
+  private readonly idempotentResults = new Map<string, unknown>();
+  private nextId = 1;
 
   constructor(options: MemoryProviderOptions = {}) {
     this.seed = structuredClone(options.seed ?? defaultSeed());
@@ -99,26 +117,81 @@ export class MemoryCommerceProvider implements CommerceProvider {
     });
   }
 
-  // cart + checkout (Task 8) ----------------------------------------------
+  // cart + checkout -------------------------------------------------------
 
-  async createCart(_input: CreateCartInput, _opts: WriteOptions): Promise<Cart> {
-    throw notYet("createCart");
+  async createCart(input: CreateCartInput, opts: WriteOptions): Promise<Cart> {
+    return this.once("createCart", "-", opts, () => {
+      const query = parseInput(CreateCartInputSchema, input);
+      const currency = query.currency ?? this.seed.currency;
+      if (currency !== this.seed.currency) {
+        throw new CommerceError("INVALID_INPUT", `This store sells in ${this.seed.currency}`, { currency });
+      }
+      const cart: StoredCart = {
+        id: this.newId("cart"),
+        currency,
+        attributes: query.attributes,
+        lines: [],
+        updatedAt: this.now().toISOString(),
+      };
+      this.carts.set(cart.id, cart);
+      return this.toCart(cart);
+    });
   }
 
-  async getCart(_cartId: string): Promise<Cart | null> {
-    throw notYet("getCart");
+  async getCart(cartId: string): Promise<Cart | null> {
+    const cart = this.carts.get(cartId);
+    return cart ? this.toCart(cart) : null;
   }
 
-  async addCartLines(_cartId: string, _input: AddCartLinesInput, _opts: WriteOptions): Promise<Cart> {
-    throw notYet("addCartLines");
+  async addCartLines(cartId: string, input: AddCartLinesInput, opts: WriteOptions): Promise<Cart> {
+    return this.once("addCartLines", cartId, opts, () => {
+      const query = parseInput(AddCartLinesInputSchema, input);
+      const cart = this.requireCart(cartId);
+      const next = cart.lines.map((line) => ({ ...line }));
+      for (const { variantId, quantity } of query.lines) {
+        const { variant } = this.requireVariant(variantId);
+        const existing = next.find((line) => line.variantId === variantId);
+        const total = (existing?.quantity ?? 0) + quantity;
+        if (total > MAX_LINE_QUANTITY) {
+          throw new CommerceError("INVALID_INPUT", `At most ${MAX_LINE_QUANTITY} of one item per order`, {
+            variantId,
+          });
+        }
+        this.assertInStock(variant, total);
+        if (existing) existing.quantity = total;
+        else next.push({ id: this.newId("line"), variantId, quantity });
+      }
+      cart.lines = next;
+      cart.updatedAt = this.now().toISOString();
+      return this.toCart(cart);
+    });
   }
 
-  async updateCartLine(_cartId: string, _input: UpdateCartLineInput, _opts: WriteOptions): Promise<Cart> {
-    throw notYet("updateCartLine");
+  async updateCartLine(cartId: string, input: UpdateCartLineInput, opts: WriteOptions): Promise<Cart> {
+    return this.once("updateCartLine", cartId, opts, () => {
+      const query = parseInput(UpdateCartLineInputSchema, input);
+      const cart = this.requireCart(cartId);
+      const line = cart.lines.find((candidate) => candidate.id === query.lineId);
+      if (!line) throw new CommerceError("NOT_FOUND", "Cart line not found", { lineId: query.lineId });
+      if (query.quantity === 0) {
+        cart.lines = cart.lines.filter((candidate) => candidate.id !== query.lineId);
+      } else {
+        this.assertInStock(this.requireVariant(line.variantId).variant, query.quantity);
+        line.quantity = query.quantity;
+      }
+      cart.updatedAt = this.now().toISOString();
+      return this.toCart(cart);
+    });
   }
 
-  async createCheckout(_cartId: string, _opts: WriteOptions): Promise<CheckoutHandoff> {
-    throw notYet("createCheckout");
+  async createCheckout(cartId: string, opts: WriteOptions): Promise<CheckoutHandoff> {
+    return this.once("createCheckout", cartId, opts, () => {
+      const cart = this.requireCart(cartId);
+      if (cart.lines.length === 0) throw new CommerceError("CONFLICT", "Cannot check out an empty cart");
+      for (const line of cart.lines)
+        this.assertInStock(this.requireVariant(line.variantId).variant, line.quantity);
+      return { cartId, url: `${this.checkoutBaseUrl}/${encodeURIComponent(cartId)}`, expiresAt: null };
+    });
   }
 
   // orders ----------------------------------------------------------------
@@ -152,5 +225,73 @@ export class MemoryCommerceProvider implements CommerceProvider {
       variant.availability = availabilityFor(this.seed.stock[variant.id] ?? 0);
     }
     return copy;
+  }
+
+  /** Runs a write once per (operation, target, key); replays return a copy of the first result. */
+  private once<T>(operation: string, target: string, opts: WriteOptions, write: () => T): T {
+    const { idempotencyKey } = parseInput(WriteOptionsSchema, opts);
+    const storageKey = `${operation}:${target}:${idempotencyKey}`;
+    if (this.idempotentResults.has(storageKey)) {
+      return structuredClone(this.idempotentResults.get(storageKey)) as T;
+    }
+    const result = write();
+    this.idempotentResults.set(storageKey, structuredClone(result));
+    return result;
+  }
+
+  private newId(prefix: string): string {
+    const id = `${prefix}_${this.nextId}`;
+    this.nextId += 1;
+    return id;
+  }
+
+  private requireCart(cartId: string): StoredCart {
+    const cart = this.carts.get(cartId);
+    if (!cart) throw new CommerceError("NOT_FOUND", "Cart not found", { cartId });
+    return cart;
+  }
+
+  private requireVariant(variantId: string): { product: Product; variant: Variant } {
+    for (const product of this.seed.products) {
+      const variant = product.variants.find((candidate) => candidate.id === variantId);
+      if (variant) return { product, variant };
+    }
+    throw new CommerceError("NOT_FOUND", "Variant not found", { variantId });
+  }
+
+  private assertInStock(variant: Variant, quantity: number): void {
+    const available = this.seed.stock[variant.id] ?? 0;
+    if (quantity > available) {
+      throw new CommerceError("OUT_OF_STOCK", `Only ${available} left of ${variant.title}`, {
+        variantId: variant.id,
+        available,
+      });
+    }
+  }
+
+  private toCart(cart: StoredCart): Cart {
+    const lines: CartLine[] = cart.lines.map((line) => {
+      const { product, variant } = this.requireVariant(line.variantId);
+      return {
+        id: line.id,
+        productId: product.id,
+        variantId: variant.id,
+        title: product.title,
+        variantTitle: variant.title,
+        quantity: line.quantity,
+        unitPrice: { ...variant.price },
+        lineTotal: multiplyMoney(variant.price, line.quantity),
+        image: product.images[0],
+      };
+    });
+    return {
+      id: cart.id,
+      currency: cart.currency,
+      lines,
+      subtotal: lines.reduce((sum, line) => addMoney(sum, line.lineTotal), money(0, cart.currency)),
+      itemCount: lines.reduce((count, line) => count + line.quantity, 0),
+      attributes: { ...cart.attributes },
+      updatedAt: cart.updatedAt,
+    };
   }
 }
