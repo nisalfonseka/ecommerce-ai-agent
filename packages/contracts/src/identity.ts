@@ -3,6 +3,11 @@ import { z } from "zod";
 /**
  * A shopper identity proven by the engine (host-site session token or OTP).
  * Built server-side only — never from model output.
+ *
+ * Every populated identifier must itself have been verified by the engine: `email` only via
+ * email OTP or a host token that asserts a verified email; `phone` only via phone OTP;
+ * `externalCustomerId` only via a signed host session. Never copy unverified shopper-supplied
+ * values into this object. Matching will be tied to `method` before Phase 7.
  */
 export const VerifiedIdentitySchema = z
   .object({

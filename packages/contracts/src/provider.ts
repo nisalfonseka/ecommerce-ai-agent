@@ -19,7 +19,10 @@ import type { ListOrdersInput, LookupOrderInput, Order } from "./orders";
  * - Validate every input with parseInput(schema, value) → CommerceError("INVALID_INPUT").
  * - Throw CommerceError for every expected failure; translate platform errors, never leak them.
  * - Methods whose capability is not declared throw CommerceError("NOT_SUPPORTED").
- * - Writes are idempotent per opts.idempotencyKey: a replay returns the first result.
+ * - Writes accept opts.idempotencyKey. Per ADR-002 the engine's idempotency layer guarantees replay
+ *   safety (same key → first result, even if the cart changed since; same key with different input →
+ *   CONFLICT). Adapters must forward the key to the platform when it supports one, and must never
+ *   fail because of it.
  * - Writes are atomic: when a write throws, nothing changed.
  * - Money is integer minor units.
  */
@@ -28,7 +31,10 @@ export interface CommerceProvider {
   readonly platform: string;
   readonly capabilities: ReadonlySet<Capability>;
 
-  /** catalog.search */
+  /**
+   * catalog.search
+   * Summary availability/priceRange describe the matching variants only.
+   */
   searchProducts(input: SearchProductsInput): Promise<SearchProductsResult>;
   /** catalog.read — null when the product does not exist or is not published. */
   getProduct(productId: string): Promise<Product | null>;

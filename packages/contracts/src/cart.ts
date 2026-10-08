@@ -15,15 +15,24 @@ export const CartLineSchema = z.object({
   variantTitle: z.string(),
   quantity: z.number().int().positive(),
   unitPrice: MoneySchema,
+  /**
+   * Amounts are before discounts, tax and shipping; the store's checkout is authoritative for
+   * the final total.
+   */
   lineTotal: MoneySchema,
   image: ImageSchema.optional(),
 });
 export type CartLine = z.infer<typeof CartLineSchema>;
 
 export const CartSchema = z.object({
+  /** An opaque bearer identifier that must be hard to guess on real platforms. */
   id: z.string().min(1),
   currency: CurrencyCodeSchema,
   lines: z.array(CartLineSchema),
+  /**
+   * Amounts are before discounts, tax and shipping; the store's checkout is authoritative for
+   * the final total.
+   */
   subtotal: MoneySchema,
   itemCount: z.number().int().nonnegative(),
   attributes: z.record(z.string(), z.string()),
