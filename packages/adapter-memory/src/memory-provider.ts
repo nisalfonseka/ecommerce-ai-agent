@@ -110,7 +110,7 @@ export class MemoryCommerceProvider implements CommerceProvider {
 
   async getInventory(variantIds: string[]): Promise<InventoryLevel[]> {
     const ids = parseInput(GetInventoryInputSchema, variantIds);
-    return ids.flatMap((variantId) => {
+    return [...new Set(ids)].flatMap((variantId) => {
       const quantity = this.seed.stock[variantId];
       if (quantity === undefined) return [];
       return [{ variantId, availability: availabilityFor(quantity), quantityAvailable: quantity }];

@@ -47,6 +47,31 @@ describe("MemoryCommerceProvider — catalog and inventory", () => {
     ]);
   });
 
+  it("search summary describes only the matching variants", async () => {
+    const provider = new MemoryCommerceProvider();
+    const result = await provider.searchProducts({
+      query: "linen",
+      filters: { options: { size: ["L"] } },
+    });
+    const shirt = result.items.find((item) => item.id === "p_linen_shirt_black");
+    expect(shirt).toMatchObject({
+      availability: "out_of_stock",
+      matchingVariantIds: ["p_linen_shirt_black_l"],
+    });
+  });
+
+  it("getInventory deduplicates repeated ids, keeping first-occurrence order", async () => {
+    const provider = new MemoryCommerceProvider();
+    const levels = await provider.getInventory(["p_kurta_navy_m", "p_kurta_navy_m"]);
+    expect(levels.map((level) => level.variantId)).toEqual(["p_kurta_navy_m"]);
+    const mixed = await provider.getInventory([
+      "p_wrap_dress_black_l",
+      "p_kurta_navy_m",
+      "p_wrap_dress_black_l",
+    ]);
+    expect(mixed.map((level) => level.variantId)).toEqual(["p_wrap_dress_black_l", "p_kurta_navy_m"]);
+  });
+
   it("getInventory rejects an empty id list", async () => {
     const provider = new MemoryCommerceProvider();
     await expect(provider.getInventory([])).rejects.toMatchObject({ code: "INVALID_INPUT" });

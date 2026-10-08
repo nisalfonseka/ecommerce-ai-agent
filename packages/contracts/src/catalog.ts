@@ -106,18 +106,32 @@ export function aggregateAvailability(values: Availability[]): Availability {
   return "out_of_stock";
 }
 
+/**
+ * Summarise a product for search results. Availability and price range describe the
+ * matching variants only (default: all variants). Unknown ids are ignored; if no listed id
+ * matches a variant, all variants are used. The result shares no objects with `product`.
+ */
 export function summarizeProduct(
   product: Product,
   matchingVariantIds: string[] = product.variants.map((variant) => variant.id),
 ): ProductSummary {
+  const listed = new Set(matchingVariantIds);
+  const matched = product.variants.filter((variant) => listed.has(variant.id));
+  const variants = matched.length > 0 ? matched : product.variants;
+  const currency = product.priceRange.min.currency;
+  const amounts = variants.map((variant) => variant.price.amount);
+  const image = product.images[0];
   return {
     id: product.id,
     handle: product.handle,
     title: product.title,
     url: product.url,
-    image: product.images[0],
-    priceRange: product.priceRange,
-    availability: aggregateAvailability(product.variants.map((variant) => variant.availability)),
-    matchingVariantIds,
+    image: image ? { ...image } : undefined,
+    priceRange: {
+      min: { amount: Math.min(...amounts), currency },
+      max: { amount: Math.max(...amounts), currency },
+    },
+    availability: aggregateAvailability(variants.map((variant) => variant.availability)),
+    matchingVariantIds: variants.map((variant) => variant.id),
   };
 }

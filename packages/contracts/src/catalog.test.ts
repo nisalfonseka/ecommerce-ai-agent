@@ -3,6 +3,7 @@ import {
   aggregateAvailability,
   ListProductsInputSchema,
   ProductSchema,
+  ProductSummarySchema,
   SearchProductsInputSchema,
   summarizeProduct,
 } from "./catalog";
@@ -74,6 +75,65 @@ describe("summarizeProduct", () => {
       matchingVariantIds: ["var_dress_m"],
       image: { url: "https://demo-store.test/images/dress.jpg" },
     });
+  });
+
+  const twoVariantProduct = () => {
+    const m = sampleVariant({ id: "var_m", title: "Black / M", price: { amount: 1000, currency: "LKR" } });
+    const l = sampleVariant({
+      id: "var_l",
+      title: "Black / L",
+      options: { color: "Black", size: "L" },
+      price: { amount: 1200, currency: "LKR" },
+      availability: "out_of_stock",
+    });
+    return sampleProduct({
+      variants: [m, l],
+      priceRange: { min: { amount: 1000, currency: "LKR" }, max: { amount: 1200, currency: "LKR" } },
+    });
+  };
+
+  it("reports availability and price for the matching variants only", () => {
+    const summary = summarizeProduct(twoVariantProduct(), ["var_l"]);
+    expect(summary.availability).toBe("out_of_stock");
+    expect(summary.priceRange).toEqual({
+      min: { amount: 1200, currency: "LKR" },
+      max: { amount: 1200, currency: "LKR" },
+    });
+    expect(summary.matchingVariantIds).toEqual(["var_l"]);
+  });
+
+  it("defaults to all variants", () => {
+    const summary = summarizeProduct(twoVariantProduct());
+    expect(summary.availability).toBe("in_stock");
+    expect(summary.priceRange.min.amount).toBe(1000);
+    expect(summary.priceRange.max.amount).toBe(1200);
+  });
+
+  it("ignores unknown ids and falls back to all variants when none match", () => {
+    const withUnknown = summarizeProduct(twoVariantProduct(), ["var_l", "nope"]);
+    expect(withUnknown.priceRange.min.amount).toBe(1200);
+    const noneMatch = summarizeProduct(twoVariantProduct(), ["nope"]);
+    expect(noneMatch.availability).toBe("in_stock");
+    expect(noneMatch.priceRange.min.amount).toBe(1000);
+    expect(noneMatch.priceRange.max.amount).toBe(1200);
+  });
+
+  it("produces output that parses with ProductSummarySchema", () => {
+    expect(ProductSummarySchema.safeParse(summarizeProduct(twoVariantProduct(), ["var_l"])).success).toBe(
+      true,
+    );
+  });
+
+  it("returns copies, not references into the product", () => {
+    const product = sampleProduct();
+    const summary = summarizeProduct(product);
+    summary.priceRange.min.amount = 1;
+    summary.priceRange.max.amount = 2;
+    if (summary.image) summary.image.url = "https://changed.test/x.jpg";
+    expect(product.priceRange.min.amount).toBe(1850000);
+    expect(product.priceRange.max.amount).toBe(1850000);
+    expect(product.variants[0]?.price.amount).toBe(1850000);
+    expect(product.images[0]?.url).toBe("https://demo-store.test/images/dress.jpg");
   });
 });
 
