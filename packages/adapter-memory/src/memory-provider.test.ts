@@ -189,6 +189,18 @@ describe("MemoryCommerceProvider — carts", () => {
     expect(handoff).toEqual({ cartId: cart.id, url: `https://shop.test/pay/${cart.id}`, expiresAt: null });
   });
 
+  it("does not leak seed images through returned carts", async () => {
+    const provider = new MemoryCommerceProvider();
+    const cart = await provider.createCart({}, key());
+    const returned = await provider.addCartLines(cart.id, add("p_kurta_navy_m", 1), key());
+    const image = returned.lines[0]?.image;
+    if (image) image.url = "https://evil.test/mutated.jpg";
+    const expected = "https://demo-store.test/images/kurta-navy.jpg";
+    expect(image).toBeDefined();
+    expect((await provider.getCart(cart.id))?.lines[0]?.image?.url).toBe(expected);
+    expect((await provider.getProduct("p_kurta_navy"))?.images[0]?.url).toBe(expected);
+  });
+
   it("uses the injected clock for updatedAt", async () => {
     const provider = new MemoryCommerceProvider({ now: () => new Date("2026-10-08T12:00:00.000Z") });
     const cart = await provider.createCart({}, key());

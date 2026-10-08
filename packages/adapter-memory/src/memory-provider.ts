@@ -272,6 +272,7 @@ export class MemoryCommerceProvider implements CommerceProvider {
   private toCart(cart: StoredCart): Cart {
     const lines: CartLine[] = cart.lines.map((line) => {
       const { product, variant } = this.requireVariant(line.variantId);
+      const image = product.images[0];
       return {
         id: line.id,
         productId: product.id,
@@ -281,7 +282,7 @@ export class MemoryCommerceProvider implements CommerceProvider {
         quantity: line.quantity,
         unitPrice: { ...variant.price },
         lineTotal: multiplyMoney(variant.price, line.quantity),
-        image: product.images[0],
+        image: image ? { ...image } : undefined,
       };
     });
     return {
