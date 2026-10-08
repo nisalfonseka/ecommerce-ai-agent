@@ -18,8 +18,7 @@ adapter**. The agent only knows the universal commerce contract, never Shopify, 
 
 ## Current status
 
-**Planning is complete. Phase 1 (Foundation) has not started.** Work only on the current phase's plan. Do not
-scaffold apps or packages from later phases early. If a task needs something from a later phase, stop and ask.
+**Phase 1 (Foundation) is complete**: `@ace/contracts` (commerce contract + conformance suite) and `@ace/adapter-memory`. **Next:** write the Phase 2 (agent core) plan. Before Phase 2 tools are built, the contract gains cart attribution on existing carts (see roadmap Phase 2). Work only on the current phase's plan; do not scaffold later phases early.
 
 ## Architecture rules (non-negotiable)
 
@@ -57,6 +56,7 @@ scaffold apps or packages from later phases early. If a task needs something fro
     serverless- or Vercel-specific APIs (Edge runtime, Vercel Queues/KV/Blob, AI Gateway).
 18. **The product name is not final.** `ACE` / `@ace/*` is a placeholder; keep the name out of user-facing copy
     where possible so renaming stays cheap.
+19. **Idempotency is owned by the engine** (ADR-002); adapters forward keys where supported.
 
 ## Repository layout (target; created phase by phase)
 
