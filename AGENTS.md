@@ -75,6 +75,7 @@ packages/
   adapter-memory/    in-memory clothing store for tests/evals/dev             (Phase 1)
   adapter-medusa/    reference store adapter                                  (Phase 5)
   adapter-shopify/   Shopify via UCP / Storefront MCP                         (Phase 9)
+  providers/         store → adapter + idempotency (+ search index) factory   (Phase 6)
   agent/             tools, ToolContext, prompts, guardrails, agent loop      (Phase 2)
   evals/             golden conversations + scorers + runner                  (Phase 2)
   db/                Drizzle schema, migrations, RLS, encryption              (Phase 3)
@@ -85,7 +86,7 @@ docs/
   adr/  superpowers/specs/  superpowers/plans/  workflow.md
 ```
 
-Dependency direction: `apps/*` → `packages/agent|search|knowledge|db` → `packages/contracts`. Adapters depend only on
+Dependency direction: `apps/*` → `packages/agent|providers|search|knowledge|db` → `packages/contracts`. Adapters depend only on
 `@ace/contracts` (plus their platform SDK). `@ace/contracts` depends only on `zod`. Nothing imports from `apps/*`.
 
 ## Commands

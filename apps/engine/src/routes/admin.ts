@@ -15,6 +15,7 @@ import {
   withTenant,
 } from "@ace/db";
 import type { JobQueue } from "@ace/db/jobs";
+import { MedusaCredentialsSchema } from "@ace/providers";
 import { applyMerchantOverrides, MerchantOverridesSchema, StoreSearchConfigSchema } from "@ace/search";
 import { eq } from "drizzle-orm";
 import type { Hono, MiddlewareHandler } from "hono";
@@ -23,7 +24,6 @@ import type { WidgetEnv } from "../auth/widget";
 import { PersonaSchema, StoreFactsSchema } from "../bot-config";
 import type { ModelPrices } from "../budget";
 import { errorResponse } from "../http-errors";
-import { MedusaCredentialsSchema } from "../providers";
 
 export interface AdminDeps {
   db: Db;

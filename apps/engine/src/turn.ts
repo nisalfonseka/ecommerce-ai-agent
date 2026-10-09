@@ -28,6 +28,7 @@ import {
   saveSessionAndRelease,
   withTenant,
 } from "@ace/db";
+import type { ProviderFactory } from "@ace/providers";
 import type { LanguageModel, ModelMessage } from "ai";
 import type { Logger } from "pino";
 import type { createConversationTokens } from "./auth/conversation-token";
@@ -36,7 +37,6 @@ import { codPolicy, parsePersona, parseSession, parseStoreFacts } from "./bot-co
 import { budgetState, chooseModel, costMicros, type ModelPrices } from "./budget";
 import { toModelMessages } from "./history";
 import type { ErrorCode } from "./http-errors";
-import type { ProviderFactory } from "./providers";
 import type { Emit } from "./sse";
 
 /** How long one turn may hold a conversation before another request can take it over. */

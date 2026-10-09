@@ -9,12 +9,12 @@ import {
   withTenant,
 } from "@ace/db";
 import type { TestDatabase } from "@ace/db/testing";
+import { createProviderFactory } from "@ace/providers";
 import type { LanguageModel } from "ai";
 import { createApp } from "../app";
 import { createConversationTokens } from "../auth/conversation-token";
 import { loadModelPrices } from "../budget";
 import { createLogger } from "../log";
-import { createProviderFactory } from "../providers";
 import { createRateLimiter } from "../rate-limit";
 import { registerActionRoutes } from "../routes/actions";
 import { registerChatRoutes } from "../routes/chat";

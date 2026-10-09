@@ -3,8 +3,8 @@ import { MemoryCommerceProvider, memoryFixtures } from "@ace/adapter-memory";
 import { describeProviderConformance } from "@ace/contracts/testing";
 import { createDb, createPgIdempotencyStore, createTenant } from "@ace/db";
 import { createTestDatabase } from "@ace/db/testing";
+import { IdempotentCommerceProvider } from "@ace/providers";
 import { afterAll, describe, it } from "vitest";
-import { IdempotentCommerceProvider } from "./idempotent-provider";
 
 // ADR-002: the conformance suite (including replay) must pass against the engine's idempotency layer.
 const testDb = await createTestDatabase();

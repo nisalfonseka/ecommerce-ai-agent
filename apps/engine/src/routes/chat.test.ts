@@ -11,6 +11,7 @@ import {
   withTenant,
 } from "@ace/db";
 import { createTestDatabase } from "@ace/db/testing";
+import { createProviderFactory } from "@ace/providers";
 import { APICallError, type LanguageModel } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { sql } from "drizzle-orm";
@@ -18,7 +19,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { createConversationTokens } from "../auth/conversation-token";
 import { createLogger } from "../log";
-import { createProviderFactory } from "../providers";
 import { createRateLimiter } from "../rate-limit";
 import { registerChatRoutes } from "./chat";
 
