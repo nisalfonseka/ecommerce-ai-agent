@@ -13,6 +13,7 @@ describe("ToolContext", () => {
     expect(ctx.cartId).toBeNull();
     expect(ctx.identity).toBeNull();
     expect(ctx.session.shown).toEqual([]);
+    expect(typeof ctx.onUnexpectedError).toBe("function");
   });
 
   it("derives deterministic, schema-valid idempotency keys from turn and tool call", () => {

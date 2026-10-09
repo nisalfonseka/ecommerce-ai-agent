@@ -14,6 +14,8 @@ export interface ToolContext {
   readonly ui: UiPart[];
   /** Minor-unit amounts read from the provider this turn; the grounding check allows only these. */
   readonly observedAmounts: Set<number>;
+  /** Receives errors that are neither ToolFailure nor CommerceError (bugs, outages) for logging; never shown to the model. */
+  readonly onUnexpectedError: (error: unknown) => void;
 }
 
 export interface CreateToolContextInput {
@@ -23,7 +25,11 @@ export interface CreateToolContextInput {
   identity?: VerifiedIdentity | null;
   session?: SessionState;
   cartId?: string | null;
+  onUnexpectedError?: (error: unknown) => void;
 }
+
+/** Default hook: drop the error. */
+function ignore(): void {}
 
 export function createToolContext(input: CreateToolContextInput): ToolContext {
   return {
@@ -35,6 +41,7 @@ export function createToolContext(input: CreateToolContextInput): ToolContext {
     cartId: input.cartId ?? null,
     ui: [],
     observedAmounts: new Set(),
+    onUnexpectedError: input.onUnexpectedError ?? ignore,
   };
 }
 

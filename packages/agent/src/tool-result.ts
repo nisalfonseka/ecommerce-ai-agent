@@ -36,7 +36,10 @@ function withoutIssues(details: Record<string, unknown> | undefined): Record<str
 }
 
 /** Tools never throw to the model: every outcome becomes a ToolResult the model can reason about. */
-export async function runTool<T>(fn: () => Promise<T>): Promise<ToolResult<T>> {
+export async function runTool<T>(
+  fn: () => Promise<T>,
+  onUnexpected?: (error: unknown) => void,
+): Promise<ToolResult<T>> {
   try {
     return { ok: true, data: await fn() };
   } catch (error) {
@@ -57,6 +60,9 @@ export async function runTool<T>(fn: () => Promise<T>): Promise<ToolResult<T>> {
         },
       };
     }
+    // A cancelled turn must stop, not become a tool result the model keeps reasoning about.
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    onUnexpected?.(error);
     return {
       ok: false,
       error: {

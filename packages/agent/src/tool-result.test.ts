@@ -43,4 +43,35 @@ describe("runTool", () => {
       expect(result.error.message).not.toContain("hunter2");
     }
   });
+
+  it("passes unexpected errors to the hook", async () => {
+    const boom = new Error("boom");
+    const seen: unknown[] = [];
+    const result = await runTool(
+      async () => {
+        throw boom;
+      },
+      (error) => seen.push(error),
+    );
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe(boom);
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "UPSTREAM_UNAVAILABLE",
+        message: "The store could not be reached. Apologise, and offer to try again or to connect a person.",
+        retryable: true,
+      },
+    });
+  });
+
+  it("re-throws AbortError", async () => {
+    const abort = new Error("aborted");
+    abort.name = "AbortError";
+    await expect(
+      runTool(async () => {
+        throw abort;
+      }),
+    ).rejects.toBe(abort);
+  });
 });
