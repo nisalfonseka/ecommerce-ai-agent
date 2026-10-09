@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import * as schema from "./schema";
 import { SHOPPER_DATA_TABLES } from "./shopper-data";
 
-const tables = Object.values(schema).filter((value): value is PgTable => value instanceof PgTable);
+const tables = Object.values(schema as Record<string, unknown>).filter(
+  (value): value is PgTable => value instanceof PgTable,
+);
 
 describe("SHOPPER_DATA_TABLES", () => {
   it("lists every table that holds conversation data, for the purge and export jobs", () => {
