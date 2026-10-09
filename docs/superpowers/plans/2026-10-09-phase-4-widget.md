@@ -63,9 +63,9 @@ The widget needs sizes to add a product from a card. `product_list` items gain `
 
 ### Task 2: `@ace/widget` package and build
 
-- [ ] `package.json` (`build`: `node build.mjs`, `test`, `typecheck`), `tsconfig.json` (`jsx: react-jsx`, `jsxImportSource: preact`, DOM lib).
-- [ ] `build.mjs`: esbuild IIFE bundle `dist/ace.js`, minified, `target: es2020`. Print the gzipped size and fail above 60 kB.
-- [ ] Commit `chore(widget): package and size-budgeted build`.
+- [x] `package.json` (`build`: `node build.mjs`, `test`, `typecheck`), `tsconfig.json` (`jsx: react-jsx`, `jsxImportSource: preact`, DOM lib).
+- [x] `build.mjs`: esbuild IIFE bundle `dist/ace.js`, minified, `target: es2020`. Print the gzipped size and fail above 60 kB.
+- [x] Commit `chore(widget): package and size-budgeted build`.
 
 ### Task 3: Client core
 
@@ -76,14 +76,14 @@ Interfaces:
 - `createApi({ api, key, visitorId, fetch })` → `chat({ message, conversationId?, conversationToken?, cartId? }, onEvent)`, `action(type, body)`, `loadConversation(id, token)`. Error JSON becomes a typed `ApiError(status, code)`.
 - `formatMoney({ amount, currency })` (same output as the agent's, so text and cards agree).
 
-- [ ] Failing tests:
+- [x] Failing tests:
   - config parsing (missing key → null)
   - storage with a throwing `localStorage`
   - SSE split across chunks
   - chat emits events in order
   - a 409 becomes `ApiError("turn_in_progress")`
   - money formatting
-- [ ] Implement; commit `feat(widget): config, storage, SSE and API client`.
+- [x] Implement; commit `feat(widget): config, storage, SSE and API client`.
 
 ### Task 4: Host integration
 
