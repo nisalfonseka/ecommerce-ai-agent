@@ -25,6 +25,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@ace/adapter-medusa": "workspace:*",
     "@ace/adapter-memory": "workspace:*",
     "@ace/agent": "workspace:*",
     "@ace/contracts": "workspace:*",

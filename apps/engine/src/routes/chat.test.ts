@@ -68,7 +68,10 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
   const providers = (() => {
     let factory: ReturnType<typeof createProviderFactory> | undefined;
     return () => {
-      factory ??= createProviderFactory({ idempotencyStore: (t) => createPgIdempotencyStore(pool.db, t) });
+      factory ??= createProviderFactory({
+        idempotencyStore: (t) => createPgIdempotencyStore(pool.db, t),
+        masterKey: Buffer.alloc(32, 1),
+      });
       return factory;
     };
   })();

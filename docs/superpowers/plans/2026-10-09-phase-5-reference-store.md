@@ -180,7 +180,7 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
 - `providers.ts` builds `MedusaCommerceProvider` for `platform: "medusa"` stores from the sealed credentials (`{ baseUrl, publishableKey, secretKey, regionId, storefrontUrl }`, validated with Zod).
 - `POST /admin/tenants/:id/stores` accepts `platform: "medusa"` with those credentials. The response never echoes secrets.
 - The engine's `IdempotentCommerceProvider` conformance run also covers Medusa when the Medusa env is set.
-- [ ] Failing tests; implement; commit `feat(engine): Medusa stores from sealed credentials`.
+- [x] Failing tests; implement; commit `feat(engine): Medusa stores from sealed credentials`.
 
 ### Task 8: Storefront (Next.js)
 

@@ -18,6 +18,7 @@ import type { WidgetEnv } from "../auth/widget";
 import { PersonaSchema, StoreFactsSchema } from "../bot-config";
 import type { ModelPrices } from "../budget";
 import { errorResponse } from "../http-errors";
+import { MedusaCredentialsSchema } from "../providers";
 
 export interface AdminDeps {
   db: Db;
@@ -27,8 +28,8 @@ export interface AdminDeps {
 }
 
 const UUID = z.uuid();
-/** Platforms with an adapter (Phase 3: only the in-memory demo store). */
-const PLATFORMS = ["memory"] as const;
+/** Platforms with an adapter. */
+const PLATFORMS = ["memory", "medusa"] as const;
 
 const StoreBody = z.object({
   platform: z.enum(PLATFORMS),
@@ -37,6 +38,15 @@ const StoreBody = z.object({
   /** Store API credentials; sealed before storage, never returned. */
   credentials: z.string().min(1).max(4096).optional(),
 });
+
+function validMedusaCredentials(credentials: string | undefined): boolean {
+  if (!credentials) return false;
+  try {
+    return MedusaCredentialsSchema.safeParse(JSON.parse(credentials)).success;
+  } catch {
+    return false;
+  }
+}
 
 function botBody(prices: ModelPrices) {
   const known = z.string().refine((spec) => prices.has(spec), "model is not in model-prices.json");
@@ -115,6 +125,15 @@ export function registerAdminRoutes(app: Hono<WidgetEnv>, deps: AdminDeps): void
     if (!tenantId) return errorResponse(c, 404, "not_found", "Unknown tenant.");
     if (!body.success) return errorResponse(c, 400, "invalid_input", "Invalid store.");
     const { credentials, ...store } = body.data;
+    if (store.platform === "medusa" && !validMedusaCredentials(credentials)) {
+      // The message names the fields, never their values.
+      return errorResponse(
+        c,
+        400,
+        "invalid_input",
+        "Medusa stores need JSON credentials: baseUrl, publishableKey, secretKey, regionId, storefrontUrl.",
+      );
+    }
     const created = await withTenant(deps.db, tenantId, (tx) =>
       createStore(tx, tenantId, {
         ...store,

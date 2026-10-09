@@ -86,6 +86,28 @@ describe.skipIf(testDb === null)("admin API", () => {
     expect((await call("DELETE", `/admin/tenants/${tenantId}/widget-keys/${keyId}`)).status).toBe(404);
   });
 
+  it("registers a Medusa store only with complete credentials, and never echoes them", async () => {
+    const { tenantId } = await json(await call("POST", "/admin/tenants", { name: "Medusa Store" }));
+    const credentials = {
+      baseUrl: "https://store-api.example.lk",
+      publishableKey: "pk_123",
+      secretKey: "sk_super_secret",
+      regionId: "reg_1",
+      storefrontUrl: "https://shop.example.lk",
+    };
+    const create = (body: Record<string, unknown>) =>
+      call("POST", `/admin/tenants/${tenantId}/stores`, { platform: "medusa", currency: "LKR", ...body });
+    expect((await create({})).status).toBe(400);
+    expect((await create({ credentials: "not json" })).status).toBe(400);
+    const incomplete = await create({
+      credentials: JSON.stringify({ ...credentials, secretKey: undefined }),
+    });
+    expect(incomplete.status).toBe(400);
+    const created = await create({ credentials: JSON.stringify(credentials) });
+    expect(created.status).toBe(201);
+    expect(await created.text()).not.toContain("sk_super_secret");
+  });
+
   it("validates bots: known models, persona shape and caps", async () => {
     const { tenantId } = await json(await call("POST", "/admin/tenants", { name: "Admin Validation" }));
     const { storeId } = await json(

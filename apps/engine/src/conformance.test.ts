@@ -1,3 +1,4 @@
+import { medusaConformance } from "@ace/adapter-medusa/testing";
 import { MemoryCommerceProvider, memoryFixtures } from "@ace/adapter-memory";
 import { describeProviderConformance } from "@ace/contracts/testing";
 import { createDb, createPgIdempotencyStore, createTenant } from "@ace/db";
@@ -25,6 +26,26 @@ if (testDb) {
       fixtures: { ...memoryFixtures, control: { setStock: async (id, qty) => memory.setStock(id, qty) } },
     };
   });
+
+  // The same proof for Medusa, which takes no idempotency keys itself (ADR-006). Needs the reference store.
+  const medusa = medusaConformance();
+  if (medusa) {
+    let reset: Promise<void> | undefined;
+    describeProviderConformance("medusa + IdempotentCommerceProvider (Postgres)", async () => {
+      reset ??= medusa.resetStock();
+      await reset;
+      return {
+        provider: new IdempotentCommerceProvider(
+          medusa.provider(),
+          createPgIdempotencyStore(app.db, tenantId),
+          {
+            storeId: "00000000-0000-4000-8000-000000000002",
+          },
+        ),
+        fixtures: medusa.fixtures,
+      };
+    });
+  }
 } else {
   describe.skip("conformance over Postgres idempotency (needs ACE_TEST_DATABASE_URL)", () => {
     it("skipped", () => {});

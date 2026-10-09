@@ -41,6 +41,7 @@ const turnDeps = {
   db,
   providers: createProviderFactory({
     idempotencyStore: (tenantId) => createPgIdempotencyStore(db, tenantId),
+    masterKey: config.masterKey,
   }),
   tokens: createConversationTokens(config.conversationTokenSecret),
   models: createModelResolver({ allowDemo: config.allowDemoModel }),

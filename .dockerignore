@@ -9,3 +9,5 @@
 evals-reports
 backups
 coverage
+# The engine image never needs the reference store (its own toolchain, ADR-006).
+apps/reference-store

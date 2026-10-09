@@ -42,7 +42,10 @@ export async function createEngineHarness(testDb: TestDatabase) {
   const pool = createDb(testDb.appUrl);
   const logger = createLogger({ level: "silent" });
   const models: Record<string, LanguageModel> = {};
-  const providers = createProviderFactory({ idempotencyStore: (t) => createPgIdempotencyStore(pool.db, t) });
+  const providers = createProviderFactory({
+    idempotencyStore: (t) => createPgIdempotencyStore(pool.db, t),
+    masterKey: Buffer.alloc(32, 1),
+  });
   const { tenantId } = await createTenant(pool.db, { name: "Harness" });
   const { key, storeId, botId } = await withTenant(pool.db, tenantId, async (tx) => {
     const store = await createStore(tx, tenantId, { platform: "memory", currency: "LKR" });
