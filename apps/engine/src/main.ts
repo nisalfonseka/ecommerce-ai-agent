@@ -8,6 +8,7 @@ import { createLogger } from "./log";
 import { createModelResolver } from "./models";
 import { createProviderFactory } from "./providers";
 import { createRateLimiter } from "./rate-limit";
+import { registerActionRoutes } from "./routes/actions";
 import { registerChatRoutes } from "./routes/chat";
 
 const config = loadConfig(process.env);
@@ -27,7 +28,7 @@ const app = createApp({
   resolveWidgetKey: (key) => resolveWidgetKey(db, key),
 });
 
-registerChatRoutes(app, {
+const turnDeps = {
   db,
   providers: createProviderFactory({
     idempotencyStore: (tenantId) => createPgIdempotencyStore(db, tenantId),
@@ -38,7 +39,9 @@ registerChatRoutes(app, {
   visitorLimiter: createRateLimiter({ limitPerMinute: 20 }),
   ipLimiter: createRateLimiter({ limitPerMinute: 60 }),
   trustProxyHops: config.trustProxyHops,
-});
+};
+registerChatRoutes(app, turnDeps);
+registerActionRoutes(app, turnDeps);
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   logger.info({ port: info.port }, "engine listening");

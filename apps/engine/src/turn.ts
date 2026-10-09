@@ -85,7 +85,36 @@ export interface TurnRequest {
 
 const notFound = () => new TurnError(404, "not_found", "Conversation not found.");
 
-/** Validates the message, opens or verifies the conversation, loads the bot and takes the turn lease. */
+/**
+ * Verifies the conversation token, loads the bot and takes the turn lease on an existing conversation.
+ * A missing, forged or foreign token looks exactly like a missing conversation (404).
+ */
+export async function leaseExistingConversation(
+  deps: TurnDeps,
+  widget: WidgetIdentity,
+  conversationId: string,
+  conversationToken: string | undefined,
+): Promise<PreparedTurn> {
+  const { tenantId, botId } = widget;
+  const claims = deps.tokens.verify(conversationToken ?? "");
+  if (!claims || claims.tenantId !== tenantId || claims.conversationId !== conversationId) throw notFound();
+  return withTenant(deps.db, tenantId, async (tx) => {
+    const loaded = await getBotWithStore(tx, botId);
+    const existing = await getConversation(tx, conversationId);
+    if (!loaded || !existing || existing.botId !== botId) throw notFound();
+    const conversation = await acquireTurnLease(tx, existing.id, deps.leaseMs ?? DEFAULT_LEASE_MS);
+    if (!conversation) throw new TurnError(409, "turn_in_progress", "Still answering the previous message.");
+    return {
+      widget,
+      conversation,
+      conversationToken: conversationToken ?? "",
+      bot: loaded.bot,
+      store: loaded.store,
+    };
+  });
+}
+
+/** Validates the message, then opens a new conversation or leases the existing one. */
 export async function prepareTurn(
   deps: TurnDeps,
   widget: WidgetIdentity,
@@ -93,35 +122,20 @@ export async function prepareTurn(
 ): Promise<PreparedTurn> {
   const check = checkUserMessage(request.message);
   if (!check.ok) throw new TurnError(400, "invalid_input", `Message rejected: ${check.reason}.`);
-  const { tenantId, botId } = widget;
-  const leaseMs = deps.leaseMs ?? DEFAULT_LEASE_MS;
-
   if (request.conversationId !== undefined) {
-    const claims = deps.tokens.verify(request.conversationToken ?? "");
-    // A missing, forged or foreign token looks exactly like a missing conversation.
-    if (!claims || claims.tenantId !== tenantId || claims.conversationId !== request.conversationId)
-      throw notFound();
+    return leaseExistingConversation(deps, widget, request.conversationId, request.conversationToken);
   }
-
+  const { tenantId, botId } = widget;
   return withTenant(deps.db, tenantId, async (tx) => {
     const loaded = await getBotWithStore(tx, botId);
     if (!loaded) throw notFound();
-    let conversation: ConversationRow | null;
-    if (request.conversationId === undefined) {
-      const created = await createConversation(tx, tenantId, {
-        botId,
-        visitorId: request.visitorId,
-        session: createSession(),
-        cartId: request.cartId ?? null,
-      });
-      conversation = await acquireTurnLease(tx, created.id, leaseMs);
-    } else {
-      const existing = await getConversation(tx, request.conversationId);
-      if (!existing || existing.botId !== botId) throw notFound();
-      conversation = await acquireTurnLease(tx, existing.id, leaseMs);
-      if (!conversation)
-        throw new TurnError(409, "turn_in_progress", "Still answering the previous message.");
-    }
+    const created = await createConversation(tx, tenantId, {
+      botId,
+      visitorId: request.visitorId,
+      session: createSession(),
+      cartId: request.cartId ?? null,
+    });
+    const conversation = await acquireTurnLease(tx, created.id, deps.leaseMs ?? DEFAULT_LEASE_MS);
     if (!conversation) throw new Error("lease on a new conversation failed");
     return {
       widget,

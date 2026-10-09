@@ -379,13 +379,20 @@ The host site sends `cartId` with each message. If a tool created or replaced th
 
 `POST /v1/actions/:type` with types `add_to_cart` (`{ variantId, quantity }`), `update_cart_line` (`{ lineId, quantity }`), `view_cart`, `start_checkout`. Each requires a conversation token, runs the matching tool definition from `ALL_TOOLS` directly (no LLM) with the same `ToolContext` and lease, appends an `action` message (`"[shopper action] added Navy Cotton Kurta (M) ×1"` or the failure), and returns `{ result: ToolResult, ui: UiPart[], cartId }`. The idempotency key is the client-sent `actionId` (UUID, required), so a double click does not add twice.
 
-- [ ] **Step 1: Failing tests.**
+**As built:**
+- Body: `{ conversationId, conversationToken, actionId, cartId?, input }`. Inputs are strict per type (`add_to_cart` takes a `variantId`, never a `#ref`). Missing or foreign tokens → 404, like chat.
+- The tool call id is fixed (`action`), so the idempotency key is `ace:action-<actionId>:action` and a double click replays.
+- A repeated `actionId` is not noted twice in the history.
+- `leaseExistingConversation` is shared by chat and actions.
+- `src/testing/harness.ts` sets up an engine on a test database for route tests.
+
+- [x] **Step 1: Failing tests.**
   - The action adds to the cart, and the next chat turn's history contains the action note.
   - The same `actionId` twice → one line.
   - An unknown type → 404.
   - No token → 401.
   - An action while a turn holds the lease → 409.
-- [ ] **Step 2: Implement; checks; commit** `feat(engine): deterministic UI actions`.
+- [x] **Step 2: Implement; checks; commit** `feat(engine): deterministic UI actions`.
 
 ---
 
