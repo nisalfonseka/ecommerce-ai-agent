@@ -1,9 +1,10 @@
-import { CommerceError, type Product } from "@ace/contracts";
+import { CommerceError, isCommerceError, type Product } from "@ace/contracts";
 import { z } from "zod";
 import { observeMoney, type ToolContext } from "../context";
 import { formatMoney, formatPriceRange, toMinorUnits } from "../format";
 import { rememberShown } from "../session";
 import { runTool } from "../tool-result";
+import type { VariantChoice } from "../ui";
 import { defineTool } from "./define";
 import { resolveProductId } from "./resolve";
 
@@ -42,6 +43,35 @@ async function requireProduct(ctx: ToolContext, productId: string): Promise<Prod
   return product;
 }
 
+/**
+ * Live size/colour choices for a product card (UI only; the model never sees them). A card whose product
+ * cannot be read gets no choices instead of failing the whole search.
+ */
+async function cardVariants(
+  ctx: ToolContext,
+  productId: string,
+  matching: string[],
+): Promise<VariantChoice[]> {
+  try {
+    const product = await ctx.provider.getProduct(productId);
+    if (!product) return [];
+    observeMoney(ctx, product.variants);
+    const wanted = new Set(matching);
+    return product.variants
+      .filter((variant) => wanted.size === 0 || wanted.has(variant.id))
+      .map((variant) => ({
+        variantId: variant.id,
+        title: variant.title,
+        options: variant.options,
+        price: variant.price,
+        availability: variant.availability,
+      }));
+  } catch (error) {
+    if (!isCommerceError(error)) ctx.onUnexpectedError(error);
+    return [];
+  }
+}
+
 export const searchProductsTool = defineTool({
   name: "search_products",
   description:
@@ -78,9 +108,13 @@ export const searchProductsTool = defineTool({
           variantIds: item.matchingVariantIds,
         })),
       );
+      const variants = await Promise.all(
+        result.items.map((item) => cardVariants(ctx, item.id, item.matchingVariantIds)),
+      );
       const items = result.items.map((item, index) => ({
         ...item,
         ref: shown[index]?.ref ?? `#${index + 1}`,
+        variants: variants[index] ?? [],
       }));
       ctx.ui.push({ type: "product_list", items });
       return {

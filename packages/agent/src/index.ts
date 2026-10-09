@@ -28,4 +28,4 @@ export { composeInstructions, type Persona, PROMPT_VERSION, SAFETY_CANARY, type 
 export { createSession, resolveProductRef, type SessionState, type ShownProduct } from "./session";
 export type { ToolError, ToolFailureCode, ToolResult } from "./tool-result";
 export { ALL_TOOLS, buildTools } from "./tools/registry";
-export type { UiPart } from "./ui";
+export type { UiPart, VariantChoice } from "./ui";

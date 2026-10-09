@@ -52,6 +52,40 @@ describe("search_products", () => {
   });
 });
 
+describe("search_products cards", () => {
+  it("gives each card its live variant choices, without changing what the model sees", async () => {
+    const ctx = make();
+    const result = await searchProductsTool.run(ctx, { query: "linen" }, "c1");
+    const part = ctx.ui[0];
+    if (part?.type !== "product_list") throw new Error("expected a product_list part");
+    expect(part.items[0]?.variants).toEqual([
+      expect.objectContaining({
+        variantId: "p_linen_shirt_black_s",
+        options: { color: "Black", size: "S" },
+        availability: "in_stock",
+      }),
+      expect.objectContaining({ variantId: "p_linen_shirt_black_m", availability: "in_stock" }),
+      expect.objectContaining({ variantId: "p_linen_shirt_black_l", availability: "out_of_stock" }),
+    ]);
+    expect(part.items[0]?.variants[0]?.price).toEqual({ amount: 650000, currency: "LKR" });
+    expect(result.ok && Object.keys(result.data.items[0] ?? {}).sort()).toEqual([
+      "availability",
+      "price",
+      "productId",
+      "ref",
+      "title",
+    ]);
+  });
+
+  it("only offers the variants that matched the filters", async () => {
+    const ctx = make();
+    await searchProductsTool.run(ctx, { query: "linen", size: "M" }, "c1");
+    const part = ctx.ui[0];
+    if (part?.type !== "product_list") throw new Error("expected a product_list part");
+    expect(part.items[0]?.variants.map((v) => v.variantId)).toEqual(["p_linen_shirt_black_m"]);
+  });
+});
+
 describe("get_product", () => {
   it("resolves a ref from the last search and returns variants with prices", async () => {
     const ctx = make();
