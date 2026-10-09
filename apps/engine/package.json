@@ -1,0 +1,33 @@
+{
+  "name": "@ace/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts",
+    "migrate": "tsx src/migrate-cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ace/adapter-memory": "workspace:*",
+    "@ace/agent": "workspace:*",
+    "@ace/contracts": "workspace:*",
+    "@ace/db": "workspace:*",
+    "@hono/node-server": "^2.1.4",
+    "ai": "^7.0.133",
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.13.13",
+    "pg": "^8.23.1",
+    "pino": "^9.14.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

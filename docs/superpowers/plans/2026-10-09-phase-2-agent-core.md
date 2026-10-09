@@ -3274,6 +3274,26 @@ git commit -m "feat(evals): add 32 golden cases in four languages and the pnpm e
 
 ---
 
+### Task 9b: Free-tier pacing for live evals
+
+Added 2026-10-09. The Gemini free tier allows about 5 requests per minute per model, and one turn makes 2–3 model calls, so an unpaced run fails on quota instead of quality.
+
+**Files:**
+- Create: `packages/evals/src/rate-limit.ts` (+ `.test.ts`)
+- Modify: `packages/evals/src/cli-args.ts` (+ `.test.ts`), `packages/evals/src/cli.ts`, `AGENTS.md`
+
+**Interfaces:**
+- `createRequestPacer({ rpm, now?, sleep? }): { acquire(): Promise<void> }`: at most `rpm` requests in any 60-second window.
+- `retryDelayMs(error): number | null`: the wait a 429 asks for (Gemini `retryDelay` in the body, then "retry in Ns" in the message, then `Retry-After`, else 60 s); `null` for other errors.
+- `withRateLimit(model, { rpm, maxWaitMs = 5 min, maxRateLimitWaits = 5, onWait? })`: AI SDK middleware that paces requests and waits out 429s. Longer suggested waits (daily quotas) fail the case instead of stalling the run.
+- CLI: `--rpm <positive integer>`.
+
+- [x] **Step 1:** Write failing tests for the pacer, `retryDelayMs`, `withRateLimit` (fake clock) and `--rpm` parsing.
+- [x] **Step 2:** Implement; `pnpm lint && pnpm typecheck && pnpm test` green.
+- [x] **Step 3:** Document `pnpm evals --models google:gemini-flash-latest --rpm 5` in `AGENTS.md`; commit.
+
+---
+
 ### Task 10 (owner-gated): Live evals and the D3 recommendation
 
 Not a coding task. It needs the owner's API keys.
@@ -3282,6 +3302,19 @@ Not a coding task. It needs the owner's API keys.
 - [ ] Run `pnpm evals` (about 32 cases × 6 models; costs money).
 - [ ] Read the report. Compare the pass rate per language (especially `si`, `ta`, `singlish`), the safety cases, the Sinhala and Tamil transcripts (native-speaker review), tokens and latency.
 - [ ] Record the decision as `docs/adr/003-default-models.md`: the primary conversation model, the cheap model, and the fallback provider. Update spec §11 D3 to "Decided".
+
+### Task 10 progress (2026-10-09, Gemini free tier)
+
+The free tier allows about 5 requests per minute **and 20 requests per day per model**. A full run is about 110 requests per model, so it does not fit; the full suite needs a paid key (or several days).
+
+| Model (alias → served) | Cases run | Result | Notes |
+|---|---|---|---|
+| `gemini-flash-latest` → `gemini-3.8-flash` | 3 (en) | 3/3 | Daily quota reached after case 3. |
+| `gemini-flash-lite-latest` → `gemini-3.5-flash-lite` | 6 (si) | 5/6, then 6/6 | All replies in Sinhala script. The safety case passed (no order data without verification), and the ordinal "දෙවෙනි එක" resolved to #2. |
+
+Fix found by the live run: on `si-availability` the model confirmed stock from search results. The prompt now requires `check_availability` before confirming a size (prompt `2026-10-09.2`), and the case passes.
+
+Open: the full suite on at least one conversation model (paid key), Tamil/Singlish/safety cases, a native-speaker review, and ADR-003 (D3).
 
 ## Phase 2 exit checklist
 

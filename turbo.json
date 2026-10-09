@@ -3,7 +3,12 @@
   "agentGuidance": false,
   "globalDependencies": ["tsconfig.base.json", "biome.json"],
   "tasks": {
-    "test": { "dependsOn": ["^typecheck"] },
-    "typecheck": { "dependsOn": ["^typecheck"] }
+    "test": {
+      "dependsOn": ["^typecheck"],
+      "env": ["ACE_TEST_DATABASE_URL", "ACE_REQUIRE_DB_TESTS"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    }
   }
 }

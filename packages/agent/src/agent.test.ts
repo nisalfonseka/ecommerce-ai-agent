@@ -3,6 +3,7 @@ import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { AgentInputError, runTurn } from "./agent";
 import { createToolContext } from "./context";
+import { PROMPT_VERSION } from "./prompt";
 import { createSession } from "./session";
 import { callTool, say, scriptedModel } from "./testing";
 
@@ -25,6 +26,7 @@ describe("runTurn", () => {
     expect(result.ui.map((part) => part.type)).toEqual(["product_list"]);
     expect(result.ungroundedAmounts).toEqual([]);
     expect(result.regenerated).toBe(false);
+    expect(result.promptVersion).toBe(PROMPT_VERSION);
     expect(result.newMessages.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
     expect(result.usage).toEqual({ inputTokens: 20, outputTokens: 10 });
   });

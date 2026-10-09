@@ -1,7 +1,7 @@
 import { type LanguageModel, type ModelMessage, stepCountIs, ToolLoopAgent } from "ai";
 import type { ToolContext } from "./context";
 import { checkUserMessage, findUngroundedAmounts, shopperAmounts } from "./guardrails";
-import { composeInstructions, type Persona, type StoreFacts } from "./prompt";
+import { composeInstructions, type Persona, PROMPT_VERSION, type StoreFacts } from "./prompt";
 import { buildTools } from "./tools/registry";
 import type { UiPart } from "./ui";
 
@@ -38,6 +38,7 @@ export interface TurnResult {
   /** Amounts still not backed by tool data after one regeneration; the channel must not show this text's prices. */
   ungroundedAmounts: number[];
   regenerated: boolean;
+  promptVersion: string;
 }
 
 export async function runTurn(input: TurnInput): Promise<TurnResult> {
@@ -105,5 +106,6 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     usage,
     ungroundedAmounts: ungrounded,
     regenerated,
+    promptVersion: PROMPT_VERSION,
   };
 }

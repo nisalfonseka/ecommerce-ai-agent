@@ -5,6 +5,7 @@ import { hasApiKey, PROVIDER_ENV_KEYS, parseModelSpec, resolveModel } from "@ace
 import { ALL_CASES } from "./cases/index";
 import { parseCliArgs } from "./cli-args";
 import { DEFAULT_EVAL_MODELS, EVAL_PERSONA, EVAL_STORE } from "./config";
+import { withRateLimit } from "./rate-limit";
 import { renderMarkdown, summarize } from "./report";
 import { runCase } from "./runner";
 import type { CaseResult } from "./types";
@@ -30,7 +31,15 @@ for (const spec of args.models ?? DEFAULT_EVAL_MODELS) {
     console.log(`skip ${spec} (no ${PROVIDER_ENV_KEYS[provider]})`);
     continue;
   }
-  const model = resolveModel(spec);
+  const resolved = resolveModel(spec);
+  const rpm = args.rpm;
+  const model =
+    rpm === null || typeof resolved === "string"
+      ? resolved
+      : withRateLimit(resolved, {
+          rpm,
+          onWait: (ms) => console.log(`  rate limited by ${spec}; waiting ${Math.round(ms / 1000)} s`),
+        });
   for (const evalCase of cases) {
     const result = await runCase(evalCase, {
       model,

@@ -13,7 +13,7 @@ adapter**. The agent only knows the universal commerce contract, never Shopify, 
 - Design and gap analysis: [`docs/superpowers/specs/2026-10-08-ai-commerce-engine-design.md`](docs/superpowers/specs/2026-10-08-ai-commerce-engine-design.md)
 - Start-to-end workflow: [`docs/workflow.md`](docs/workflow.md)
 - Roadmap (phases and exit criteria): [`docs/superpowers/plans/2026-10-08-roadmap.md`](docs/superpowers/plans/2026-10-08-roadmap.md)
-- Current phase plan: [`docs/superpowers/plans/2026-10-08-phase-1-foundation.md`](docs/superpowers/plans/2026-10-08-phase-1-foundation.md)
+- Current phase plan: [`docs/superpowers/plans/2026-10-09-phase-2-agent-core.md`](docs/superpowers/plans/2026-10-09-phase-2-agent-core.md) (Task 10 open). Next: [`docs/superpowers/plans/2026-10-09-phase-3-engine.md`](docs/superpowers/plans/2026-10-09-phase-3-engine.md) (draft; decisions E1, E2)
 - Architecture decisions: `docs/adr/`
 
 ## Current status
@@ -97,6 +97,7 @@ pnpm lint:fix           # Biome check --write (format + safe fixes)
 pnpm --filter @ace/contracts test     # one package
 pnpm evals              # live agent evals (needs API keys in .env; costs money)
 pnpm evals --models google:gemini-flash-latest --only si   # one model, Sinhala cases only
+pnpm evals --models google:gemini-flash-latest --rpm 5    # free tier: max 5 model requests/minute
 ```
 
 Keep this section in sync with the real scripts.
