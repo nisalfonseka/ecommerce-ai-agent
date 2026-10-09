@@ -86,7 +86,7 @@ packages/evals/
 - Consumes: Phase 1 contract.
 - Produces: `UpdateCartAttributesInputSchema`, `type UpdateCartAttributesInput` (z.input: `{ attributes: Record<string,string> }`, at least one key), and `CommerceProvider.updateCartAttributes(cartId: string, input: UpdateCartAttributesInput, opts: WriteOptions): Promise<Cart>` (merge semantics, under `cart.write`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `packages/contracts/src/cart.test.ts` (and add `UpdateCartAttributesInputSchema` to its import from `./cart`):
 
@@ -141,12 +141,12 @@ In `packages/adapter-memory/src/memory-provider.test.ts`, inside `describe("Memo
   });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/contracts test; pnpm --filter @ace/adapter-memory test`
 Expected: FAIL. The schema is not exported from `./cart`, and `updateCartAttributes` is not a function / not on the `CommerceProvider` type.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `packages/contracts/src/cart.ts` — append after `UpdateCartLineInputSchema`:
 
@@ -194,14 +194,14 @@ export type UpdateCartAttributesInput = z.input<typeof UpdateCartAttributesInput
   with `ace_conversation_id` for attribution (spec G2 + G14). Additive; no existing method changed.
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm lint:fix && pnpm lint && pnpm typecheck && pnpm test`
 Expected: PASS.
 - contracts: 49 passed / 19 skipped. The new conformance test is skipped for the read-only stub.
 - adapter-memory: 56 passed / 1 skipped. Conformance is now 21 passed / 1 skipped.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/contracts packages/adapter-memory docs/adr/001-commerce-contract.md
@@ -227,7 +227,7 @@ git commit -m "feat(contracts): add updateCartAttributes (contract v1.1) for car
   - `type ToolFailureCode`, `type ToolResult<T>`, `class ToolFailure(code, message, details?)`, `runTool<T>(fn: () => Promise<T>): Promise<ToolResult<T>>`
   - `@ace/agent/testing`: `scriptedModel(responses: LanguageModelV4GenerateResult[]): MockLanguageModelV4`, `say(text)`, `callTool(id, name, input)`
 
-- [ ] **Step 1: Create the package shell**
+- [x] **Step 1: Create the package shell**
 
 `packages/agent/package.json`:
 
@@ -261,7 +261,7 @@ pnpm --filter @ace/agent add -D @ace/adapter-memory@workspace:* vitest@^5.0.3 ty
 
 Check that `packages/agent/package.json` lists `"vitest": "^5.0.3"`.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `packages/agent/src/format.test.ts`:
 
@@ -411,12 +411,12 @@ describe("runTool", () => {
 });
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./format"" (and the other modules).
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 `packages/agent/src/format.ts`:
 
@@ -662,12 +662,12 @@ export function scriptedModel(responses: LanguageModelV4GenerateResult[]): MockL
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 4 files, 13 tests. (`src/index.ts` is created in Task 7; nothing imports `.` yet.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/agent pnpm-lock.yaml
@@ -690,7 +690,7 @@ git commit -m "feat(agent): add formatting, session refs, tool context and tool 
   - `resolveProductId(ctx, input: { ref?: string; productId?: string }): string`, which throws `ToolFailure("UNKNOWN_REF")`
   - `searchProductsTool`, `getProductTool`, `checkAvailabilityTool`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/agent/src/tools/catalog.test.ts`:
 
@@ -796,12 +796,12 @@ describe("check_availability", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./catalog"".
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `packages/agent/src/tools/define.ts`:
 
@@ -992,12 +992,12 @@ export const checkAvailabilityTool = defineTool({
 });
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 5 files, 21 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/agent
