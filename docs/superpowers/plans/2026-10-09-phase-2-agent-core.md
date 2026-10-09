@@ -1705,13 +1705,13 @@ git commit -m "feat(agent): add instruction composer and price-grounding guardra
   - `class AgentInputError(reason)`, `interface TurnInput`, `interface TurnResult`, `runTurn(input: TurnInput): Promise<TurnResult>`
   - `src/index.ts` exporting the public API (below)
 
-- [ ] **Step 1: Install providers**
+- [x] **Step 1: Install providers**
 
 ```bash
 pnpm --filter @ace/agent add @ai-sdk/google@^4 @ai-sdk/openai@^4 @ai-sdk/anthropic@^4
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `packages/agent/src/models.test.ts`:
 
@@ -1832,12 +1832,12 @@ describe("runTurn", () => {
 });
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./models"" and "./agent".
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 `packages/agent/src/models.ts`:
 
@@ -2004,14 +2004,14 @@ export { ALL_TOOLS, buildTools } from "./tools/registry";
 export type { UiPart } from "./ui";
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck && pnpm test`
 Expected: PASS. Agent: 12 files, 58 tests.
 
 If the mock's `response.messages` roles in the first test differ from `["user","assistant","tool","assistant"]` because of how AI SDK 7 packs steps, assert on the real shape. In that case `newMessages` must still start with the user message and end with the final assistant reply. Explain the change in the report.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/agent pnpm-lock.yaml

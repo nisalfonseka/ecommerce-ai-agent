@@ -34,6 +34,18 @@ export function extractPriceMentions(text: string): number[] {
   return found.sort((a, b) => a.index - b.index).map((entry) => entry.amount);
 }
 
+const ANY_NUMBER = new RegExp(NUMBER, "g");
+
+/**
+ * Every number the shopper wrote, read as rupees, in minor units. Shoppers rarely write a currency ("under
+ * 20,000"), and a reply that repeats the shopper's own budget is not a hallucinated store price.
+ */
+export function shopperAmounts(text: string): number[] {
+  return [...text.matchAll(ANY_NUMBER)].flatMap((match) =>
+    match[1] === undefined ? [] : [toMinor(match[1])],
+  );
+}
+
 export function findUngroundedAmounts(text: string, observed: ReadonlySet<number>): number[] {
   return extractPriceMentions(text).filter((amount) => !observed.has(amount));
 }

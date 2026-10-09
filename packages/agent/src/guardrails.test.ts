@@ -4,6 +4,7 @@ import {
   extractPriceMentions,
   findUngroundedAmounts,
   MAX_USER_MESSAGE_CHARS,
+  shopperAmounts,
 } from "./guardrails";
 
 describe("checkUserMessage", () => {
@@ -35,6 +36,14 @@ describe("extractPriceMentions", () => {
     ["Comes in 2 colours 3 sizes", []],
   ])("%s", (text, expected) => {
     expect(extractPriceMentions(text)).toEqual(expected);
+  });
+});
+
+describe("shopperAmounts", () => {
+  it("reads every number the shopper wrote as rupees, with or without a currency", () => {
+    expect(shopperAmounts("black dress under 20,000, max Rs. 18500.50")).toEqual([2000000, 1850050]);
+    expect(shopperAmounts("20000ta adu")).toEqual([2000000]);
+    expect(shopperAmounts("no numbers")).toEqual([]);
   });
 });
 
