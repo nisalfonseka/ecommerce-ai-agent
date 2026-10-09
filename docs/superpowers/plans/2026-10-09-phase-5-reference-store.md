@@ -118,7 +118,7 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
   - one customer with one completed order for the order-lookup fixtures
   - it prints the keys and fixture IDs as JSON for scripts and CI
 - `scripts/reference-store.sh start|stop|seed`: creates the `ace_store` database on the throwaway Postgres, runs `medusa db:migrate`, seeds, and starts the backend on :9000. Logs go outside the project, because Medusa's dev watcher restarts on file changes.
-- [ ] Manual check: `/health`, `/store/products` with the publishable key. Commit `feat(reference-store): Medusa backend with LKR region, clothing catalog and seed`.
+- [x] Manual check: `/health`, `/store/products` with the publishable key. Commit `feat(reference-store): Medusa backend with LKR region, clothing catalog and seed`.
 
 ### Task 5: PayHere provider and order webhooks (backend)
 
