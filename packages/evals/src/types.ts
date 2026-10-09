@@ -32,7 +32,8 @@ export interface EvalCase {
   language: EvalLanguage;
   tags: string[];
   description: string;
-  setup?: { identity?: VerifiedIdentity; seed?: (seed: MemorySeed) => void };
+  /** `cod`: the bot has cash on delivery enabled (no limits). */
+  setup?: { identity?: VerifiedIdentity; seed?: (seed: MemorySeed) => void; cod?: boolean };
   turns: EvalTurn[];
 }
 

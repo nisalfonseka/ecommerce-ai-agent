@@ -52,7 +52,7 @@ export async function createEngineHarness(testDb: TestDatabase) {
     const bot = await createBot(tx, tenantId, {
       storeId: store.id,
       persona: { assistantName: "Nila", storeName: "Harness", languages: ["English"] },
-      storeFacts: { currency: "LKR" },
+      storeFacts: { currency: "LKR", cod: { enabled: true, maxTotal: 5_000_000 } },
       model: "test:primary",
       cheapModel: "test:cheap",
       budgetSoftUsdMicros: 1_000_000,

@@ -32,7 +32,7 @@ import type { LanguageModel, ModelMessage } from "ai";
 import type { Logger } from "pino";
 import type { createConversationTokens } from "./auth/conversation-token";
 import type { WidgetIdentity } from "./auth/widget";
-import { parsePersona, parseSession, parseStoreFacts } from "./bot-config";
+import { codPolicy, parsePersona, parseSession, parseStoreFacts } from "./bot-config";
 import { budgetState, chooseModel, costMicros, type ModelPrices } from "./budget";
 import { toModelMessages } from "./history";
 import type { ErrorCode } from "./http-errors";
@@ -220,11 +220,13 @@ export async function runPreparedTurn(
     model = choice.model;
     const stored = await withTenant(deps.db, tenantId, (tx) => loadMessages(tx, conversationId));
     const history: ModelMessage[] = toModelMessages(stored.rows);
+    const storeFacts = parseStoreFacts(prepared.bot.storeFacts);
     const ctx = createToolContext({
       provider: deps.providers(tenantId, prepared.store),
       conversationId,
       turnId,
       session: parseSession(prepared.conversation.session),
+      cod: codPolicy(storeFacts),
       cartId: request.cartId ?? prepared.conversation.cartId,
       onToolStart: (name) => emit("status", { tool: name }),
       onUnexpectedError: (error) => deps.logger.error({ err: error, turnId }, "tool failed unexpectedly"),
@@ -233,7 +235,7 @@ export async function runPreparedTurn(
     const input = {
       ctx,
       persona: parsePersona(prepared.bot.persona),
-      store: parseStoreFacts(prepared.bot.storeFacts),
+      store: storeFacts,
       history,
       userMessage: request.message,
       maxSteps: prepared.bot.maxSteps,

@@ -1,5 +1,5 @@
-import { ALL_TOOLS, createToolContext } from "@ace/agent";
-import { MAX_LINE_QUANTITY } from "@ace/contracts";
+import { ACTION_TOOLS, ALL_TOOLS, createToolContext, isToolAvailable } from "@ace/agent";
+import { CodDetailsSchema, MAX_LINE_QUANTITY } from "@ace/contracts";
 import {
   appendMessages,
   loadMessages,
@@ -11,11 +11,14 @@ import {
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { WidgetEnv } from "../auth/widget";
-import { parseSession } from "../bot-config";
+import { codPolicy, parseSession, parseStoreFacts } from "../bot-config";
 import { errorResponse } from "../http-errors";
 import { leaseExistingConversation, type TurnDeps, TurnError } from "../turn";
 
-/** Card buttons only; anything else (refunds, discounts) does not exist here (AGENTS.md rule 8). */
+/**
+ * Card buttons only; anything else (refunds, discounts) does not exist here (AGENTS.md rule 8). The COD form
+ * and its Confirm button live only here: the model has no tool that places an order (ADR-007).
+ */
 const ACTION_INPUTS = {
   add_to_cart: z.object({
     variantId: z.string().min(1).max(200),
@@ -27,7 +30,11 @@ const ACTION_INPUTS = {
   }),
   view_cart: z.object({}),
   start_checkout: z.object({}),
+  cod_quote: CodDetailsSchema,
+  place_cod_order: z.object({}),
 } as const;
+
+const RUNNABLE = [...ALL_TOOLS, ...ACTION_TOOLS];
 
 type ActionType = keyof typeof ACTION_INPUTS;
 
@@ -52,7 +59,7 @@ function isActionType(value: string): value is ActionType {
 export function registerActionRoutes(app: Hono<WidgetEnv>, deps: TurnDeps): void {
   app.post("/v1/actions/:type", async (c) => {
     const type = c.req.param("type");
-    const def = ALL_TOOLS.find((tool) => tool.name === type);
+    const def = RUNNABLE.find((tool) => tool.name === type);
     if (!isActionType(type) || !def) return errorResponse(c, 404, "not_found", "Unknown action.");
     const body = ActionBodySchema.safeParse(await c.req.json().catch(() => null));
     const input = body.success ? ACTION_INPUTS[type].safeParse(body.data.input) : null;
@@ -77,22 +84,28 @@ export function registerActionRoutes(app: Hono<WidgetEnv>, deps: TurnDeps): void
     const turnId = `action-${body.data.actionId}`;
     let saved = false;
     try {
-      const provider = deps.providers(tenantId, prepared.store);
-      if (!def.requires.every((capability) => provider.capabilities.has(capability))) {
-        return errorResponse(c, 404, "not_found", "This store does not support that action.");
-      }
       const ctx = createToolContext({
-        provider,
+        provider: deps.providers(tenantId, prepared.store),
         conversationId,
         turnId,
         session: parseSession(prepared.conversation.session),
+        cod: codPolicy(parseStoreFacts(prepared.bot.storeFacts)),
         cartId: body.data.cartId ?? prepared.conversation.cartId,
         onUnexpectedError: (error) => deps.logger.error({ err: error, turnId }, "action failed unexpectedly"),
       });
+      if (!isToolAvailable(ctx, def)) {
+        return errorResponse(c, 404, "not_found", "This store does not support that action.");
+      }
       const started = Date.now();
       // Fixed tool call id: the idempotency key becomes ace:action-<actionId>:action, stable across retries.
       const result = await def.run(ctx, input.data, "action");
-      const summary = `${type} ${JSON.stringify(input.data)} → ${result.ok ? "done" : result.error.code}`;
+      // Delivery details are personal data: they stay in the session draft, never in summaries or records.
+      const shown = def.sensitiveInput ? "(delivery details)" : JSON.stringify(input.data);
+      const orderNumber =
+        result.ok && typeof (result.data as { orderNumber?: unknown }).orderNumber === "string"
+          ? ` (order ${(result.data as { orderNumber: string }).orderNumber})`
+          : "";
+      const summary = `${type} ${shown} → ${result.ok ? `done${orderNumber}` : result.error.code}`;
 
       await withTenant(deps.db, tenantId, async (tx) => {
         const stored = await loadMessages(tx, conversationId);
@@ -107,7 +120,7 @@ export function registerActionRoutes(app: Hono<WidgetEnv>, deps: TurnDeps): void
           await recordToolCalls(tx, tenantId, conversationId, turnId, [
             {
               name: type,
-              input: input.data,
+              input: def.sensitiveInput ? null : input.data,
               output: null,
               ok: result.ok,
               errorCode: result.ok ? null : result.error.code,

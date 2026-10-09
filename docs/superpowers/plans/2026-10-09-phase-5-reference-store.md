@@ -209,14 +209,21 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
 - UI action `cod_quote` (widget form → `CodDetails`, Zod-validated). It applies the COD rules from bot config (`cod.maxTotal`, optional `cod.allowedCities`), calls `quoteCodOrder`, stores the details in the session under a `codDraft` with a quote fingerprint, and returns a `cod_summary` UI part (lines, delivery fee, total, address, Confirm and Edit).
 - UI action `place_cod_order` (`{ conversationId, conversationToken, actionId }`). It re-quotes; if the total changed since the summary, it returns a new summary instead of placing the order. Otherwise it calls `placeCodOrder` (idempotency key = `actionId`), clears the draft, and returns an `order` UI part. The model is told the order number on its next turn through session state.
 - Widget: `DeliveryForm` (name, phone, address, city, note) and `CodSummary` cards.
-- [ ] Failing tests:
+- [x] Failing tests:
   - the model cannot place an order (no such tool)
   - a confirm without a draft is rejected
   - a confirm after a total change returns a new summary
   - a double click places one order
   - `maxTotal` and cities are enforced
   - the form renders text safely
-- [ ] Implement; commit `feat: cash-on-delivery orders confirmed by the shopper`.
+- [x] Implement; commit `feat: cash-on-delivery orders confirmed by the shopper`.
+
+**As built (Task 9).**
+- `ACTION_TOOLS` (`cod_quote`, `place_cod_order`) are runnable only through engine UI actions; `buildTools` never sees them.
+- COD policy is set in `storeFacts.cod` (`enabled`, `maxTotal` in minor units, `allowedCities`, `countryCode`, default LK).
+- The engine's session schema accepts `codDraft` and `lastOrder`.
+- Tool-call records and action summaries show "(delivery details)" instead of the shopper's details.
+- New eval case `en-cod`. Live evals are still on hold (no API keys).
 
 ### Task 10: CI and docs
 

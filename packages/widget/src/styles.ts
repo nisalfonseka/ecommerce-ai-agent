@@ -50,6 +50,12 @@ a.title:hover { text-decoration: underline; }
 .composer textarea { flex: 1; resize: none; border: 1px solid #d0d7de; border-radius: 8px; padding: 8px; }
 .consent { padding: 12px 16px; border-top: 1px solid #d0d7de; display: flex; flex-direction: column; gap: 8px; }
 .consent p { margin: 0; color: #57606a; font-size: 14px; }
+.cod-form fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cod-form legend { font-weight: 600; margin-bottom: 4px; }
+.field { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.field input, .field select { font: inherit; padding: 6px 8px; border: 1px solid #d0d7de; border-radius: 8px; }
+.cod-summary address { font-style: normal; color: #57606a; font-size: 13px; }
+.subtotal.total { font-weight: 600; }
 @media (max-width: 480px) {
   .panel { right: 0; bottom: 0; width: 100vw; height: 100dvh; border-radius: 0; }
 }

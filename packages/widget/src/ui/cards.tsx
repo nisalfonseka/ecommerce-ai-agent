@@ -1,6 +1,7 @@
 import type { UiPart, VariantChoice } from "@ace/agent";
 import { formatMoney, formatPriceRange } from "../money";
 import { safeUrl } from "../safe-url";
+import { CodSummary, DeliveryForm } from "./cod";
 
 export type RunAction = (type: string, input: Record<string, unknown>) => void;
 
@@ -191,5 +192,17 @@ export function Card({ part, busy, onAction }: CardProps) {
       return (
         <div class="card notice">To see order details, please verify your email or phone (coming soon).</div>
       );
+    case "delivery_form":
+      return (
+        <DeliveryForm
+          countryCode={part.countryCode}
+          cities={part.cities}
+          prefill={part.prefill}
+          busy={busy}
+          onAction={onAction}
+        />
+      );
+    case "cod_summary":
+      return <CodSummary part={part} busy={busy} onAction={onAction} />;
   }
 }

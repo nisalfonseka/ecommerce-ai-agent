@@ -11,6 +11,10 @@ export interface CommerceToolDef<S extends z.ZodType, O = unknown> {
   inputSchema: S;
   /** Registered only when the provider declares all of these. */
   requires: Capability[];
+  /** Extra per-turn condition (e.g. the tenant enabled the feature); default: available. */
+  available?(ctx: ToolContext): boolean;
+  /** The input holds personal data: never store it in tool-call records or message summaries. */
+  sensitiveInput?: boolean;
   run(ctx: ToolContext, input: z.output<S>, toolCallId: string): Promise<ToolResult<O>>;
 }
 

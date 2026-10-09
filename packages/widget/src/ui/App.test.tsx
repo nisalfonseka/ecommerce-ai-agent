@@ -220,4 +220,103 @@ describe("App", () => {
     expect(links).toContain("https://shop.example.lk/checkout/c");
     expect(links.some((href) => href?.startsWith("javascript"))).toBe(false);
   });
+
+  it("collects delivery details in a labelled form and sends them only as the cod_quote action", async () => {
+    const form: UiPart = {
+      type: "delivery_form",
+      cartId: "cart_9",
+      countryCode: "LK",
+      cities: null,
+      prefill: null,
+    };
+    const fake = fakeApi([form], "Please fill in your delivery details.");
+    await mount(fake.api);
+    await openAndSend("cash on delivery please");
+    const field = (label: string) => {
+      const input = [
+        ...container.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea"),
+      ].find((el) => el.closest("label")?.textContent?.includes(label));
+      if (!input) throw new Error(`no field labelled ${label}`);
+      return input;
+    };
+    const type = async (label: string, value: string) => {
+      const input = field(label);
+      await act(async () => {
+        input.value = value;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    expect(field("Phone").getAttribute("autocomplete")).toBe("tel");
+    await type("Full name", "Nimali <b>Perera</b>");
+    await type("Phone", "077 123 4567");
+    await type("Address", "12 Galle Road");
+    await type("City", "Colombo 03");
+    await act(async () => button("Continue")?.click());
+    expect(fake.action).toHaveBeenCalledTimes(1);
+    const [type_, body] = fake.action.mock.calls[0] as unknown as [
+      string,
+      { input: Record<string, unknown> },
+    ];
+    expect(type_).toBe("cod_quote");
+    expect(body.input).toEqual({
+      name: "Nimali <b>Perera</b>",
+      phone: "077 123 4567",
+      address: { line1: "12 Galle Road", city: "Colombo 03", countryCode: "LK" },
+    });
+    expect(fake.chat).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the COD summary as text and confirms once with place_cod_order", async () => {
+    const summary: UiPart = {
+      type: "cod_summary",
+      cartId: "cart_9",
+      countryCode: "LK",
+      lines: (cartPart(1) as Extract<UiPart, { type: "cart" }>).cart.lines,
+      subtotal: money(650000),
+      deliveryFee: money(40000),
+      total: money(690000),
+      deliverTo: {
+        name: "<img src=x onerror=alert(1)>",
+        phone: "+94771234567",
+        line1: "12 Galle Road",
+        city: "Colombo",
+      },
+    };
+    const fake = fakeApi([summary], "Please confirm.");
+    await mount(fake.api);
+    await openAndSend("cod");
+    expect(container.textContent).toContain("LKR 400.00");
+    expect(container.textContent).toContain("LKR 6,900.00");
+    expect(container.textContent).toContain("<img src=x onerror=alert(1)>");
+    expect(container.querySelectorAll("img[src=x]")).toHaveLength(0);
+    const confirm = button("Confirm order");
+    await act(async () => {
+      confirm?.click();
+      confirm?.click();
+    });
+    expect(fake.action).toHaveBeenCalledTimes(1);
+    expect((fake.action.mock.calls[0] as unknown as [string])[0]).toBe("place_cod_order");
+  });
+
+  it("lets the shopper edit the details from the summary without placing anything", async () => {
+    const summary: UiPart = {
+      type: "cod_summary",
+      cartId: "cart_9",
+      countryCode: "LK",
+      lines: [],
+      subtotal: money(650000),
+      deliveryFee: money(40000),
+      total: money(690000),
+      deliverTo: { name: "Nimali", phone: "+94771234567", line1: "12 Galle Road", city: "Colombo" },
+    };
+    const fake = fakeApi([summary], "Please confirm.");
+    await mount(fake.api);
+    await openAndSend("cod");
+    await act(async () => button("Edit details")?.click());
+    const name = [...container.querySelectorAll("input")].find((el) =>
+      el.closest("label")?.textContent?.includes("Full name"),
+    );
+    expect(name?.value).toBe("Nimali");
+    expect(fake.action).not.toHaveBeenCalled();
+  });
 });
