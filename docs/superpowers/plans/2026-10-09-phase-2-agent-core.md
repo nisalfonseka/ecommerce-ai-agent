@@ -1516,7 +1516,7 @@ git commit -m "feat(agent): add verified order lookup and capability-gated tool 
   - `MAX_USER_MESSAGE_CHARS = 2000`, `checkUserMessage(text): { ok: true } | { ok: false; reason: "empty" | "too_long" }`
   - `extractPriceMentions(text): number[]` (minor units), `findUngroundedAmounts(text, observed: ReadonlySet<number>): number[]`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/agent/src/guardrails.test.ts`:
 
@@ -1584,12 +1584,12 @@ describe("composeInstructions", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./guardrails"" and "./prompt".
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `packages/agent/src/guardrails.ts`:
 
@@ -1678,12 +1678,12 @@ export function composeInstructions(persona: Persona, store: StoreFacts): string
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 10 files, 49 tests. The `it.each` block contributes 9.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/agent
