@@ -308,10 +308,10 @@ when it starts, so it can use what the earlier phases taught us.
 
 | ID | Question | Recommendation | Needed by |
 |---|---|---|---|
-| D1 | Reference store: Medusa v2 or a from-scratch backend? | Medusa v2 | Phase 5 |
+| D1 | Reference store: Medusa v2 or a from-scratch backend? | **Decided: Medusa v2** (ADR-006) | — |
 | D2 | Hosting | **Decided: VPS + Docker Compose** (DL7) | — |
 | D3 | Default LLM provider and fallback | Candidates are **Gemini, OpenAI and Claude** (owner leans Gemini for Sinhala/Tamil/Singlish). Pick the primary and fallback from Phase 2 language and tool-use evals, plus cost per conversation | Phase 2 |
-| D4 | Pilot client confirmed? Their languages, delivery regions and COD share | — | Phase 5 |
+| D4 | Pilot client confirmed? Their languages, delivery regions and COD share | **Not confirmed (2026-10-09).** Reference store built generically: LKR, English/Sinhala/Tamil, PayHere + COD, island-wide flat delivery (ADR-006). Revisit when a pilot signs | Phase 5 |
 | D5 | Product name and package scope | Not finalised. `ACE` / `@ace/*` is a working placeholder; renaming is a find-and-replace until Phase 3 | Before public launch |
 | D6 | Business model: per-store subscription, per-conversation, or revenue share | Subscription + included conversations | Phase 8 |
 
