@@ -5,6 +5,7 @@
 #   reset  stop, drop the database, then start (fresh seed, new keys)
 #   stop   stop the backend (Postgres keeps running: scripts/test-postgres.sh stop)
 # Keys and fixture IDs: $STATE/seed-output.json (holds a secret key; never commit it).
+# ACE_STORE_PG_URL=postgres://user:pass@host:port/postgres uses that server instead of the throwaway one (CI).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,6 +28,11 @@ stop() {
   echo "stopped reference store backend"
 }
 
+postgres_url() {
+  if [ -n "${ACE_STORE_PG_URL:-}" ]; then echo "$ACE_STORE_PG_URL"; return; fi
+  "$ROOT/scripts/test-postgres.sh" start | sed 's/^ACE_TEST_DATABASE_URL=//'
+}
+
 wait_for() {
   for _ in $(seq 1 120); do curl -fsS "$1" >/dev/null 2>&1 && return 0; sleep 1; done
   echo "timed out waiting for $1 (logs: $STATE/backend.log)" >&2
@@ -37,7 +43,7 @@ start() {
   mkdir -p "$STATE"
   stop >/dev/null
   local base url
-  base="$("$ROOT/scripts/test-postgres.sh" start | sed 's/^ACE_TEST_DATABASE_URL=//')"
+  base="$(postgres_url)"
   url="${base%/postgres}/$DB"
   [ -d "$BACKEND/node_modules" ] || (cd "$BACKEND" && npm ci --no-audit --no-fund --loglevel=error)
 
@@ -64,7 +70,7 @@ start() {
 reset() {
   stop >/dev/null
   local base
-  base="$("$ROOT/scripts/test-postgres.sh" start | sed 's/^ACE_TEST_DATABASE_URL=//')"
+  base="$(postgres_url)"
   psql "$base" -qc "DROP DATABASE IF EXISTS $DB WITH (FORCE)"
   rm -f "$STATE/seed-output.json"
   start

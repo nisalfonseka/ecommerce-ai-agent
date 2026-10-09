@@ -220,7 +220,7 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
 
 ### Task 10: CI and docs
 
-- [ ] CI job `medusa`: Postgres service, `npm ci` in `apps/reference-store/backend`, migrate, seed, start, then the adapter conformance (`ACE_REQUIRE_MEDUSA_TESTS=1`) and the engine replay run. Nightly schedule for the same job.
+- [x] CI job `medusa`: Postgres service, `npm ci` in `apps/reference-store/backend`, migrate, seed, start, then the adapter conformance (`ACE_REQUIRE_MEDUSA_TESTS=1`) and the engine replay run. Nightly schedule for the same job.
 - [ ] Docs:
   - AGENTS.md: status, commands, plan link
   - `docs/workflow.md` §E (as built, ADR-007) and §F
