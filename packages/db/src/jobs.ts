@@ -30,8 +30,20 @@ export const JobPayloadSchemas = {
 
 export type JobPayload<N extends JobName> = z.infer<(typeof JobPayloadSchemas)[N]>;
 
+/** Window used when `debounceSeconds` is omitted. */
+export const DEFAULT_DEBOUNCE_SECONDS = 30;
+
 export interface JobQueue {
-  /** Validates the payload; `debounceKey` collapses bursts into one job per key per `debounceSeconds`. */
+  /**
+   * Validates the payload, then enqueues it.
+   *
+   * `debounceKey` contract (pg-boss debounce): a window yields a leading job plus ONE trailing job that
+   * carries the second send's payload; later sends in the window are dropped. So only debounce when every
+   * payload sent under the same key is equivalent (e.g. `sync.product` for one product). Never debounce a
+   * payload that can differ in a meaningful field (a later `full: true` would be lost). The key is global
+   * to the queue, so it must embed the tenant, store and entity identity (e.g. `${storeId}:${productId}`).
+   * `debounceSeconds` defaults to DEFAULT_DEBOUNCE_SECONDS (30).
+   */
   send<N extends JobName>(
     name: N,
     data: JobPayload<N>,
@@ -114,7 +126,13 @@ export async function openJobQueue(
     async send(name, data, options) {
       const payload = JobPayloadSchemas[name].parse(data);
       if (options?.debounceKey) {
-        await boss.sendDebounced(name, payload, null, options.debounceSeconds ?? 30, options.debounceKey);
+        await boss.sendDebounced(
+          name,
+          payload,
+          null,
+          options.debounceSeconds ?? DEFAULT_DEBOUNCE_SECONDS,
+          options.debounceKey,
+        );
       } else {
         await boss.send(name, payload);
       }
