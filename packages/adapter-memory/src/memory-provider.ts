@@ -105,6 +105,26 @@ export class MemoryCommerceProvider implements CommerceProvider {
     this.seed.stock[variantId] = quantity;
   }
 
+  /** Test hook: the store stops selling a product (getProduct returns null, listProducts omits it). */
+  removeProduct(productId: string): void {
+    const index = this.seed.products.findIndex((product) => product.id === productId);
+    if (index < 0) throw new CommerceError("NOT_FOUND", "Product not found", { productId });
+    this.seed.products.splice(index, 1);
+  }
+
+  /** Test hook: changes a variant price, keeps priceRange valid and bumps the product's updatedAt. */
+  setPrice(variantId: string, amount: number): void {
+    const { product, variant } = this.requireVariant(variantId);
+    variant.price = { ...variant.price, amount };
+    const amounts = product.variants.map((candidate) => candidate.price.amount);
+    const currency = product.priceRange.min.currency;
+    product.priceRange = {
+      min: { amount: Math.min(...amounts), currency },
+      max: { amount: Math.max(...amounts), currency },
+    };
+    product.updatedAt = this.now().toISOString();
+  }
+
   // catalog ---------------------------------------------------------------
 
   async searchProducts(input: SearchProductsInput): Promise<SearchProductsResult> {

@@ -1,0 +1,23 @@
+{
+  "name": "@ace/search",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ace/contracts": "workspace:*",
+    "@ace/db": "workspace:*",
+    "drizzle-orm": "^0.45.3"
+  },
+  "devDependencies": {
+    "@ace/adapter-memory": "workspace:*",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}
