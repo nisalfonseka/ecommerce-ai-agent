@@ -1,0 +1,53 @@
+{
+  "$comment": "Owner-maintained (decision E2). USD micro-dollars per 1M tokens, from each provider's pricing page; fill in source and checkedOn when you set a price. null means unknown: cost is not recorded and budgets cannot trigger for that model. Bots may only use models listed here.",
+  "models": {
+    "demo:search-only": {
+      "inputPerMTokUsdMicros": 0,
+      "outputPerMTokUsdMicros": 0,
+      "source": "built-in demo model",
+      "checkedOn": "2026-10-09"
+    },
+    "google:gemini-flash-latest": {
+      "inputPerMTokUsdMicros": null,
+      "outputPerMTokUsdMicros": null,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checkedOn": null
+    },
+    "google:gemini-flash-lite-latest": {
+      "inputPerMTokUsdMicros": null,
+      "outputPerMTokUsdMicros": null,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checkedOn": null
+    },
+    "google:gemini-pro-latest": {
+      "inputPerMTokUsdMicros": null,
+      "outputPerMTokUsdMicros": null,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing",
+      "checkedOn": null
+    },
+    "openai:gpt-5.5": {
+      "inputPerMTokUsdMicros": null,
+      "outputPerMTokUsdMicros": null,
+      "source": "https://openai.com/api/pricing",
+      "checkedOn": null
+    },
+    "openai:gpt-5.4-mini": {
+      "inputPerMTokUsdMicros": null,
+      "outputPerMTokUsdMicros": null,
+      "source": "https://openai.com/api/pricing",
+      "checkedOn": null
+    },
+    "anthropic:claude-sonnet-5-5": {
+      "inputPerMTokUsdMicros": null,
+      "outputPerMTokUsdMicros": null,
+      "source": "https://www.anthropic.com/pricing",
+      "checkedOn": null
+    },
+    "anthropic:claude-haiku-5-5": {
+      "inputPerMTokUsdMicros": null,
+      "outputPerMTokUsdMicros": null,
+      "source": "https://www.anthropic.com/pricing",
+      "checkedOn": null
+    }
+  }
+}

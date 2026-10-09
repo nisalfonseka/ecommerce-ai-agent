@@ -118,6 +118,7 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
       },
       logger,
       modelRetries: 0,
+      prices: new Map(),
       visitorLimiter: createRateLimiter({ limitPerMinute: 1000 }),
       ipLimiter: createRateLimiter({ limitPerMinute: 1000 }),
     });

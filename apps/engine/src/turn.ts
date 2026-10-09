@@ -20,6 +20,7 @@ import {
   getConversation,
   loadMessages,
   type MessageInput,
+  monthToDateCostMicros,
   recordToolCalls,
   recordTurn,
   releaseLease,
@@ -32,6 +33,7 @@ import type { Logger } from "pino";
 import type { createConversationTokens } from "./auth/conversation-token";
 import type { WidgetIdentity } from "./auth/widget";
 import { parsePersona, parseSession, parseStoreFacts } from "./bot-config";
+import { budgetState, chooseModel, costMicros, type ModelPrices } from "./budget";
 import { toModelMessages } from "./history";
 import type { ErrorCode } from "./http-errors";
 import type { ProviderFactory } from "./providers";
@@ -41,6 +43,8 @@ import type { Emit } from "./sse";
 const DEFAULT_LEASE_MS = 90_000;
 export const SCRUBBED_PRICE = "[see the product card]";
 const APOLOGY = "Sorry, I can't answer right now. Please try again in a moment.";
+const CONTACT_ONLY =
+  "Sorry, the chat assistant is not available right now. Please contact the store directly for help.";
 
 export interface TurnDeps {
   db: Db;
@@ -50,6 +54,8 @@ export interface TurnDeps {
   models: (spec: string) => LanguageModel;
   logger: Logger;
   leaseMs?: number;
+  /** Owner-maintained price table (E2); unknown prices mean unknown cost, so budgets cannot trigger. */
+  prices: ModelPrices;
   /** Provider retries per model before falling back (default: the agent's, i.e. once). */
   modelRetries?: number;
   now?: () => number;
@@ -197,6 +203,21 @@ export async function runPreparedTurn(
   let model = prepared.bot.model;
 
   try {
+    const spent = await withTenant(deps.db, tenantId, (tx) =>
+      monthToDateCostMicros(tx, prepared.bot.id, new Date(now())),
+    );
+    const state = budgetState(spent, prepared.bot);
+    if (state !== "ok")
+      deps.logger.warn({ botId: prepared.bot.id, state, spent }, "bot budget threshold reached");
+    const choice = chooseModel(prepared.bot, state);
+    if ("contactOnly" in choice) {
+      await answerContactOnly(deps, prepared, request, turnId, now() - started);
+      released = true;
+      emit("reply", { text: CONTACT_ONLY, ui: [], cartId: request.cartId ?? prepared.conversation.cartId });
+      emit("done", {});
+      return;
+    }
+    model = choice.model;
     const stored = await withTenant(deps.db, tenantId, (tx) => loadMessages(tx, conversationId));
     const history: ModelMessage[] = toModelMessages(stored.rows);
     const ctx = createToolContext({
@@ -268,7 +289,7 @@ export async function runPreparedTurn(
         promptVersion: result.promptVersion,
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
-        costUsdMicros: null,
+        costUsdMicros: costMicros(deps.prices, model, result.usage),
         latencyMs: now() - started,
         toolNames: ctx.toolLog.map((entry) => entry.name),
         outcomes: outcomesOf(ctx, result, scrubbed),
@@ -291,4 +312,48 @@ export async function runPreparedTurn(
       );
     }
   }
+}
+
+/** Hard budget cap: store the exchange and a trace, call no model (spec §4.7 "contact us" mode). */
+async function answerContactOnly(
+  deps: TurnDeps,
+  prepared: PreparedTurn,
+  request: TurnRequest,
+  turnId: string,
+  latencyMs: number,
+): Promise<void> {
+  const { tenantId } = prepared.widget;
+  const conversationId = prepared.conversation.id;
+  await withTenant(deps.db, tenantId, async (tx) => {
+    const stored = await loadMessages(tx, conversationId);
+    await appendMessages(tx, tenantId, conversationId, stored.nextSeq, [
+      {
+        kind: "model",
+        payload: { role: "user", content: request.message },
+        display: { role: "user", text: request.message },
+      },
+      {
+        kind: "model",
+        payload: { role: "assistant", content: CONTACT_ONLY },
+        display: { role: "assistant", text: CONTACT_ONLY, ui: [] },
+      },
+    ]);
+    await recordTurn(tx, tenantId, {
+      conversationId,
+      botId: prepared.bot.id,
+      turnId,
+      model: "none",
+      promptVersion: "none",
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsdMicros: 0,
+      latencyMs,
+      toolNames: [],
+      outcomes: ["budget_contact_only"],
+      regenerated: false,
+      ungroundedCount: 0,
+      error: null,
+    });
+    await releaseLease(tx, conversationId);
+  });
 }

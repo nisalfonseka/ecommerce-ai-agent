@@ -26,17 +26,20 @@ export async function createTestDatabase(): Promise<TestDatabase | null> {
     return null;
   }
   const name = `ace_test_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  const owner = new URL(base);
+  owner.pathname = `/${name}`;
+  // Test files run in parallel, and ace_app is cluster-wide: concurrent ALTER ROLE fails with "tuple
+  // concurrently updated". An advisory lock on the shared base database serialises the setup.
   const admin = new pg.Client({ connectionString: base });
   await admin.connect();
   try {
+    await admin.query("select pg_advisory_lock(7731001)");
     await admin.query(`CREATE DATABASE ${name}`);
+    await runMigrations(owner.toString(), TEST_APP_PASSWORD);
   } finally {
+    await admin.query("select pg_advisory_unlock(7731001)").catch(() => undefined);
     await admin.end();
   }
-
-  const owner = new URL(base);
-  owner.pathname = `/${name}`;
-  await runMigrations(owner.toString(), TEST_APP_PASSWORD);
   const app = new URL(owner);
   app.username = "ace_app";
   app.password = TEST_APP_PASSWORD;

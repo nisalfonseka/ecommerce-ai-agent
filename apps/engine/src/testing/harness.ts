@@ -12,6 +12,7 @@ import type { TestDatabase } from "@ace/db/testing";
 import type { LanguageModel } from "ai";
 import { createApp } from "../app";
 import { createConversationTokens } from "../auth/conversation-token";
+import { loadModelPrices } from "../budget";
 import { createLogger } from "../log";
 import { createProviderFactory } from "../providers";
 import { createRateLimiter } from "../rate-limit";
@@ -43,7 +44,7 @@ export async function createEngineHarness(testDb: TestDatabase) {
   const models: Record<string, LanguageModel> = {};
   const providers = createProviderFactory({ idempotencyStore: (t) => createPgIdempotencyStore(pool.db, t) });
   const { tenantId } = await createTenant(pool.db, { name: "Harness" });
-  const { key, storeId } = await withTenant(pool.db, tenantId, async (tx) => {
+  const { key, storeId, botId } = await withTenant(pool.db, tenantId, async (tx) => {
     const store = await createStore(tx, tenantId, { platform: "memory", currency: "LKR" });
     const bot = await createBot(tx, tenantId, {
       storeId: store.id,
@@ -55,7 +56,7 @@ export async function createEngineHarness(testDb: TestDatabase) {
       budgetHardUsdMicros: 2_000_000,
     });
     const issued = await issueWidgetKey(tx, tenantId, { botId: bot.id, allowedOrigins: [TEST_ORIGIN] });
-    return { key: issued.key, storeId: store.id };
+    return { key: issued.key, storeId: store.id, botId: bot.id };
   });
   const deps = {
     db: pool.db,
@@ -68,6 +69,22 @@ export async function createEngineHarness(testDb: TestDatabase) {
     },
     logger,
     modelRetries: 0,
+    prices: loadModelPrices({
+      models: {
+        "test:primary": {
+          inputPerMTokUsdMicros: 300_000,
+          outputPerMTokUsdMicros: 2_500_000,
+          source: "test",
+          checkedOn: "2026-10-09",
+        },
+        "test:cheap": {
+          inputPerMTokUsdMicros: 100_000,
+          outputPerMTokUsdMicros: 400_000,
+          source: "test",
+          checkedOn: "2026-10-09",
+        },
+      },
+    }),
     visitorLimiter: createRateLimiter({ limitPerMinute: 1000 }),
     ipLimiter: createRateLimiter({ limitPerMinute: 1000 }),
   };
@@ -84,6 +101,7 @@ export async function createEngineHarness(testDb: TestDatabase) {
     app,
     pool,
     tenantId,
+    botId,
     models,
     provider: () => providers(tenantId, { id: storeId, platform: "memory" }),
     post: (path: string, body: unknown) =>

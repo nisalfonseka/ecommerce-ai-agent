@@ -28,7 +28,7 @@
 | ID | Question | Recommendation | Needed by |
 |---|---|---|---|
 | E1 | *(provisional: built with the recommendation, ADR-004)* The spec wants prices/links checked before the shopper sees them (§C7), and also p95 first token < 2 s (§4.7). Live token streaming cannot satisfy the first rule. | **Buffered reply + live status events.** Stream `status` events while tools run ("Searching dresses…", well under 2 s), then send the validated reply and its UI parts. Measure real latency on staging. Revisit sentence-level streaming with retraction only if shoppers notice. Record as ADR-004. | Task 7 |
-| E2 | Budget enforcement needs a price per model. Prices change and differ by provider. | An owner-maintained `model-prices.json` (USD per 1M input/output tokens, with source URL and date). Bots can only use models listed there. Soft cap → the bot's cheap model; hard cap → "contact us" reply. Merchant alert at 80% (logged in Phase 3; notifications in Phase 7). | Task 9 |
+| E2 | *(provisional: built with the recommendation; prices left null)* Budget enforcement needs a price per model. Prices change and differ by provider. | An owner-maintained `model-prices.json` (USD per 1M input/output tokens, with source URL and date). Bots can only use models listed there. Soft cap → the bot's cheap model; hard cap → "contact us" reply. Merchant alert at 80% (logged in Phase 3; notifications in Phase 7). | Task 9 |
 
 ## Review Focus
 
@@ -408,13 +408,21 @@ The host site sends `cartId` with each message. If a tool created or replaced th
 - `startTelemetry(config)`: when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, start the OTel Node SDK. `runTurn` gets `telemetry: { isEnabled: true, recordInputs: false, recordOutputs: false }` so prompts and replies (PII) never leave in spans.
 - Admin validation: a bot's `model`, `cheapModel` and `fallbackModel` must exist in the price table.
 
-- [ ] **Step 1: Failing tests.**
+**As built** (E2 not yet answered; built with the recommendation):
+- `model-prices.json` lists the candidate models with `null` prices. Prices are never invented: the owner fills them in from each provider's pricing page.
+- A `null` price means the cost is recorded as unknown and budgets cannot trigger for that model, so nothing blocks the owner while there are no paid keys.
+- `budgetState` → `chooseModel`: past the soft cap → the bot's cheap model; past the hard cap → a contact-only reply with **no model call**, stored with outcome `budget_contact_only`. Alert (≥ 80% of soft) is logged on each turn.
+- Each turn's trace and usage row carry `costMicros` (integer, rounded up).
+- **Deferred:** the optional OpenTelemetry exporter. Per-turn traces are already in Postgres (`turn_traces`), and there is no OTLP endpoint to send to yet. Add `@opentelemetry/sdk-node` when the owner picks one.
+- The test harness serialises test-database setup with an advisory lock on the base database. Parallel `ALTER ROLE ace_app` statements failed with "tuple concurrently updated".
+
+- [x] **Step 1: Failing tests.**
   - Cost arithmetic is integer and rounds up.
   - An unknown model → null cost, and bot creation rejects it.
   - The state transitions at 80% / 100% soft / 100% hard.
   - Soft → the cheap model is used for the turn; hard → a static "contact us" reply without calling any model.
   - The turn trace stores the cost.
-- [ ] **Step 2: Implement.** The owner fills `model-prices.json` from the providers' pricing pages; the plan ships it with the structure and `"checkedOn": null` placeholders, and startup refuses bots whose models have no price. Checks; commit `feat(engine): usage cost, budgets and optional OpenTelemetry`.
+- [x] **Step 2: Implement.** The owner fills `model-prices.json` from the providers' pricing pages; the plan ships it with the structure and `"checkedOn": null` placeholders, and startup refuses bots whose models have no price. Checks; commit `feat(engine): usage cost, budgets and optional OpenTelemetry`.
 
 ---
 
