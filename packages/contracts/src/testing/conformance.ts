@@ -276,6 +276,12 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
         writeKey(),
       );
       expect(merged.attributes).toMatchObject({ [ATTRIBUTION_ATTRIBUTE]: "conv_existing", channel: "web" });
+      const overwritten = await provider.updateCartAttributes(
+        cart.id,
+        { attributes: { [ATTRIBUTION_ATTRIBUTE]: "conv_new" } },
+        writeKey(),
+      );
+      expect(overwritten.attributes).toMatchObject({ [ATTRIBUTION_ATTRIBUTE]: "conv_new", channel: "web" });
       await expectCommerceError(
         provider.updateCartAttributes("no-such-cart", { attributes: { channel: "web" } }, writeKey()),
         "NOT_FOUND",

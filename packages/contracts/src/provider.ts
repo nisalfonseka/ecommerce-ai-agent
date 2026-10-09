@@ -58,7 +58,10 @@ export interface CommerceProvider {
   addCartLines(cartId: string, input: AddCartLinesInput, opts: WriteOptions): Promise<Cart>;
   /** cart.write — quantity 0 removes the line. */
   updateCartLine(cartId: string, input: UpdateCartLineInput, opts: WriteOptions): Promise<Cart>;
-  /** cart.write — merges attributes into the cart (e.g. tag the host site's cart with ace_conversation_id). */
+  /**
+   * cart.write — merges attributes into the cart (e.g. tag the host site's cart with ace_conversation_id).
+   * NOT_FOUND (cart), INVALID_INPUT.
+   */
   updateCartAttributes(cartId: string, input: UpdateCartAttributesInput, opts: WriteOptions): Promise<Cart>;
 
   /** checkout.handoff — CONFLICT for an empty cart; OUT_OF_STOCK if a line can no longer be fulfilled. */
