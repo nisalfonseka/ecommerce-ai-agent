@@ -161,10 +161,16 @@ REVOKE ALL ON FUNCTION resolve_widget_key(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION resolve_widget_key(text) TO ace_app;
 ```
 
-Final design for the lookup: `widget_key_lookup(key_hash pk, tenant_id, bot_id, allowed_origins, revoked_at)` has no RLS and no grants to `ace_app`. Admin repo writes keep it in sync inside the same transaction. `resolve_widget_key` reads only this table. Record the reasoning in ADR-005.
+Final design for the lookup (as built): `widget_key_lookup(key_hash pk, tenant_id, bot_id, allowed_origins, revoked_at)` has no RLS and no grants to `ace_app`. A `SECURITY DEFINER` trigger on `widget_keys` keeps it in sync, so `ace_app` never writes it directly. `resolve_widget_key` reads only this table. Record the reasoning in ADR-005.
 
-- [ ] **Step 1: `scripts/test-postgres.sh`.** `initdb` into `$TMPDIR/ace-pg`, start on port 54329 with `pg_ctl`, print `ACE_TEST_DATABASE_URL=postgres://$USER@localhost:54329/postgres`. Idempotent; `stop` subcommand.
-- [ ] **Step 2: Failing tests** in `src/rls.test.ts` (as `ace_app`):
+
+**As built:**
+- Policies use `nullif(current_setting('app.tenant_id', true), '')::uuid`. After a transaction-local `set_config`, a pooled connection reads the setting as `''`, which would otherwise raise an error instead of matching nothing.
+- Role creation tolerates parallel migrations, because roles are cluster-wide.
+- `turbo.json` declares `ACE_TEST_DATABASE_URL` and `ACE_REQUIRE_DB_TESTS` on the `test` task, so strict env mode passes them through and they are part of the cache key.
+
+- [x] **Step 1: `scripts/test-postgres.sh`.** `initdb` into `$TMPDIR/ace-pg`, start on port 54329 with `pg_ctl`, print `ACE_TEST_DATABASE_URL=postgres://$USER@localhost:54329/postgres`. Idempotent; `stop` subcommand.
+- [x] **Step 2: Failing tests** in `src/rls.test.ts` (as `ace_app`):
   1. Rows inserted for tenant A are invisible under tenant B, for **every** tenant table (iterate the schema).
   2. An insert with tenant B's `tenant_id` while in tenant A's context fails (`WITH CHECK`).
   3. Without `withTenant` (plain query on the pool), selects return 0 rows and inserts fail.
@@ -173,9 +179,9 @@ Final design for the lookup: `widget_key_lookup(key_hash pk, tenant_id, bot_id, 
   6. `set_config` is transaction-local: a pooled connection reused after `withTenant` has no tenant.
 
   Plus `src/client.test.ts`: `withTenant` returns `fn`'s value and rolls back when it throws.
-- [ ] **Step 3: Implement** the schema, `drizzle-kit generate` → `0000_init.sql`, hand-write `0001_rls.sql`, `runMigrations`, `createTestDatabase`.
-- [ ] **Step 4: CI.** Add a `postgres:16` service to `ci.yml` with `ACE_TEST_DATABASE_URL`, and a step that fails if the db tests report skipped (`ACE_REQUIRE_DB_TESTS=1` makes `createTestDatabase` throw instead of returning null).
-- [ ] **Step 5:** ADR-005 (roles, forced RLS, transaction-local `app.tenant_id`, lookup table). Run checks; commit `feat(db): schema, forced RLS and withTenant`.
+- [x] **Step 3: Implement** the schema, `drizzle-kit generate` → `0000_init.sql`, hand-write `0001_rls.sql`, `runMigrations`, `createTestDatabase`.
+- [x] **Step 4: CI.** Add a `postgres:16` service to `ci.yml` with `ACE_TEST_DATABASE_URL`, and a step that fails if the db tests report skipped (`ACE_REQUIRE_DB_TESTS=1` makes `createTestDatabase` throw instead of returning null).
+- [x] **Step 5:** ADR-005 (roles, forced RLS, transaction-local `app.tenant_id`, lookup table). Run checks; commit `feat(db): schema, forced RLS and withTenant`.
 
 ---
 
