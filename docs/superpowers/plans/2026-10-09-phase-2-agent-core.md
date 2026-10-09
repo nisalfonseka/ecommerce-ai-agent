@@ -2037,7 +2037,7 @@ git commit -m "feat(agent): add runTurn with tool loop, grounding retry and mode
   - `runCase(evalCase, options: { model: LanguageModel; modelSpec: string; persona: Persona; store: StoreFacts }): Promise<CaseResult>`
   - `summarize(results: CaseResult[]): ModelSummary[]`, `renderMarkdown(results, summaries): string`
 
-- [ ] **Step 1: Create the package shell**
+- [x] **Step 1: Create the package shell**
 
 `packages/evals/package.json`:
 
@@ -2066,7 +2066,7 @@ pnpm --filter @ace/evals add @ace/agent@workspace:* @ace/adapter-memory@workspac
 pnpm --filter @ace/evals add -D vitest@^5.0.3 typescript tsx
 ```
 
-- [ ] **Step 2: Write `types.ts`**
+- [x] **Step 2: Write `types.ts`**
 
 `packages/evals/src/types.ts`:
 
@@ -2141,7 +2141,7 @@ export interface CaseResult {
 }
 ```
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 `packages/evals/src/scorers.test.ts`:
 
@@ -2331,12 +2331,12 @@ describe("report", () => {
 });
 ```
 
-- [ ] **Step 4: Run tests to verify they fail**
+- [x] **Step 4: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/evals test`
 Expected: FAIL with "Failed to resolve import "./scorers"" (and the other modules).
 
-- [ ] **Step 5: Implement**
+- [x] **Step 5: Implement**
 
 `packages/evals/src/scorers.ts`:
 
@@ -2583,12 +2583,12 @@ export function renderMarkdown(results: CaseResult[], summaries: ModelSummary[])
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/evals test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 3 files, 14 tests. (`detectScript` contributes 5 via `it.each`.)
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/evals pnpm-lock.yaml

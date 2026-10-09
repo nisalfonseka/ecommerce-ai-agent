@@ -1,0 +1,22 @@
+{
+  "name": "@ace/evals",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "evals": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@ace/adapter-memory": "workspace:*",
+    "@ace/agent": "workspace:*",
+    "@ace/contracts": "workspace:*",
+    "ai": "^7.0.133"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}
