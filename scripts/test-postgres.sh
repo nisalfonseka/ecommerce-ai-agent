@@ -20,6 +20,11 @@ case "${1:-start}" in
     if ! "${RUN_AS[@]}" "$BIN/pg_ctl" -D "$DIR/data" status >/dev/null 2>&1; then
       "${RUN_AS[@]}" "$BIN/pg_ctl" -D "$DIR/data" -l "$DIR/log" -o "-p $PORT -k $DIR" -w start >/dev/null
     fi
+    # Migrations create the vector extension; fail early with an install hint if the cluster lacks pgvector.
+    if ! "${RUN_AS[@]}" "$BIN/psql" -h "$DIR" -p "$PORT" -U postgres -d postgres -qc "create extension if not exists vector" >/dev/null 2>&1; then
+      echo "pgvector is missing: brew install pgvector (macOS) or apt-get install postgresql-16-pgvector (Debian/Ubuntu)" >&2
+      exit 1
+    fi
     echo "ACE_TEST_DATABASE_URL=postgres://postgres@localhost:$PORT/postgres"
     ;;
   stop)

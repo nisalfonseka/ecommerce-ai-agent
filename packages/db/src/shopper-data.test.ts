@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 import * as schema from "./schema";
 import { SHOPPER_DATA_TABLES } from "./shopper-data";
 
+/** Billing-like facts (ids, totals); the conversation link is ON DELETE SET NULL, so a purge needs no entry. */
+const BILLING_ONLY = new Set(["attributed_orders"]);
+
 const tables = Object.values(schema as Record<string, unknown>).filter(
   (value): value is PgTable => value instanceof PgTable,
 );
@@ -12,7 +15,8 @@ describe("SHOPPER_DATA_TABLES", () => {
   it("lists every table that holds conversation data, for the purge and export jobs", () => {
     const withConversation = tables
       .filter((table) => "conversationId" in getTableColumns(table))
-      .map((table) => getTableName(table));
+      .map((table) => getTableName(table))
+      .filter((name) => !BILLING_ONLY.has(name));
     const registered = SHOPPER_DATA_TABLES.map((entry) => entry.table);
     for (const name of [...withConversation, "conversations"]) expect(registered, name).toContain(name);
   });

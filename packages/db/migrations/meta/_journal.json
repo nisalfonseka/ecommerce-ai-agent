@@ -15,6 +15,20 @@
       "when": 1791524307634,
       "tag": "0001_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791551788542,
+      "tag": "0002_phase6",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791551789542,
+      "tag": "0003_phase6_rls",
+      "breakpoints": true
     }
   ]
 }

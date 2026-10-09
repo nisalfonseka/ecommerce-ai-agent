@@ -1,12 +1,70 @@
 import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDb, type Db, withTenant } from "./client";
+import { createDb, type Db, type Tx, withTenant } from "./client";
 import * as s from "./schema";
 import { TENANT_TABLES } from "./schema";
 import { createTestDatabase, type TestDatabase } from "./testing";
 
 const testDb = await createTestDatabase();
+
+/** One row per Phase 6 table, so the isolation test sees every table populated for both tenants. */
+async function insertPhase6Rows(tx: Tx, tenantId: string, storeId: string, conversationId: string) {
+  await tx.insert(s.catalogProducts).values({
+    tenantId,
+    storeId,
+    productId: "p1",
+    handle: "p1",
+    title: "Tee",
+    description: "A tee",
+    currency: "LKR",
+    minPrice: 1000,
+    maxPrice: 1000,
+    availability: "in_stock",
+    searchPrimary: "tee",
+    searchSecondary: "",
+    contentHash: "h",
+  });
+  await tx.insert(s.catalogVariants).values({
+    tenantId,
+    storeId,
+    productId: "p1",
+    variantId: "v1",
+    title: "M",
+    options: {},
+    optionKeys: ["size:m"],
+    price: 1000,
+    currency: "LKR",
+    availability: "in_stock",
+  });
+  await tx.insert(s.catalogSyncState).values({ tenantId, storeId, status: "never" });
+  const [doc] = await tx
+    .insert(s.knowledgeDocuments)
+    .values({ tenantId, storeId, title: "Returns", sourceType: "markdown", content: "c", contentHash: "h" })
+    .returning();
+  if (!doc) throw new Error("document not created");
+  await tx.insert(s.knowledgeChunks).values({
+    tenantId,
+    storeId,
+    documentId: doc.id,
+    seq: 0,
+    text: "Returns within 14 days",
+    tokenEstimate: 5,
+  });
+  await tx
+    .insert(s.webhookEvents)
+    .values({ tenantId, storeId, eventId: "e1", type: "product.updated", payload: {} });
+  await tx.insert(s.attributedOrders).values({
+    tenantId,
+    storeId,
+    orderId: "o1",
+    orderNumber: "1001",
+    conversationId,
+    totalAmount: 1000,
+    currency: "LKR",
+    placedAt: new Date(),
+  });
+}
 
 async function seedTenant(db: Db, name: string): Promise<{ tenantId: string; keyHash: string }> {
   const tenantId = randomUUID();
@@ -75,6 +133,7 @@ async function seedTenant(db: Db, name: string): Promise<{ tenantId: string; key
       fingerprint: "f",
       status: "completed",
     });
+    await insertPhase6Rows(tx, tenantId, store.id, conversationId);
   });
   return { tenantId, keyHash };
 }
@@ -159,6 +218,22 @@ describe.skipIf(testDb === null)("row-level security (as ace_app)", () => {
       tx.update(s.widgetKeys).set({ revokedAt: new Date() }).where(sql`key_hash = ${b.keyHash}`),
     );
     expect((await app.db.execute(sql`select * from resolve_widget_key(${b.keyHash})`)).rows).toEqual([]);
+  });
+
+  it("rejects Phase 6 rows that carry another tenant's id", async () => {
+    const [aStore] = await withTenant(app.db, a.tenantId, (tx) => tx.select().from(s.stores));
+    if (!aStore) throw new Error("no store");
+    await expect(
+      withTenant(app.db, a.tenantId, (tx) =>
+        tx.insert(s.webhookEvents).values({
+          tenantId: b.tenantId,
+          storeId: aStore.id,
+          eventId: "x",
+          type: "t",
+          payload: {},
+        }),
+      ),
+    ).rejects.toThrow();
   });
 
   it("refuses a tenant id that is not a UUID before querying", async () => {

@@ -4,7 +4,7 @@ name: ace
 
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       # The owner runs migrations only; the engine connects as ace_app, which cannot bypass RLS (ADR-005).
@@ -64,7 +64,7 @@ services:
       - engine
 
   backup:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/backup.sh"]
     environment:
