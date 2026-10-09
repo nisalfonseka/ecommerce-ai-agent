@@ -1,0 +1,25 @@
+{
+  "name": "@ace/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ace/contracts": "workspace:*",
+    "@ai-sdk/provider": "^4.0.25",
+    "ai": "^7.0.133",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@ace/adapter-memory": "workspace:*",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}
