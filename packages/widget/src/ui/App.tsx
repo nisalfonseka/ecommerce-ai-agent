@@ -1,5 +1,5 @@
 import type { UiPart } from "@ace/agent";
-import { useEffect, useReducer, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
 import { ApiError, type ChatEvent, type WidgetApi } from "../api";
 import { emitCartUpdated } from "../host";
 import { initialState, reduce } from "../state";
@@ -55,11 +55,18 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
   stateRef.current = state;
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+  const close = () => {
+    returnFocus.current = true;
+    setOpen(false);
+  };
 
   useEffect(() => {
     bindHost?.({
       open: () => setOpen(true),
-      close: () => setOpen(false),
+      close: () => close(),
       setCart: (cartId) => dispatch({ type: "set_cart", cartId }),
     });
   }, [bindHost]);
@@ -81,8 +88,17 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
     listRef.current?.scrollTo?.({ top: listRef.current.scrollHeight });
   }, [state.messages.length, state.status]);
 
-  useEffect(() => {
-    if (open && consent) inputRef.current?.focus();
+  // Keyboard users: focus moves into the dialog when it opens and back to the launcher when it closes.
+  useLayoutEffect(() => {
+    if (open) {
+      const target = consent
+        ? inputRef.current
+        : panelRef.current?.querySelector<HTMLButtonElement>(".consent button");
+      (target ?? panelRef.current)?.focus();
+    } else if (returnFocus.current) {
+      returnFocus.current = false;
+      launcherRef.current?.focus();
+    }
   }, [open, consent]);
 
   const announceCart = (cartId: string | null, ui: UiPart[], previous: string | null) => {
@@ -160,94 +176,101 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
     void send(text);
   };
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        class="launcher"
-        aria-label="Open shopping assistant"
-        onClick={() => setOpen(true)}
-      >
-        <span aria-hidden="true">💬</span>
-      </button>
-    );
-  }
+  // The launcher stays mounted (hidden while open) so focus can return to it on close.
+  const launcher = (
+    <button
+      type="button"
+      class="launcher"
+      ref={launcherRef}
+      hidden={open}
+      aria-label="Open shopping assistant"
+      onClick={() => setOpen(true)}
+    >
+      <span aria-hidden="true">💬</span>
+    </button>
+  );
+  if (!open) return launcher;
 
   return (
-    <div
-      class="panel"
-      role="dialog"
-      aria-label="Shopping assistant"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") setOpen(false);
-      }}
-    >
-      <header>
-        <span>Shopping assistant</span>
-        <button type="button" class="close" aria-label="Close" onClick={() => setOpen(false)}>
-          ×
-        </button>
-      </header>
-      <div class="messages" aria-live="polite" ref={listRef}>
-        {state.messages.map((message) => (
-          <div key={message.id} class={`message ${message.role}`}>
-            {message.text && <p>{message.text}</p>}
-            {message.ui.map((part, index) => (
-              <Card
-                key={`${message.id}-${index}`}
-                part={part}
-                busy={busy}
-                onAction={(t, i) => void runAction(t, i)}
-              />
-            ))}
+    <>
+      {launcher}
+      <div
+        class="panel"
+        role="dialog"
+        aria-label="Shopping assistant"
+        tabIndex={-1}
+        ref={panelRef}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") close();
+        }}
+      >
+        <header>
+          <span>Shopping assistant</span>
+          <button type="button" class="close" aria-label="Close" onClick={close}>
+            ×
+          </button>
+        </header>
+        <div class="messages" aria-live="polite" ref={listRef}>
+          {state.messages.map((message) => (
+            <div key={message.id} class={`message ${message.role}`}>
+              {message.text && <p>{message.text}</p>}
+              {message.ui.map((part, index) => (
+                <Card
+                  key={`${message.id}-${index}`}
+                  part={part}
+                  busy={busy}
+                  onAction={(t, i) => void runAction(t, i)}
+                />
+              ))}
+            </div>
+          ))}
+          {state.status && <p class="status">{state.status}</p>}
+          {state.error && (
+            <p class="error" role="alert">
+              {state.error}
+            </p>
+          )}
+        </div>
+        {consent ? (
+          <form class="composer" onSubmit={onSubmit}>
+            <textarea
+              ref={inputRef}
+              aria-label="Message"
+              rows={2}
+              maxLength={MAX_MESSAGE}
+              value={draft}
+              placeholder="Ask about products, sizes or your cart…"
+              onInput={(event) => setDraft((event.target as HTMLTextAreaElement).value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  (event.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
+                }
+              }}
+            />
+            <button type="submit" disabled={state.sending || draft.trim().length === 0}>
+              Send
+            </button>
+          </form>
+        ) : (
+          <div class="consent">
+            <p>
+              This chat is an AI shopping assistant for this store. Your messages are stored to answer you and
+              to improve the service. Please don't share passwords or card details.
+            </p>
+            <button
+              type="button"
+              class="primary"
+              onClick={() => {
+                storage.giveConsent();
+                setConsent(true);
+              }}
+            >
+              Start chat
+            </button>
           </div>
-        ))}
-        {state.status && <p class="status">{state.status}</p>}
-        {state.error && (
-          <p class="error" role="alert">
-            {state.error}
-          </p>
         )}
       </div>
-      {consent ? (
-        <form class="composer" onSubmit={onSubmit}>
-          <textarea
-            ref={inputRef}
-            aria-label="Message"
-            rows={2}
-            maxLength={MAX_MESSAGE}
-            value={draft}
-            placeholder="Ask about products, sizes or your cart…"
-            onInput={(event) => setDraft((event.target as HTMLTextAreaElement).value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                (event.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
-              }
-            }}
-          />
-          <button type="submit" disabled={state.sending || draft.trim().length === 0}>
-            Send
-          </button>
-        </form>
-      ) : (
-        <div class="consent">
-          <p>
-            This chat is an AI shopping assistant for this store. Your messages are stored to answer you and
-            to improve the service. Please don't share passwords or card details.
-          </p>
-          <button
-            type="button"
-            class="primary"
-            onClick={() => {
-              storage.giveConsent();
-              setConsent(true);
-            }}
-          >
-            Start chat
-          </button>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

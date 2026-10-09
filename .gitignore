@@ -10,3 +10,5 @@ coverage/
 .DS_Store
 evals-reports/
 backups/
+test-results/
+playwright-report/

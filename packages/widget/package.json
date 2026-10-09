@@ -6,7 +6,9 @@
   "scripts": {
     "build": "node build.mjs",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e": "playwright test",
+    "demo": "node demo/server.mjs"
   },
   "dependencies": {
     "preact": "^11.0.0"
@@ -14,6 +16,7 @@
   "devDependencies": {
     "@ace/agent": "workspace:*",
     "@ace/contracts": "workspace:*",
+    "@playwright/test": "^1.64.0",
     "esbuild": "^0.28.2",
     "happy-dom": "^20.14.5",
     "typescript": "^7.0.2",

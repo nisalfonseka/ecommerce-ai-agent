@@ -140,6 +140,17 @@ describe("App", () => {
     expect(q("[role=dialog]")).toBeNull();
   });
 
+  it("moves focus into the dialog on open and back to the launcher on close", async () => {
+    await mount(fakeApi().api, false);
+    await act(async () => button("Open shopping assistant")?.click());
+    expect(q("[role=dialog]")?.contains(document.activeElement)).toBe(true);
+    await act(async () => {
+      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(q("[role=dialog]")).toBeNull();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Open shopping assistant");
+  });
+
   it("asks for consent before showing the composer", async () => {
     const storage = await mount(fakeApi().api, false);
     await act(async () => button("Open shopping assistant")?.click());

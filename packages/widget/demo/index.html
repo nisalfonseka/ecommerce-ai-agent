@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Demo Clothing</title>
+    <style>
+      body { font-family: Georgia, serif; margin: 0; background: #faf7f2; color: #222; }
+      header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; background: #fff; border-bottom: 1px solid #ddd; }
+      h1 { margin: 0; font-size: 22px; }
+      .cart { font-family: system-ui, sans-serif; }
+      #cart-count { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 999px; background: #222; color: #fff; text-align: center; }
+      main { max-width: 720px; margin: 40px auto; padding: 0 24px; line-height: 1.6; }
+      /* A host style that would break an unisolated widget: */
+      button { font-size: 40px !important; color: red !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Demo Clothing</h1>
+      <span class="cart">Cart <span id="cart-count" aria-live="polite">0</span></span>
+    </header>
+    <main>
+      <p>This is a plain store page. The chat button in the corner is the shopping assistant widget, added with one script tag.</p>
+      <p>Try: <em>"show me black dresses"</em>, pick a size on a card, then press <em>Checkout</em>.</p>
+    </main>
+    <script>
+      // The host site's own cart badge, updated by the widget's event (spec G2).
+      window.addEventListener("ace:cart-updated", (event) => {
+        if (event.detail.itemCount !== null) document.getElementById("cart-count").textContent = event.detail.itemCount;
+      });
+      // Install snippet: calls made before the widget loads are queued.
+      window.ACE = window.ACE || { q: [] };
+    </script>
+    <script src="/ace.js" data-key="__ACE_KEY__" data-api="__ACE_API__" async></script>
+  </body>
+</html>

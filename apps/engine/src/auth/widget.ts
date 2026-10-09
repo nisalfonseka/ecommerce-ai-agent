@@ -13,7 +13,7 @@ export type ResolveWidgetKey = (
   key: string,
 ) => Promise<{ tenantId: string; botId: string; allowedOrigins: string[] } | null>;
 
-const ALLOW_HEADERS = "authorization, content-type, x-visitor-id";
+const ALLOW_HEADERS = "authorization, content-type, x-visitor-id, x-conversation-token";
 
 /**
  * Publishable widget key (Bearer pk_…) + Origin allow-list. Preflight cannot carry the key, so it is answered

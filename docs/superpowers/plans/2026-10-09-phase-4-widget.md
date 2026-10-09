@@ -125,7 +125,7 @@ Interfaces:
 - `demo/index.html`: a plain store page with a cart badge listening to `ace:cart-updated`, plus the install snippet.
 - `demo/server.mjs`: serves `demo/` and `dist/ace.js` on port 5173 (the seed's default origin).
 - `scripts/dev-stack.sh`: starts the throwaway Postgres, migrates, seeds (demo model), starts the engine on 8080 (`NODE_ENV=development`), builds the widget, starts the demo server, and prints the URL. `stop` subcommand.
-- [ ] Manual check, then commit `feat(widget): demo store page and local dev stack`.
+- [x] Manual check, then commit `feat(widget): demo store page and local dev stack`.
 
 ### Task 7: End-to-end test
 
@@ -139,11 +139,18 @@ Interfaces:
   7. click Checkout and see a checkout link to the memory store's checkout URL
   8. reload the page, and the conversation is restored
 - `pnpm --filter @ace/widget e2e`. Not part of `pnpm test` (it needs a browser). A CI job runs it.
-- [ ] Commit `test(widget): end-to-end shopping flow in Chromium`.
+- [x] Commit `test(widget): end-to-end shopping flow in Chromium`.
+
+### As built (Tasks 5–7)
+
+- **Fixed via e2e: engine CORS.** Reloading a conversation is a GET carrying `x-conversation-token`, so the browser sends a preflight. The engine's preflight did not allow that header, which silently broke "resume after reload" on real sites. Unit tests cannot see CORS; the browser test did.
+- **Fixed via e2e: keyboard focus.** With consent pending, opening the panel left focus on the page, so Esc did nothing. Focus now moves into the dialog on open and back to the launcher on close. The launcher stays mounted (hidden while open), so its ref is stable.
+- `scripts/dev-stack.sh` runs each service as one node process (`node --import tsx`), so `stop` really stops it.
+- CI job `e2e` installs Playwright's Chromium and runs `pnpm --filter @ace/widget e2e`.
 
 ## Phase 4 exit checklist
 
-- [ ] On the demo page, a shopper finds, adds and checks out (memory adapter) using chat and buttons; the cart badge updates (e2e test).
-- [ ] `dist/ace.js` < 60 kB gzipped (build check).
-- [ ] Keyboard-only use works; Esc closes; screen-reader labels present (render tests + manual check).
+- [x] On the demo page, a shopper finds, adds and checks out (memory adapter) using chat and buttons; the cart badge updates (e2e test).
+- [x] `dist/ace.js` < 60 kB gzipped (build check: 12.1 kB).
+- [x] Keyboard-only use works; Esc closes; screen-reader labels present (render tests + e2e keyboard test).
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` green; e2e green.

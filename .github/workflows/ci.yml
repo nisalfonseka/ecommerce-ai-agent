@@ -68,3 +68,24 @@ jobs:
       - name: Logs on failure
         if: failure()
         run: docker compose logs --no-color
+
+  e2e:
+    # The widget in Chromium against the real engine (keyless demo model) and Postgres: scripts/dev-stack.sh.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @ace/widget exec playwright install --with-deps chromium
+      - run: pnpm --filter @ace/widget e2e
+      - name: Traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: widget-e2e-results
+          path: packages/widget/test-results
+          retention-days: 7

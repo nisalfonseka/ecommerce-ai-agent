@@ -13,12 +13,12 @@ adapter**. The agent only knows the universal commerce contract, never Shopify, 
 - Design and gap analysis: [`docs/superpowers/specs/2026-10-08-ai-commerce-engine-design.md`](docs/superpowers/specs/2026-10-08-ai-commerce-engine-design.md)
 - Start-to-end workflow: [`docs/workflow.md`](docs/workflow.md)
 - Roadmap (phases and exit criteria): [`docs/superpowers/plans/2026-10-08-roadmap.md`](docs/superpowers/plans/2026-10-08-roadmap.md)
-- Current phase plan: [`docs/superpowers/plans/2026-10-09-phase-2-agent-core.md`](docs/superpowers/plans/2026-10-09-phase-2-agent-core.md) (Task 10 open). Next: [`docs/superpowers/plans/2026-10-09-phase-3-engine.md`](docs/superpowers/plans/2026-10-09-phase-3-engine.md) (draft; decisions E1, E2)
+- Phase plans: [Phase 2](docs/superpowers/plans/2026-10-09-phase-2-agent-core.md) (Task 10 on hold), [Phase 3](docs/superpowers/plans/2026-10-09-phase-3-engine.md) (Task 12 on hold), [Phase 4](docs/superpowers/plans/2026-10-09-phase-4-widget.md)
 - Architecture decisions: `docs/adr/`
 
 ## Current status
 
-**Phase 1 (Foundation) is complete. Phase 2 (agent core) is built**: commerce contract v1.1 (`updateCartAttributes`) + conformance suite, in-memory adapter, `@ace/agent` (tools, session refs, attribution, price grounding, `runTurn`) and `@ace/evals` (34 golden cases in English, Sinhala, Tamil and Singlish). **Next:** Phase 2 Task 10 (owner-gated): run `pnpm evals` with real API keys, check the exit criteria (≥ 90% pass, 0 safety failures, all ordinal cases) and decide D3 in `docs/adr/003-default-models.md`. Then write the Phase 3 (engine API + persistence) plan. Work only on the current phase's plan; do not scaffold later phases early.
+**Phases 1 and 2 are built; Phase 3 (engine) is built except staging; Phase 4 (widget) is built.** On hold by the owner: live evals and D3 (Phase 2 Task 10, no paid API keys yet) and the VPS staging deploy (Phase 3 Task 12). E1 and E2 are built provisionally (ADR-004; `model-prices.json` with null prices). Without API keys, `scripts/dev-stack.sh start` runs the whole product locally with the keyless demo model. **Next:** whatever the owner unblocks first, or the Phase 5 plan (reference store + first real adapter; needs D1 and D4). Do not scaffold later phases early.
 
 ## Architecture rules (non-negotiable)
 
@@ -100,6 +100,8 @@ pnpm evals --models google:gemini-flash-latest --only si   # one model, Sinhala 
 pnpm evals --models google:gemini-flash-latest --rpm 5    # free tier: max 5 model requests/minute
 scripts/test-postgres.sh start   # throwaway Postgres for @ace/db / @ace/engine integration tests (prints ACE_TEST_DATABASE_URL)
 pnpm seed               # two demo tenants + widget keys (needs DATABASE_URL; keyless demo model by default)
+scripts/dev-stack.sh start   # local Postgres + engine (demo model) + demo store page on http://localhost:5173; `stop` to end
+pnpm --filter @ace/widget e2e   # Playwright: widget in Chromium against the dev stack (CHROME_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome in the cloud container)
 ```
 
 Keep this section in sync with the real scripts.
