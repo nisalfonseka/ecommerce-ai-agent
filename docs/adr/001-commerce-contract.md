@@ -24,3 +24,8 @@ The agent depends only on `CommerceProvider` from `@ace/contracts`:
 
 - Adding a platform = writing one adapter package plus running the conformance suite.
 - Contract changes are versioned. Additive changes add a capability; breaking changes need a new ADR.
+
+## Revisions
+
+- **v1.1 (2026-10-09):** added `updateCartAttributes` (under `cart.write`) so ACE can tag the host site's existing cart
+  with `ace_conversation_id` for attribution (spec G2 + G14). Additive; no existing method changed.

@@ -131,6 +131,19 @@ describe("MemoryCommerceProvider — carts", () => {
   const key = () => ({ idempotencyKey: `test-key-${++counter}` });
   const add = (variantId: string, quantity: number) => ({ lines: [{ variantId, quantity }] });
 
+  it("tags an existing cart without touching its lines", async () => {
+    const provider = new MemoryCommerceProvider();
+    const cart = await provider.createCart({}, key());
+    await provider.addCartLines(cart.id, add("p_kurta_navy_m", 1), key());
+    const tagged = await provider.updateCartAttributes(
+      cart.id,
+      { attributes: { ace_conversation_id: "c1" } },
+      key(),
+    );
+    expect(tagged.itemCount).toBe(1);
+    expect(tagged.attributes).toEqual({ ace_conversation_id: "c1" });
+  });
+
   it("refuses to create a cart in a currency the store does not sell", async () => {
     const provider = new MemoryCommerceProvider();
     await expect(provider.createCart({ currency: "USD" }, key())).rejects.toMatchObject({

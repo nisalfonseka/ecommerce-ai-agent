@@ -21,6 +21,7 @@ function readOnlyStub(): CommerceProvider {
     getCart: notSupported,
     addCartLines: notSupported,
     updateCartLine: notSupported,
+    updateCartAttributes: notSupported,
     createCheckout: notSupported,
     lookupOrder: notSupported,
     listOrders: notSupported,

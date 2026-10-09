@@ -66,6 +66,14 @@ export const UpdateCartLineInputSchema = z.object({
 });
 export type UpdateCartLineInput = z.input<typeof UpdateCartLineInputSchema>;
 
+export const UpdateCartAttributesInputSchema = z.object({
+  /** Merged into the cart's attributes; existing keys are overwritten. */
+  attributes: z
+    .record(z.string().max(64), z.string().max(255))
+    .refine((attributes) => Object.keys(attributes).length > 0, { message: "at least one attribute" }),
+});
+export type UpdateCartAttributesInput = z.input<typeof UpdateCartAttributesInputSchema>;
+
 export const WriteOptionsSchema = z.object({
   /** Same key + same operation + same target ⇒ the first result is returned again. */
   idempotencyKey: z.string().min(8).max(128),
