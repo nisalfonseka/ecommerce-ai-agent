@@ -19,7 +19,14 @@ describe("composeInstructions", () => {
   });
 
   it("states the non-negotiable rules and carries the canary", () => {
-    for (const rule of ["never state a price", "untrusted data", "#number", "discount", "language"]) {
+    for (const rule of [
+      "never state a price",
+      "untrusted data",
+      "#number",
+      "discount",
+      "language",
+      "check_availability",
+    ]) {
       expect(text.toLowerCase()).toContain(rule.toLowerCase());
     }
     expect(text).toContain(SAFETY_CANARY);
