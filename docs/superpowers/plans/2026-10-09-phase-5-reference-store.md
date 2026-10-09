@@ -130,7 +130,20 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
   - `getWebhookActionAndData` verifies `md5sig` and maps status `2` → `captured` and `0` → `pending`; anything else, or a bad signature, → `not_supported`.
   - `authorizePayment` reports `authorized` only after a verified notification.
 - `src/subscribers/order-placed.ts`: on `order.placed`, when `ACE_ORDER_WEBHOOK_URL` is set, POST `{ id, eventId, type: "order.placed", orderId, displayId, total, currency, attributes: { ace_conversation_id } }`. It is signed `X-ACE-Signature: sha256=<hmac>` with `ACE_ORDER_WEBHOOK_SECRET`, and retried 3 times with backoff. The engine consumes it in Phase 6.
-- [ ] Failing tests for `hash.ts` (vectors computed from PayHere's documented formula) and the webhook signer; implement; commit `feat(reference-store): PayHere payment provider and signed order webhooks`.
+- [x] Failing tests for `hash.ts` (vectors computed from PayHere's documented formula) and the webhook signer; implement; commit `feat(reference-store): PayHere payment provider and signed order webhooks`.
+
+**As built (Task 5).**
+- Medusa's `processPaymentWorkflow` authorizes a session using only the session's stored data, so a webhook verified in `getWebhookActionAndData` cannot tell `authorizePayment` that PayHere confirmed the payment.
+- Notifications therefore go to a dedicated route, `POST /payhere/notify` (`src/api/payhere/notify/route.ts`). It verifies `md5sig`, checks the amount and currency against the session, and stores an HMAC-signed `payhere_verification` (bound to session, status, payment ID, amount and currency) in the session data. On `captured` it runs `processPaymentWorkflow`, which completes the cart. Repeats are ignored.
+- `authorizePayment` returns `captured` only with a valid signature for the session's current amount. `getWebhookActionAndData` is `not_supported`.
+- Medusa merges shopper-supplied session data into the provider's data, so a forged verification can reach the session. The HMAC is what rejects it.
+- Verified locally against Medusa:
+  - completing before the notification → 400
+  - forged notification → 400
+  - signed notification → order created with `ace_conversation_id`
+  - repeated notification → ignored
+  - signed `order.placed` webhook received
+
 
 ### Task 6: `@ace/adapter-medusa`
 
