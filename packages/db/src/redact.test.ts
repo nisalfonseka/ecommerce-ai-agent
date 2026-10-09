@@ -25,6 +25,13 @@ describe("redactDeep", () => {
     });
   });
 
+  it("stays linear on long text without separators (no regex backtracking blow-up)", () => {
+    const started = performance.now();
+    for (const text of ["x".repeat(200_000), "a.".repeat(100_000), "1 ".repeat(100_000)]) redactPii(text);
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(redactPii("mail nimali.perera+shop@mail.example.lk now")).toBe("mail [email] now");
+  });
+
   it("truncates large values", () => {
     const result = redactDeep({ text: "x".repeat(20_000) }, 1_000);
     expect(JSON.stringify(result).length).toBeLessThanOrEqual(1_000);
