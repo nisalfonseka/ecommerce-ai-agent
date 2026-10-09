@@ -93,8 +93,13 @@ async function applyProduct(
   tx: Tx,
   deps: SyncDeps,
   product: Product,
+  backfill: boolean,
 ): Promise<{ outcome: SyncOutcome; followUp: FollowUp | null }> {
   const existing = await getCatalogProduct(tx, deps.storeId, product.id);
+  const incoming = Date.parse(product.updatedAt);
+  if (existing?.sourceUpdatedAt && incoming < existing.sourceUpdatedAt.getTime()) {
+    return { outcome: "unchanged", followUp: null };
+  }
   const rows = productRows(deps.storeId, product, existing ?? undefined);
   let outcome: SyncOutcome = "created";
   if (existing) {
@@ -105,10 +110,17 @@ async function applyProduct(
       variantFingerprint(variants) === variantFingerprint(rows.variants);
     outcome = same ? "unchanged" : "updated";
   }
-  if (outcome !== "unchanged") await upsertCatalogProduct(tx, deps.tenantId, rows);
+  if (outcome !== "unchanged" && !(await upsertCatalogProduct(tx, deps.tenantId, rows))) {
+    // A concurrent sync stored a newer version between our read and write.
+    return { outcome: "unchanged", followUp: null };
+  }
 
   const contentChanged = !existing || existing.contentHash !== rows.product.contentHash;
   if (contentChanged) {
+    return { outcome, followUp: "enrich" };
+  }
+  // Only a full reconcile backfills: it repairs an enrich job lost after the row committed (R11).
+  if (backfill && existing && existing.enriched === null) {
     return { outcome, followUp: "enrich" };
   }
   // Embedding follows enrichment, which enqueues it itself; only enriched rows can be re-embedded here.
@@ -145,7 +157,7 @@ export async function syncProduct(deps: SyncDeps, productId: string): Promise<Sy
     deps.db,
     deps.tenantId,
     async (tx): Promise<{ outcome: SyncOutcome; followUp: FollowUp | null }> => {
-      if (product) return applyProduct(tx, deps, product);
+      if (product) return applyProduct(tx, deps, product, false);
       const existing = await getCatalogProduct(tx, deps.storeId, productId);
       if (!existing) return { outcome: "missing", followUp: null };
       if (existing.status === "deleted") return { outcome: "unchanged", followUp: null };
@@ -192,7 +204,7 @@ export async function reconcileStore(
       const results = await withTenant(deps.db, deps.tenantId, async (tx) => {
         const out: { id: string; outcome: SyncOutcome; followUp: FollowUp | null }[] = [];
         for (const product of page.items) {
-          out.push({ id: product.id, ...(await applyProduct(tx, deps, product)) });
+          out.push({ id: product.id, ...(await applyProduct(tx, deps, product, options.full)) });
         }
         return out;
       });

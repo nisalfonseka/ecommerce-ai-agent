@@ -9,12 +9,14 @@ import {
   getCatalogVariants,
   getSyncState,
   schema,
+  upsertCatalogProduct,
   withTenant,
 } from "@ace/db";
 import type { JobName, JobPayload, JobQueue } from "@ace/db/jobs";
 import { createTestDatabase, type TestDatabase } from "@ace/db/testing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { productRows } from "./rows";
 import { reconcileStore, type SyncDeps, syncProduct } from "./sync";
 
 const testDb = await createTestDatabase();
@@ -242,6 +244,71 @@ describe.skipIf(testDb === null)("read model sync", () => {
       await expect(reconcileStore(deps, { full: true })).rejects.toThrow();
       const state = await withTenant(app.db, tenantId, (tx) => getSyncState(tx, storeId));
       expect(state).toMatchObject({ status: "ready", lastError: "UPSTREAM_UNAVAILABLE" });
+    });
+  });
+  describe("backfill and stale writes", () => {
+    it("full reconcile re-sends a lost enrich job; incremental and repeat syncProduct do not", async () => {
+      const { deps, jobs, tenantId, storeId } = await setup();
+      await reconcileStore(deps, { full: true });
+      jobs.sent = []; // simulate the sends lost after the rows committed
+      expect(await syncProduct(deps, SHIRT)).toBe("unchanged");
+      await reconcileStore(deps, { full: false });
+      expect(jobs.sent).toEqual([]);
+      await reconcileStore(deps, { full: true });
+      expect(jobs.sent.filter((j) => (j.data as { productId: string }).productId === SHIRT)).toEqual([
+        { name: "enrich.product", data: { tenantId, storeId, productId: SHIRT } },
+      ]);
+      expect(jobs.names().every((n) => n === "enrich.product")).toBe(true);
+    });
+
+    it("full reconcile sends embed.product for an enriched row embedded with another model", async () => {
+      const { deps, jobs, tenantId, storeId } = await setup();
+      await reconcileStore(deps, { full: true });
+      await withTenant(app.db, tenantId, (tx) =>
+        tx
+          .update(schema.catalogProducts)
+          .set({ enriched: {}, embeddedHash: "old", embeddingModel: "demo:other" })
+          .where(eq(schema.catalogProducts.storeId, storeId)),
+      );
+      jobs.sent = [];
+      await reconcileStore(deps, { full: false });
+      const incrementalNames = jobs.names();
+      jobs.sent = [];
+      await reconcileStore(deps, { full: true });
+      expect(jobs.names().every((n) => n === "embed.product")).toBe(true);
+      expect(jobs.sent.length).toBeGreaterThan(0);
+      expect(incrementalNames.every((n) => n === "embed.product")).toBe(true);
+    });
+
+    it("ignores an older version written after a newer one", async () => {
+      const newer = await setup(
+        new MemoryCommerceProvider({ now: () => new Date("2026-10-08T00:00:00.000Z") }),
+      );
+      const { tenantId, storeId, provider, deps, jobs } = newer;
+      const variant = (await provider.getProduct(SHIRT))?.variants[0];
+      if (!variant) throw new Error("seed");
+      provider.setPrice(variant.id, 777_700);
+      await syncProduct(deps, SHIRT);
+      jobs.sent = [];
+
+      const older = new MemoryCommerceProvider({ now: () => new Date("2026-10-02T00:00:00.000Z") });
+      older.setPrice(variant.id, 111_100);
+      expect(await syncProduct({ ...deps, provider: older }, SHIRT)).toBe("unchanged");
+      expect(jobs.sent).toEqual([]);
+
+      // The repo guard also holds when the read-side check is bypassed (concurrent writer).
+      const stale = await older.getProduct(SHIRT);
+      if (!stale) throw new Error("seed");
+      const applied = await withTenant(app.db, tenantId, (tx) =>
+        upsertCatalogProduct(tx, tenantId, productRows(storeId, stale)),
+      );
+      expect(applied).toBe(false);
+      const { row, variants } = await withTenant(app.db, tenantId, async (tx) => ({
+        row: await getCatalogProduct(tx, storeId, SHIRT),
+        variants: await getCatalogVariants(tx, storeId, SHIRT),
+      }));
+      expect(row?.maxPrice).toBe(777_700);
+      expect(variants.find((v) => v.variantId === variant.id)?.price).toBe(777_700);
     });
   });
 });

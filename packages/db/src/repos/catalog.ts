@@ -37,17 +37,22 @@ export type SyncStateRow = typeof catalogSyncState.$inferSelect;
  * Inserts or refreshes the synced fields of a product and replaces its variants. `enriched`, `overrides`
  * and the enrichment/embedding columns survive a re-sync (the caller passes the existing `enriched` and
  * `overrides` back in so the effective attributes stay correct). A deleted product becomes active again.
+ * A write whose source_updated_at is older than the stored one is ignored (a slow reconcile page must not
+ * overwrite a fresher webhook sync); returns false then, and the variants are left alone too.
  */
-export async function upsertCatalogProduct(tx: Tx, tenantId: string, rows: CatalogRows): Promise<void> {
+export async function upsertCatalogProduct(tx: Tx, tenantId: string, rows: CatalogRows): Promise<boolean> {
   const { enriched, overrides, ...synced } = rows.product;
   const values = { ...synced, tenantId, status: "active", syncedAt: new Date() };
-  await tx
+  const written = await tx
     .insert(catalogProducts)
     .values({ ...values, enriched: enriched ?? null, overrides: overrides ?? {} })
     .onConflictDoUpdate({
       target: [catalogProducts.tenantId, catalogProducts.storeId, catalogProducts.productId],
       set: values,
-    });
+      setWhere: sql`${catalogProducts.sourceUpdatedAt} is null or excluded.source_updated_at >= ${catalogProducts.sourceUpdatedAt}`,
+    })
+    .returning({ id: catalogProducts.id });
+  if (written.length === 0) return false;
   await tx
     .delete(catalogVariants)
     .where(
@@ -59,6 +64,7 @@ export async function upsertCatalogProduct(tx: Tx, tenantId: string, rows: Catal
   if (rows.variants.length > 0) {
     await tx.insert(catalogVariants).values(rows.variants.map((variant) => ({ ...variant, tenantId })));
   }
+  return true;
 }
 
 /** Variants are kept for history; search filters on products.status. */
