@@ -11,6 +11,7 @@ import { createModelResolver } from "./models";
 import { createProviderFactory } from "./providers";
 import { createRateLimiter } from "./rate-limit";
 import { registerActionRoutes } from "./routes/actions";
+import { registerAdminRoutes } from "./routes/admin";
 import { registerChatRoutes } from "./routes/chat";
 
 const config = loadConfig(process.env);
@@ -51,6 +52,12 @@ const turnDeps = {
 };
 registerChatRoutes(app, turnDeps);
 registerActionRoutes(app, turnDeps);
+registerAdminRoutes(app, {
+  db,
+  adminApiKeySha256: config.adminApiKeySha256,
+  masterKey: config.masterKey,
+  prices,
+});
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   logger.info({ port: info.port }, "engine listening");

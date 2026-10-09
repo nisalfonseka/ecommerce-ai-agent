@@ -440,12 +440,19 @@ The host site sends `cartId` with each message. If a tool created or replaced th
   - `GET /admin/tenants/:id/usage?month=2026-10` (cost per conversation: total, conversations, average; the exit criterion "cost per conversation visible")
 - `pnpm seed` creates "Demo Clothing A" and "Demo Clothing B" (memory adapter, LKR, persona, the default model from D3) with widget keys for `http://localhost:5173`, and prints the keys.
 
-- [ ] **Step 1: Failing tests.**
+**As built:**
+- Foreign references (a store ID for a bot, a bot ID for a widget key) are looked up under the tenant before insert, because Postgres foreign-key checks bypass RLS. Without this, tenant B could attach a bot to tenant A's store.
+- Widget-key origins must be bare `http(s)` origins.
+- Store `credentials` are sealed with the master key and never returned.
+- `pnpm seed` (`src/seed-cli.ts`, also built as `dist/seed.js`) creates "Demo Clothing A" and "Demo Clothing B" with the keyless demo model by default (`ACE_SEED_MODEL`, `ACE_SEED_ORIGINS`). Tenant IDs are derived from the names, so re-runs find the same tenants and print fresh keys.
+- Smoke-tested on the built engine: migrate → seed → chat with a seeded key → `GET /admin/tenants/:id/usage` shows 1 turn, 1 conversation.
+
+- [x] **Step 1: Failing tests.**
   - No or wrong admin key → 401.
   - The full create flow works, and the widget key from it authenticates `/v1/chat`.
   - Usage for tenant A excludes tenant B.
   - The seed is idempotent (by tenant name).
-- [ ] **Step 2: Implement; checks; commit** `feat(engine): admin API and demo tenant seed`.
+- [x] **Step 2: Implement; checks; commit** `feat(engine): admin API and demo tenant seed`.
 
 ---
 
