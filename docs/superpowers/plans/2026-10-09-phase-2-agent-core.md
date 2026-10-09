@@ -86,7 +86,7 @@ packages/evals/
 - Consumes: Phase 1 contract.
 - Produces: `UpdateCartAttributesInputSchema`, `type UpdateCartAttributesInput` (z.input: `{ attributes: Record<string,string> }`, at least one key), and `CommerceProvider.updateCartAttributes(cartId: string, input: UpdateCartAttributesInput, opts: WriteOptions): Promise<Cart>` (merge semantics, under `cart.write`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `packages/contracts/src/cart.test.ts` (and add `UpdateCartAttributesInputSchema` to its import from `./cart`):
 
@@ -141,12 +141,12 @@ In `packages/adapter-memory/src/memory-provider.test.ts`, inside `describe("Memo
   });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/contracts test; pnpm --filter @ace/adapter-memory test`
 Expected: FAIL. The schema is not exported from `./cart`, and `updateCartAttributes` is not a function / not on the `CommerceProvider` type.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `packages/contracts/src/cart.ts` — append after `UpdateCartLineInputSchema`:
 
@@ -194,14 +194,14 @@ export type UpdateCartAttributesInput = z.input<typeof UpdateCartAttributesInput
   with `ace_conversation_id` for attribution (spec G2 + G14). Additive; no existing method changed.
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm lint:fix && pnpm lint && pnpm typecheck && pnpm test`
 Expected: PASS.
 - contracts: 49 passed / 19 skipped. The new conformance test is skipped for the read-only stub.
 - adapter-memory: 56 passed / 1 skipped. Conformance is now 21 passed / 1 skipped.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/contracts packages/adapter-memory docs/adr/001-commerce-contract.md
@@ -221,13 +221,13 @@ git commit -m "feat(contracts): add updateCartAttributes (contract v1.1) for car
 - Consumes: `@ace/contracts` (`Money`, `CommerceProvider`, `VerifiedIdentity`, `WriteOptions`, `ProductSummary`, `Product`, `Cart`, `CheckoutHandoff`, `Order`, `CommerceErrorCode`, `isCommerceError`).
 - Produces:
   - `formatMoney(m: Money): string` (`"LKR 18,500.00"`), `formatPriceRange(r: { min: Money; max: Money }): string`, `toMinorUnits(major: number | undefined): number | undefined`
-  - `interface ShownProduct { ref: string; productId: string; title: string; variantIds: string[] }`, `interface SessionState { shown: ShownProduct[]; attributionTagged: boolean }`, `createSession()`, `rememberShown(session, items: Omit<ShownProduct, "ref">[]): ShownProduct[]`, `resolveProductRef(session, ref: string): ShownProduct | undefined`
+  - `interface ShownProduct { ref: string; productId: string; title: string; variantIds: string[] }`, `interface SessionState { shown: ShownProduct[]; attributedCartId: string | null }`, `createSession()`, `rememberShown(session, items: Omit<ShownProduct, "ref">[]): ShownProduct[]`, `resolveProductRef(session, ref: string): ShownProduct | undefined`
   - `type UiPart` (see code)
   - `interface ToolContext`, `createToolContext(input: CreateToolContextInput): ToolContext`, `writeKey(ctx, toolCallId): WriteOptions`, `observeMoney(ctx, value: unknown): void`
   - `type ToolFailureCode`, `type ToolResult<T>`, `class ToolFailure(code, message, details?)`, `runTool<T>(fn: () => Promise<T>): Promise<ToolResult<T>>`
   - `@ace/agent/testing`: `scriptedModel(responses: LanguageModelV4GenerateResult[]): MockLanguageModelV4`, `say(text)`, `callTool(id, name, input)`
 
-- [ ] **Step 1: Create the package shell**
+- [x] **Step 1: Create the package shell**
 
 `packages/agent/package.json`:
 
@@ -261,7 +261,7 @@ pnpm --filter @ace/agent add -D @ace/adapter-memory@workspace:* vitest@^5.0.3 ty
 
 Check that `packages/agent/package.json` lists `"vitest": "^5.0.3"`.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `packages/agent/src/format.test.ts`:
 
@@ -411,12 +411,12 @@ describe("runTool", () => {
 });
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./format"" (and the other modules).
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 `packages/agent/src/format.ts`:
 
@@ -461,11 +461,11 @@ export interface ShownProduct {
 /** Per-conversation state owned by the engine and persisted between turns. */
 export interface SessionState {
   shown: ShownProduct[];
-  attributionTagged: boolean;
+  attributedCartId: string | null;
 }
 
 export function createSession(): SessionState {
-  return { shown: [], attributionTagged: false };
+  return { shown: [], attributedCartId: null };
 }
 
 /** Replaces the shown list; refs restart at #1 so "the second one" means the latest results. */
@@ -662,12 +662,12 @@ export function scriptedModel(responses: LanguageModelV4GenerateResult[]): MockL
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 4 files, 13 tests. (`src/index.ts` is created in Task 7; nothing imports `.` yet.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/agent pnpm-lock.yaml
@@ -690,7 +690,7 @@ git commit -m "feat(agent): add formatting, session refs, tool context and tool 
   - `resolveProductId(ctx, input: { ref?: string; productId?: string }): string`, which throws `ToolFailure("UNKNOWN_REF")`
   - `searchProductsTool`, `getProductTool`, `checkAvailabilityTool`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/agent/src/tools/catalog.test.ts`:
 
@@ -796,12 +796,12 @@ describe("check_availability", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./catalog"".
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `packages/agent/src/tools/define.ts`:
 
@@ -992,12 +992,12 @@ export const checkAvailabilityTool = defineTool({
 });
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 5 files, 21 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/agent
@@ -1019,7 +1019,7 @@ git commit -m "feat(agent): add catalog tools with numbered results and live ava
   - `ensureCart(ctx, toolCallId): Promise<string>`, which reuses and tags the host cart or creates a tagged cart, and sets `ctx.cartId`
   - `compactCart(cart: Cart)`, the model-facing cart shape `{ itemCount, subtotal, lines: { lineId, title, variantTitle, quantity, lineTotal }[] }`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/agent/src/tools/cart.test.ts`:
 
@@ -1068,7 +1068,7 @@ describe("add_to_cart", () => {
     await addToCartTool.run(ctx, { productId: "p_kurta_navy", size: "M", quantity: 1 }, "c1");
     await addToCartTool.run(ctx, { productId: "p_kurta_navy", size: "L", quantity: 1 }, "c2");
     expect(ctx.cartId).toBe(host.id);
-    expect(ctx.session.attributionTagged).toBe(true);
+    expect(ctx.session.attributedCartId).toBe(host.id);
     const cart = await provider.getCart(host.id);
     expect(cart?.itemCount).toBe(2);
     expect(cart?.attributes.ace_conversation_id).toBe("conv_9");
@@ -1130,12 +1130,12 @@ describe("view_cart / update_cart_line / start_checkout", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./cart"".
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `packages/agent/src/tools/cart.ts`:
 
@@ -1172,10 +1172,10 @@ function showCart(ctx: ToolContext, cart: Cart) {
 export async function ensureCart(ctx: ToolContext, toolCallId: string): Promise<string> {
   const attributes = { [ATTRIBUTION_ATTRIBUTE]: ctx.conversationId };
   if (ctx.cartId !== null) {
-    if (ctx.session.attributionTagged) return ctx.cartId;
+    if (ctx.session.attributedCartId === ctx.cartId) return ctx.cartId;
     try {
       await ctx.provider.updateCartAttributes(ctx.cartId, { attributes }, writeKey(ctx, `${toolCallId}:attr`));
-      ctx.session.attributionTagged = true;
+      ctx.session.attributedCartId = ctx.cartId;
       return ctx.cartId;
     } catch (error) {
       if (!(isCommerceError(error) && error.code === "NOT_FOUND")) throw error;
@@ -1183,7 +1183,7 @@ export async function ensureCart(ctx: ToolContext, toolCallId: string): Promise<
   }
   const cart = await ctx.provider.createCart({ attributes }, writeKey(ctx, `${toolCallId}:cart`));
   ctx.cartId = cart.id;
-  ctx.session.attributionTagged = true;
+  ctx.session.attributedCartId = cart.id;
   return cart.id;
 }
 
@@ -1288,12 +1288,12 @@ export const startCheckoutTool = defineTool({
 });
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 6 files, 31 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/agent
@@ -1315,7 +1315,7 @@ git commit -m "feat(agent): add cart tools with variant resolution, attribution 
   - `ALL_TOOLS: CommerceToolDef<z.ZodType, unknown>[]`
   - `buildTools(ctx: ToolContext, defs?: CommerceToolDef<z.ZodType, unknown>[]): ToolSet`, which registers only tools whose `requires` are all declared by `ctx.provider`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/agent/src/tools/orders.test.ts`:
 
@@ -1404,12 +1404,12 @@ describe("buildTools", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./orders"" and "./registry".
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `packages/agent/src/tools/orders.ts`:
 
@@ -1488,12 +1488,12 @@ export function buildTools(ctx: ToolContext, defs: CommerceToolDef<z.ZodType, un
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 8 files, 36 tests. If `tool({...})` does not accept the generic `z.ZodType` schema or the `execute` signature under strict typing, make the smallest typing adjustment in `registry.ts` only, without `any`, and explain it in the report.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/agent
@@ -1516,7 +1516,7 @@ git commit -m "feat(agent): add verified order lookup and capability-gated tool 
   - `MAX_USER_MESSAGE_CHARS = 2000`, `checkUserMessage(text): { ok: true } | { ok: false; reason: "empty" | "too_long" }`
   - `extractPriceMentions(text): number[]` (minor units), `findUngroundedAmounts(text, observed: ReadonlySet<number>): number[]`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/agent/src/guardrails.test.ts`:
 
@@ -1584,12 +1584,12 @@ describe("composeInstructions", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./guardrails"" and "./prompt".
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `packages/agent/src/guardrails.ts`:
 
@@ -1678,12 +1678,12 @@ export function composeInstructions(persona: Persona, store: StoreFacts): string
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 10 files, 49 tests. The `it.each` block contributes 9.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/agent
@@ -1705,13 +1705,13 @@ git commit -m "feat(agent): add instruction composer and price-grounding guardra
   - `class AgentInputError(reason)`, `interface TurnInput`, `interface TurnResult`, `runTurn(input: TurnInput): Promise<TurnResult>`
   - `src/index.ts` exporting the public API (below)
 
-- [ ] **Step 1: Install providers**
+- [x] **Step 1: Install providers**
 
 ```bash
 pnpm --filter @ace/agent add @ai-sdk/google@^4 @ai-sdk/openai@^4 @ai-sdk/anthropic@^4
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `packages/agent/src/models.test.ts`:
 
@@ -1832,12 +1832,12 @@ describe("runTurn", () => {
 });
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./models"" and "./agent".
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 `packages/agent/src/models.ts`:
 
@@ -2004,14 +2004,14 @@ export { ALL_TOOLS, buildTools } from "./tools/registry";
 export type { UiPart } from "./ui";
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck && pnpm test`
 Expected: PASS. Agent: 12 files, 58 tests.
 
 If the mock's `response.messages` roles in the first test differ from `["user","assistant","tool","assistant"]` because of how AI SDK 7 packs steps, assert on the real shape. In that case `newMessages` must still start with the user message and end with the final assistant reply. Explain the change in the report.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/agent pnpm-lock.yaml
@@ -2037,7 +2037,7 @@ git commit -m "feat(agent): add runTurn with tool loop, grounding retry and mode
   - `runCase(evalCase, options: { model: LanguageModel; modelSpec: string; persona: Persona; store: StoreFacts }): Promise<CaseResult>`
   - `summarize(results: CaseResult[]): ModelSummary[]`, `renderMarkdown(results, summaries): string`
 
-- [ ] **Step 1: Create the package shell**
+- [x] **Step 1: Create the package shell**
 
 `packages/evals/package.json`:
 
@@ -2066,7 +2066,7 @@ pnpm --filter @ace/evals add @ace/agent@workspace:* @ace/adapter-memory@workspac
 pnpm --filter @ace/evals add -D vitest@^5.0.3 typescript tsx
 ```
 
-- [ ] **Step 2: Write `types.ts`**
+- [x] **Step 2: Write `types.ts`**
 
 `packages/evals/src/types.ts`:
 
@@ -2141,7 +2141,7 @@ export interface CaseResult {
 }
 ```
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 `packages/evals/src/scorers.test.ts`:
 
@@ -2331,12 +2331,12 @@ describe("report", () => {
 });
 ```
 
-- [ ] **Step 4: Run tests to verify they fail**
+- [x] **Step 4: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/evals test`
 Expected: FAIL with "Failed to resolve import "./scorers"" (and the other modules).
 
-- [ ] **Step 5: Implement**
+- [x] **Step 5: Implement**
 
 `packages/evals/src/scorers.ts`:
 
@@ -2583,12 +2583,12 @@ export function renderMarkdown(results: CaseResult[], summaries: ModelSummary[])
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/evals test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 3 files, 14 tests. (`detectScript` contributes 5 via `it.each`.)
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/evals pnpm-lock.yaml
@@ -2614,7 +2614,7 @@ git commit -m "feat(evals): add eval case types, deterministic scorers, runner a
   - `parseCliArgs(argv: string[]): { models: string[] | null; only: string | null; out: string | null }`
   - the root command `pnpm evals`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/evals/src/cases/cases.test.ts`:
 
@@ -2682,12 +2682,12 @@ describe("parseCliArgs", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/evals test`
 Expected: FAIL with "Failed to resolve import "./index"" and "./cli-args".
 
-- [ ] **Step 3: Write the cases**
+- [x] **Step 3: Write the cases**
 
 `packages/evals/src/cases/en.ts`:
 
@@ -3101,7 +3101,7 @@ export const ALL_CASES: EvalCase[] = [...EN_CASES, ...SI_CASES, ...TA_CASES, ...
 
 The total is 10 + 6 + 5 + 6 + 5 = 32 cases. Safety cases count as `en`, and `si-order-unverified` also carries the `safety` tag.
 
-- [ ] **Step 4: Write config, CLI args and CLI**
+- [x] **Step 4: Write config, CLI args and CLI**
 
 `packages/evals/src/config.ts`:
 
@@ -3214,7 +3214,7 @@ console.table(
 console.log(`Report: ${out}`);
 ```
 
-- [ ] **Step 5: Wire the repo**
+- [x] **Step 5: Wire the repo**
 
 Root `package.json` scripts — add:
 
@@ -3255,7 +3255,7 @@ pnpm evals --models google:gemini-flash-latest --only si   # one model, Sinhala 
 `evals-reports/*.md` (pass rate per language, Sinhala/Tamil transcripts, tokens, latency).
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `pnpm install && pnpm lint:fix && pnpm lint && pnpm typecheck && pnpm test`
 Expected: PASS. Evals: 5 files, 21 tests.
@@ -3265,7 +3265,7 @@ Expected: six `skip … (no …_API_KEY)` lines, an empty summary table, `Report
 
 If a `.env` with real keys exists in the repo root, the CLI loads it. In that case, run the smoke test from a temporary copy of the env that hides keys, or skip it and say so. Never print key values.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/evals .env.example .gitignore package.json AGENTS.md docs/superpowers/plans/2026-10-08-roadmap.md pnpm-lock.yaml
@@ -3290,3 +3290,16 @@ Not a coding task. It needs the owner's API keys.
 - [ ] Every Review Focus item has a passing test (Tasks 2, 4, 5, 6, 7).
 - [ ] `pnpm evals` runs end-to-end and skips providers without keys.
 - [ ] D3 decided after the owner runs the live evals (Task 10).
+
+## Implementation notes (2026-10-09)
+
+Where the code differs from the blocks above, and why:
+
+- **Attribution per cart (Task 4).** `SessionState.attributionTagged: boolean` became `attributedCartId: string | null`. The host site can hand over a new cart mid-conversation (for example after a checkout). With a boolean, that cart was never tagged and the order lost its attribution. Test: "tags a new host cart that replaces an already tagged one".
+- **Null stock counts (Task 3).** `check_availability` keeps `quantityAvailable: null` from stores that hide exact counts, instead of reporting `0`.
+- **Unexpected-error hook (Task 5).** Every tool passes `ctx.onUnexpectedError` to `runTool` (the hook from commit `cf5858b`), so bugs and outages reach logging. Test: registry "unexpected errors".
+- **Local price formats (Task 6).** Price detection also accepts `/-` and currency words after the number (`18,500 ரூபாய்`, `18,500 රුපියල්`, `18,500 රු.`), the natural order in Tamil and Sinhala.
+- **Shopper amounts are grounded (Task 7).** Numbers the shopper wrote in the current turn (`shopperAmounts`) are allowed in the reply, so "dresses under Rs. 20,000" is not flagged or regenerated.
+- **Rewrite step keeps tools (Task 7).** The grounding rewrite sends the same tools with `toolChoice: "none"`. Some providers reject tool-call history when no tools are declared.
+- **`stepCountIs` (Task 7).** `ai@7` exports the step-limit helper as `stepCountIs`, not `isStepCount`.
+- **Ordinal cases (Task 9).** The `refs` cases now use real ordinals ("the second one", "දෙවෙනි එක", "இரண்டாவது", "deweni eka") that resolve to #2, the Floral Maxi Dress. The descriptive "black one" case is kept as `en-descriptive-ref`, and `ta-ordinal-add` was added, for 34 cases. `cases.test.ts` pins the dress search order these cases rely on. The new Sinhala and Tamil phrasings need the native-speaker review in Task 10.
