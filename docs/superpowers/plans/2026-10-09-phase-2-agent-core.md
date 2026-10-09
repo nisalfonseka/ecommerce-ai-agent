@@ -3274,6 +3274,26 @@ git commit -m "feat(evals): add 32 golden cases in four languages and the pnpm e
 
 ---
 
+### Task 9b: Free-tier pacing for live evals
+
+Added 2026-10-09. The Gemini free tier allows about 5 requests per minute per model, and one turn makes 2–3 model calls, so an unpaced run fails on quota instead of quality.
+
+**Files:**
+- Create: `packages/evals/src/rate-limit.ts` (+ `.test.ts`)
+- Modify: `packages/evals/src/cli-args.ts` (+ `.test.ts`), `packages/evals/src/cli.ts`, `AGENTS.md`
+
+**Interfaces:**
+- `createRequestPacer({ rpm, now?, sleep? }): { acquire(): Promise<void> }`: at most `rpm` requests in any 60-second window.
+- `retryDelayMs(error): number | null`: the wait a 429 asks for (Gemini `retryDelay` in the body, then "retry in Ns" in the message, then `Retry-After`, else 60 s); `null` for other errors.
+- `withRateLimit(model, { rpm, maxWaitMs = 5 min, maxRateLimitWaits = 5, onWait? })`: AI SDK middleware that paces requests and waits out 429s. Longer suggested waits (daily quotas) fail the case instead of stalling the run.
+- CLI: `--rpm <positive integer>`.
+
+- [x] **Step 1:** Write failing tests for the pacer, `retryDelayMs`, `withRateLimit` (fake clock) and `--rpm` parsing.
+- [x] **Step 2:** Implement; `pnpm lint && pnpm typecheck && pnpm test` green.
+- [x] **Step 3:** Document `pnpm evals --models google:gemini-flash-latest --rpm 5` in `AGENTS.md`; commit.
+
+---
+
 ### Task 10 (owner-gated): Live evals and the D3 recommendation
 
 Not a coding task. It needs the owner's API keys.

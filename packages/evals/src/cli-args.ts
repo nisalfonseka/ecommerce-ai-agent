@@ -3,10 +3,12 @@ export interface CliArgs {
   /** Case language, tag or id prefix. Named --only because pnpm reserves --filter. */
   only: string | null;
   out: string | null;
+  /** Max model requests per minute (free tiers); null = no pacing. */
+  rpm: number | null;
 }
 
 export function parseCliArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { models: null, only: null, out: null };
+  const args: CliArgs = { models: null, only: null, out: null, rpm: null };
   const tokens = argv.filter((token) => token !== "--");
   for (let index = 0; index < tokens.length; index += 2) {
     const flag = tokens[index];
@@ -19,7 +21,10 @@ export function parseCliArgs(argv: string[]): CliArgs {
         .filter(Boolean);
     else if (flag === "--only") args.only = value;
     else if (flag === "--out") args.out = value;
-    else throw new Error(`Unknown flag ${flag}. Use --models, --only, --out.`);
+    else if (flag === "--rpm") {
+      if (!/^[1-9]\d*$/.test(value)) throw new Error(`--rpm must be a positive integer, got ${value}`);
+      args.rpm = Number(value);
+    } else throw new Error(`Unknown flag ${flag}. Use --models, --only, --out, --rpm.`);
   }
   return args;
 }

@@ -12,6 +12,7 @@
     "@ace/adapter-memory": "workspace:*",
     "@ace/agent": "workspace:*",
     "@ace/contracts": "workspace:*",
+    "@ai-sdk/provider": "^4.0.25",
     "ai": "^7.0.133"
   },
   "devDependencies": {
