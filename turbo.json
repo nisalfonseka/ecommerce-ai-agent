@@ -7,6 +7,7 @@
       "dependsOn": ["^typecheck"],
       "env": [
         "ACE_TEST_DATABASE_URL",
+        "ACE_TEST_TIMEOUT_MS",
         "ACE_REQUIRE_DB_TESTS",
         "ACE_MEDUSA_SEED_OUTPUT",
         "ACE_REQUIRE_MEDUSA_TESTS"
