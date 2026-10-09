@@ -54,6 +54,22 @@ describe.skipIf(testDb === null)("routing functions and vectors (as ace_app)", (
     await database?.drop();
   });
 
+  it("owns the routing functions with a role that cannot bypass RLS", async () => {
+    const result = await app.db.execute<{ proname: string; rolsuper: boolean; rolbypassrls: boolean }>(sql`
+      select p.proname, r.rolsuper, r.rolbypassrls
+      from pg_proc p join pg_roles r on r.oid = p.proowner
+      where p.proname in ('resolve_webhook_store', 'list_sync_targets', 'list_tenant_ids')`);
+    expect(result.rows.map((row) => row.proname).sort()).toEqual([
+      "list_sync_targets",
+      "list_tenant_ids",
+      "resolve_webhook_store",
+    ]);
+    for (const row of result.rows) {
+      expect(row.rolsuper, row.proname).toBe(false);
+      expect(row.rolbypassrls, row.proname).toBe(false);
+    }
+  });
+
   it("hides stores without a tenant, so the functions are the only way in", async () => {
     expect((await app.db.execute(sql`select * from stores`)).rows).toHaveLength(0);
   });
