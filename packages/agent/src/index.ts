@@ -1,4 +1,11 @@
-export { AgentInputError, DEFAULT_MAX_STEPS, runTurn, type TurnInput, type TurnResult } from "./agent";
+export {
+  AgentInputError,
+  DEFAULT_MAX_RETRIES,
+  DEFAULT_MAX_STEPS,
+  runTurn,
+  type TurnInput,
+  type TurnResult,
+} from "./agent";
 export {
   type CreateToolContextInput,
   createToolContext,
@@ -13,6 +20,7 @@ export {
   extractPriceMentions,
   findUngroundedAmounts,
   MAX_USER_MESSAGE_CHARS,
+  scrubPrices,
   shopperAmounts,
 } from "./guardrails";
 export { hasApiKey, PROVIDER_ENV_KEYS, type ProviderName, parseModelSpec, resolveModel } from "./models";

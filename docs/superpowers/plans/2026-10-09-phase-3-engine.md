@@ -27,7 +27,7 @@
 
 | ID | Question | Recommendation | Needed by |
 |---|---|---|---|
-| E1 | The spec wants prices/links checked before the shopper sees them (§C7), and also p95 first token < 2 s (§4.7). Live token streaming cannot satisfy the first rule. | **Buffered reply + live status events.** Stream `status` events while tools run ("Searching dresses…", well under 2 s), then send the validated reply and its UI parts. Measure real latency on staging. Revisit sentence-level streaming with retraction only if shoppers notice. Record as ADR-004. | Task 7 |
+| E1 | *(provisional: built with the recommendation, ADR-004)* The spec wants prices/links checked before the shopper sees them (§C7), and also p95 first token < 2 s (§4.7). Live token streaming cannot satisfy the first rule. | **Buffered reply + live status events.** Stream `status` events while tools run ("Searching dresses…", well under 2 s), then send the validated reply and its UI parts. Measure real latency on staging. Revisit sentence-level streaming with retraction only if shoppers notice. Record as ADR-004. | Task 7 |
 | E2 | Budget enforcement needs a price per model. Prices change and differ by provider. | An owner-maintained `model-prices.json` (USD per 1M input/output tokens, with source URL and date). Bots can only use models listed there. Soft cap → the bot's cheap model; hard cap → "contact us" reply. Merchant alert at 80% (logged in Phase 3; notifications in Phase 7). | Task 9 |
 
 ## Review Focus
@@ -351,7 +351,16 @@ The host site sends `cartId` with each message. If a tool created or replaced th
 
 `GET /v1/conversations/:id` (widget key + conversation token) returns the display rows: user text, assistant text, UI parts. No tool payloads.
 
-- [ ] **Step 1: Failing tests** (scripted model from `@ace/agent/testing`, test database).
+**As built** (E1 not yet answered; built with the recommendation, ADR-004 marked provisional):
+- `prepareTurn` (validation, token check, bot load, conversation create/verify, lease) runs **before** the stream opens, so refusals are HTTP 400/404/409/429. `runPreparedTurn` never throws; it emits `error` instead.
+- The fallback model is used only if no tool ran yet: re-running after a cart write would repeat it under new keys.
+- `runTurn` gains `maxRetries` (default 1, spec §5: retry once, then fall back). The engine passes `TurnDeps.modelRetries`.
+- Stored history keeps the reply the shopper saw (after scrubbing), so a scrubbed price is not repeated next turn.
+- `@ace/agent` gains `scrubPrices(text, allowed, replacement)`, which uses the same detector as the grounding check.
+- Keyless demo: bot model `demo:search-only` searches the catalog for the shopper's words (`src/demo-model.ts`). `createModelResolver` refuses it when `NODE_ENV=production`.
+- Smoke-tested end to end with the built engine: `conversation` → `status` → `reply` (product cards) → `done`.
+
+- [x] **Step 1: Failing tests** (scripted model from `@ace/agent/testing`, test database).
   - The happy path emits `conversation`, `status(search_products)`, `reply` (with a `product_list` UI part), `done`, in that order.
   - Rows are persisted: messages, session refs, tool call (redacted), trace with `promptVersion`, usage.
   - A second turn using the same conversation sees the first turn's `#refs` ("#2" adds the right variant).
@@ -360,7 +369,7 @@ The host site sends `cartId` with each message. If a tool created or replaced th
   - A fallback model is used when the primary throws `APICallError`.
   - Tenant B's widget key with tenant A's conversation ID + token → 404.
   - An ungrounded amount is scrubbed from the text and tagged.
-- [ ] **Step 2:** ADR-004 (E1 outcome). Implement; checks; commit `feat(engine): chat turns over SSE with leases, persistence and traces`.
+- [x] **Step 2:** ADR-004 (E1 outcome). Implement; checks; commit `feat(engine): chat turns over SSE with leases, persistence and traces`.
 
 ---
 

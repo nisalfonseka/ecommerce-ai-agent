@@ -2,17 +2,17 @@ import { createDb, createPgIdempotencyStore, resolveWidgetKey } from "@ace/db";
 import { serve } from "@hono/node-server";
 import { sql } from "drizzle-orm";
 import { createApp } from "./app";
+import { createConversationTokens } from "./auth/conversation-token";
 import { loadConfig } from "./config";
 import { createLogger } from "./log";
+import { createModelResolver } from "./models";
 import { createProviderFactory } from "./providers";
+import { createRateLimiter } from "./rate-limit";
+import { registerChatRoutes } from "./routes/chat";
 
 const config = loadConfig(process.env);
 const logger = createLogger({ level: config.logLevel });
 const { db, close } = createDb(config.databaseUrl);
-// Used by the chat routes (Task 7).
-export const providers = createProviderFactory({
-  idempotencyStore: (tenantId) => createPgIdempotencyStore(db, tenantId),
-});
 
 const app = createApp({
   logger,
@@ -25,6 +25,19 @@ const app = createApp({
     }
   },
   resolveWidgetKey: (key) => resolveWidgetKey(db, key),
+});
+
+registerChatRoutes(app, {
+  db,
+  providers: createProviderFactory({
+    idempotencyStore: (tenantId) => createPgIdempotencyStore(db, tenantId),
+  }),
+  tokens: createConversationTokens(config.conversationTokenSecret),
+  models: createModelResolver({ allowDemo: config.allowDemoModel }),
+  logger,
+  visitorLimiter: createRateLimiter({ limitPerMinute: 20 }),
+  ipLimiter: createRateLimiter({ limitPerMinute: 60 }),
+  trustProxyHops: config.trustProxyHops,
 });
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
