@@ -25,10 +25,12 @@ describe("redactDeep", () => {
     });
   });
 
-  it("stays linear on long text without separators (no regex backtracking blow-up)", () => {
+  // ~0.1 s when linear; the old quadratic email pattern took ~50 s on this input. The budget is loose on purpose:
+  // shared CI runners are slow and noisy, and only a blow-up should fail it.
+  it("stays linear on long text without separators (no regex backtracking blow-up)", { timeout: 30_000 }, () => {
     const started = performance.now();
     for (const text of ["x".repeat(200_000), "a.".repeat(100_000), "1 ".repeat(100_000)]) redactPii(text);
-    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(performance.now() - started).toBeLessThan(15_000);
     expect(redactPii("mail nimali.perera+shop@mail.example.lk now")).toBe("mail [email] now");
   });
 
