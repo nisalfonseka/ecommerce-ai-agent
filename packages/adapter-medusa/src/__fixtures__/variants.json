@@ -1,0 +1,16 @@
+[
+  {
+    "id": "variant_01M4G99VJ5G66XJSG6JWD627XP",
+    "sku": "LINEN-SHIRT-BLACK-L",
+    "manage_inventory": true,
+    "allow_backorder": false,
+    "inventory_quantity": 0
+  },
+  {
+    "id": "variant_01M4G99VJ6EY54NZCJGBBPYWP9",
+    "sku": "WRAP-DRESS-BLACK-M",
+    "manage_inventory": true,
+    "allow_backorder": false,
+    "inventory_quantity": 1
+  }
+]

@@ -161,7 +161,19 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
 - Orders: Admin API `GET /admin/orders?q=<number>` plus an ownership check against the verified email or phone; `null` for non-owners.
 - COD: set email, addresses and the cheapest shipping option, create a payment collection with `pp_system_default`, complete the cart.
 - `conformance.test.ts` runs `describeProviderConformance("medusa", …, { replay: false })` against a running backend, with `control.setStock` via the Admin API. Unit tests (`mapping.test.ts`, `client.test.ts`) use recorded Medusa responses and a fake `fetch`.
-- [ ] Failing unit tests; implement; then run conformance against the local backend; commit `feat(adapter-medusa): Medusa v2 adapter passing conformance`.
+- [x] Failing unit tests; implement; then run conformance against the local backend; commit `feat(adapter-medusa): Medusa v2 adapter passing conformance`.
+
+**As built (Task 6).**
+- Conformance against the local Medusa: 33 passed, 6 skipped (the 5 replay tests, which belong to the engine decorator, and the not-supported probe, because every capability is declared).
+- **Search.** Medusa's `q` (one call per query word, plus a category match) only collects candidates. Ranking and filters are the memory adapter's rules, applied locally to at most 100 candidates per word. The Phase 6 index replaces this for large catalogs.
+- **Inventory** comes from the Store API (`+inventory_quantity`, which is stocked minus reserved), so only order lookup needs the secret key.
+- **Order lookup.** The Admin API ignores `email` and `display_id` filters, so lookups use `q`. `lookupOrder` pages in ascending `display_id`, so the exact number comes first. Ownership is then checked with `identityMatches` against the order's email, shipping phone and customer ID.
+- **Atomic multi-line add.**
+  - Every line is pre-checked (exists, line cap, stock) before the first write.
+  - If a later write still fails (a stock race or a timeout), every touched variant is set back to its previous quantity, read fresh from the store.
+  - Unit tests drive both cases with a fake Medusa.
+- **COD.** Sets the address and the cheapest delivery option, uses Medusa's manual provider (`pp_system_default`), then completes the cart. The order keeps the cart metadata (`ace_conversation_id`). Medusa needs no email for it.
+
 
 ### Task 7: Engine — Medusa stores
 

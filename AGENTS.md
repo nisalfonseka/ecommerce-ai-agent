@@ -101,6 +101,8 @@ pnpm evals --models google:gemini-flash-latest --rpm 5    # free tier: max 5 mod
 scripts/test-postgres.sh start   # throwaway Postgres for @ace/db / @ace/engine integration tests (prints ACE_TEST_DATABASE_URL)
 pnpm seed               # two demo tenants + widget keys (needs DATABASE_URL; keyless demo model by default)
 scripts/dev-stack.sh start   # local Postgres + engine (demo model) + demo store page on http://localhost:5173; `stop` to end
+scripts/reference-store.sh start   # Medusa reference store on :9000 (ADR-006); keys + fixtures in ${TMPDIR:-/tmp}/ace-store/seed-output.json
+ACE_MEDUSA_SEED_OUTPUT=/tmp/ace-store/seed-output.json pnpm --filter @ace/adapter-medusa test   # Medusa conformance
 pnpm --filter @ace/widget e2e   # Playwright: widget in Chromium against the dev stack (CHROME_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome in the cloud container)
 ```
 
