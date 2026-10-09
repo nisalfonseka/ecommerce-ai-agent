@@ -262,14 +262,20 @@ Final design for the lookup (as built): `widget_key_lookup(key_hash pk, tenant_i
   4. `ambiguous` + `addCartLines` → `getCart`, and compare each line's quantity with `reconcile.before[variantId] + requested`. If it reached that → treat as applied (complete with the current cart). Otherwise run the write once. `ambiguous` for other operations → run again; they are absolute (`updateCartLine`, `updateCartAttributes`) or have no cart side effect (`createCheckout`). An ambiguous `createCart` can leave one orphan empty cart, which is acceptable.
 - `createProviderFactory({ db, masterKey }): (tenantId, store) => CommerceProvider`. `platform: "memory"` → a cached `MemoryCommerceProvider` per (tenant, store), wrapped. Unknown platform → throws `NOT_SUPPORTED`.
 
-- [ ] **Step 1: Failing tests.**
+**As built:**
+- `IdempotencyStore` is `{ begin, complete, markAmbiguous, remove }`, with a Postgres store (`@ace/db`, `createPgIdempotencyStore(db, tenantId)`) and an in-memory one (`createMemoryIdempotencyStore`, for tests).
+- A record left `in_progress` for more than 2 minutes (a crashed request) is treated as ambiguous.
+- `createProviderFactory({ idempotencyStore: (tenantId) => store })`.
+- Known limitation: two *concurrent* replays of the same ambiguous record could both re-run the write. Replays come from one turn's retry, so this is unlikely. If it shows up, add a compare-and-set claim (`ambiguous → in_progress`).
+
+- [x] **Step 1: Failing tests.**
   - The conformance suite (`describeProviderConformance`) passes against `IdempotentCommerceProvider(new MemoryCommerceProvider(), pgStore)`. This is the ADR-002 consequence.
   - Unit: replay → identical result and the inner provider is called once.
   - Same key with another input → `CONFLICT`.
   - Inner throws `OUT_OF_STOCK` → no record left, and a retry with the same key runs again.
   - Inner throws a timeout after applying → the replay finds the line already added and does **not** add twice.
   - Inner throws a timeout before applying → the replay adds once.
-- [ ] **Step 2: Implement; checks; commit** `feat(engine): Postgres-backed idempotent provider (ADR-002)`.
+- [x] **Step 2: Implement; checks; commit** `feat(engine): Postgres-backed idempotent provider (ADR-002)`.
 
 ---
 

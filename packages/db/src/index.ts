@@ -4,6 +4,7 @@ export { MIGRATIONS_FOLDER, runMigrations } from "./migrate";
 export { redactDeep, redactPii } from "./redact";
 export * from "./repos/admin";
 export * from "./repos/conversations";
+export * from "./repos/idempotency";
 export * from "./repos/telemetry";
 export * as schema from "./schema";
 export { TENANT_TABLES } from "./schema";
