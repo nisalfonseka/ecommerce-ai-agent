@@ -247,6 +247,26 @@ describe.skipIf(testDb === null)("enrichStoredProduct", () => {
     });
   });
 
+  it("keeps the typed error when recording the failed call's usage fails", async () => {
+    const { deps } = await setup();
+    const doomed = createDb(database.appUrl);
+    const enricher: Enricher = {
+      model: "google:cheap",
+      async enrich() {
+        await doomed.close(); // the billing write that follows cannot succeed
+        throw new EnrichmentError("invalid_output", "bad", { usage: { inputTokens: 5, outputTokens: 1 } });
+      },
+    };
+    const seen: unknown[] = [];
+    const error = await enrichStoredProduct(
+      { ...deps, db: doomed.db, enricher, onBillingError: (e) => seen.push(e) },
+      SHIRT,
+    ).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(EnrichmentError);
+    expect((error as EnrichmentError).code).toBe("invalid_output");
+    expect(seen).toHaveLength(1);
+  });
+
   it("overrides win over enrichment, survive a re-sync and are not lost on re-enrichment", async () => {
     const { deps, row, provider, tenantId, storeId, jobs } = await setup();
     await enrichStoredProduct(deps, SHIRT);

@@ -185,6 +185,8 @@ export interface EnrichDeps {
   jobs: JobQueue;
   /** Recorded as `job:<jobId>` on the usage row; `job:adhoc` when absent. */
   jobId?: string;
+  /** Called when recording a failed call's usage itself fails; the original error is rethrown regardless. */
+  onBillingError?: (error: unknown) => void;
 }
 
 const StringLists = z.record(z.string(), z.array(z.string()));
@@ -283,7 +285,12 @@ export async function enrichStoredProduct(
     // The failed call still cost tokens, and the job layer will retry: bill each attempt.
     if (error instanceof EnrichmentError && error.usage) {
       const spent = error.usage;
-      await withTenant(deps.db, deps.tenantId, (tx) => recordEnrichUsage(tx, deps, spent));
+      try {
+        await withTenant(deps.db, deps.tenantId, (tx) => recordEnrichUsage(tx, deps, spent));
+      } catch (billingError) {
+        // Never mask the typed error: the job layer needs its code to tell invalid output from a transient failure.
+        deps.onBillingError?.(billingError);
+      }
     }
     throw error;
   }
