@@ -302,7 +302,16 @@ Final design for the lookup (as built): `widget_key_lookup(key_hash pk, tenant_i
 - `createRateLimiter({ perVisitorPerMinute: 20, perIpPerMinute: 60 })`. It is in-memory, per process (the engine runs as one process on the VPS; a Postgres-backed limiter is the upgrade path if it ever scales out). `check(key): { ok } | { ok: false; retryAfterS }`.
 - Error shape for every route: `{ error: { code, message } }`. Codes: `unauthorized`, `forbidden_origin`, `rate_limited`, `invalid_input`, `not_found`, `turn_in_progress`, `internal`.
 
-- [ ] **Step 1: Failing tests** (Hono `app.request`, no network).
+**As built:**
+- `createApp({ logger, ping, resolveWidgetKey })`. Later tasks add routes and dependencies.
+- `clientIp(xForwardedFor, remoteAddress, trustProxyHops)` reads the address the outermost trusted proxy saw.
+- `createRateLimiter({ limitPerMinute })` is keyed by the caller (visitor, IP); idle keys are swept.
+- Preflight (`OPTIONS`) cannot carry the key, so it is answered for the requesting origin only. The real request is refused without CORS headers unless its origin is on the key's allow-list.
+- `build.mjs` bundles `@ace/*` source and keeps npm packages external. It **fails the build** when bundled code imports an npm package the engine does not declare (pnpm is strict, so it would not resolve at runtime).
+- `src/migrate-cli.ts` → `dist/migrate.js` runs migrations as the owner (`MIGRATION_DATABASE_URL`, `ACE_APP_DB_PASSWORD`, `ACE_MIGRATIONS_DIR`).
+- Smoke-tested: migrate, start as `ace_app`, `/healthz` ok, `/v1` 401, unknown route 404, clean SIGTERM.
+
+- [x] **Step 1: Failing tests** (Hono `app.request`, no network).
   - Missing, unknown or revoked key → 401.
   - A wrong Origin → 403 with no `Access-Control-Allow-Origin`.
   - The right Origin → CORS headers set.
@@ -310,7 +319,7 @@ Final design for the lookup (as built): `widget_key_lookup(key_hash pk, tenant_i
   - The limiter blocks the 21st request in a minute and recovers.
   - `loadConfig` rejects a short master key and does not echo it.
   - The logger redacts emails and phones in messages and fields.
-- [ ] **Step 2: Implement; checks; commit** `feat(engine): config, widget auth, conversation tokens and rate limits`.
+- [x] **Step 2: Implement; checks; commit** `feat(engine): config, widget auth, conversation tokens and rate limits`.
 
 ---
 
