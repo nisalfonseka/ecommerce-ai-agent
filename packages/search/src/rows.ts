@@ -29,7 +29,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** Enriched and overrides are opaque JSON from other tasks; non-array values are ignored. */
-function mergeAttributes(platform: Attributes, enriched: unknown, overrides: unknown): Attributes {
+export function mergeAttributes(platform: Attributes, enriched: unknown, overrides: unknown): Attributes {
   const enrichedRecord = isRecord(enriched) ? enriched : {};
   const overrideRecord = isRecord(overrides) ? overrides : {};
   const keys = new Set([
@@ -48,6 +48,27 @@ function mergeAttributes(platform: Attributes, enriched: unknown, overrides: unk
   return merged;
 }
 
+/** Sorted and unique so a stored row (which only has its variants) can rebuild the same text. */
+export const variantOptionValues = (options: Record<string, string>[]): string[] =>
+  [...new Set(options.flatMap((o) => Object.values(o)))].sort();
+
+/** The weight-B full-text field: category, effective attribute values, tags and option values. */
+export function searchSecondaryText(parts: {
+  category: string | null;
+  attributes: Attributes;
+  tags: string[];
+  optionValues: string[];
+}): string {
+  return [
+    parts.category ?? "",
+    ...Object.values(parts.attributes).flat(),
+    ...parts.tags,
+    ...parts.optionValues,
+  ]
+    .filter((part) => part !== "")
+    .join(" ");
+}
+
 export function productRows(
   storeId: string,
   product: Product,
@@ -55,15 +76,13 @@ export function productRows(
 ): ProductRows {
   const amounts = product.variants.map((variant) => variant.price.amount);
   const attributes = mergeAttributes(product.attributes, existing?.enriched, existing?.overrides);
-  const optionValues = product.options.flatMap((option) => option.values);
-  const searchSecondary = [
-    product.category ?? "",
-    ...Object.values(attributes).flat(),
-    ...product.tags,
-    ...optionValues,
-  ]
-    .filter((part) => part !== "")
-    .join(" ");
+  const optionValues = variantOptionValues(product.variants.map((variant) => variant.options));
+  const searchSecondary = searchSecondaryText({
+    category: product.category ?? null,
+    attributes,
+    tags: product.tags,
+    optionValues,
+  });
   return {
     product: {
       storeId,

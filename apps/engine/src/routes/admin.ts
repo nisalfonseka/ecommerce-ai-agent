@@ -1,9 +1,11 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
+  type CatalogProductRow,
   createBot,
   createStore,
   createTenant,
   type Db,
+  enrichmentReport,
   issueWidgetKey,
   revokeWidgetKey,
   schema,
@@ -12,6 +14,8 @@ import {
   usageReport,
   withTenant,
 } from "@ace/db";
+import type { JobQueue } from "@ace/db/jobs";
+import { applyMerchantOverrides, MerchantOverridesSchema } from "@ace/search";
 import { eq } from "drizzle-orm";
 import type { Hono, MiddlewareHandler } from "hono";
 import { z } from "zod";
@@ -26,6 +30,7 @@ export interface AdminDeps {
   adminApiKeySha256: string;
   masterKey: Buffer;
   prices: ModelPrices;
+  jobs: JobQueue;
 }
 
 const UUID = z.uuid();
@@ -214,5 +219,58 @@ export function registerAdminRoutes(app: Hono<WidgetEnv>, deps: AdminDeps): void
       usageReport(tx, new Date(`${month}-15T00:00:00Z`)),
     );
     return c.json({ month, ...report });
+  });
+  const storeExists = (tenantId: string, storeId: string) =>
+    withTenant(deps.db, tenantId, async (tx) => {
+      const [store] = await tx
+        .select({ id: schema.stores.id })
+        .from(schema.stores)
+        .where(eq(schema.stores.id, storeId));
+      return store !== undefined;
+    });
+
+  const reviewItem = (row: CatalogProductRow) => ({
+    productId: row.productId,
+    title: row.title,
+    enriched: row.enriched,
+    overrides: row.overrides,
+    attributes: row.attributes,
+    hidden: row.hidden,
+    boost: row.boost,
+    enrichmentModel: row.enrichmentModel,
+  });
+
+  // Onboarding review (workflow A5): what the enricher decided and what the merchant changed.
+  admin.get("/tenants/:tenantId/stores/:storeId/enrichment", async (c) => {
+    const tenantId = tenantParam(c.req.param("tenantId"));
+    const storeId = c.req.param("storeId");
+    if (!tenantId || !UUID.safeParse(storeId).success)
+      return errorResponse(c, 404, "not_found", "Unknown store.");
+    const query = z
+      .object({
+        limit: z.coerce.number().int().min(1).max(200).default(50),
+        cursor: z.string().min(1).max(200).optional(),
+      })
+      .safeParse({ limit: c.req.query("limit"), cursor: c.req.query("cursor") });
+    if (!query.success) return errorResponse(c, 400, "invalid_input", "limit must be 1-200.");
+    if (!(await storeExists(tenantId, storeId))) return errorResponse(c, 404, "not_found", "Unknown store.");
+    const page = await withTenant(deps.db, tenantId, (tx) => enrichmentReport(tx, storeId, query.data));
+    return c.json({ items: page.items.map(reviewItem), nextCursor: page.nextCursor });
+  });
+
+  admin.put("/tenants/:tenantId/stores/:storeId/products/:productId/overrides", async (c) => {
+    const tenantId = tenantParam(c.req.param("tenantId"));
+    const storeId = c.req.param("storeId");
+    const productId = c.req.param("productId");
+    if (!tenantId || !UUID.safeParse(storeId).success)
+      return errorResponse(c, 404, "not_found", "Unknown product.");
+    const body = MerchantOverridesSchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return errorResponse(c, 400, "invalid_input", "Invalid overrides.");
+    // applyMerchantOverrides is RLS-scoped and store-scoped; the explicit check keeps the 404 uniform.
+    if (!(await storeExists(tenantId, storeId)))
+      return errorResponse(c, 404, "not_found", "Unknown product.");
+    const row = await applyMerchantOverrides({ ...deps, tenantId, storeId }, productId, body.data);
+    if (!row) return errorResponse(c, 404, "not_found", "Unknown product.");
+    return c.json(reviewItem(row));
   });
 }

@@ -55,15 +55,15 @@ const turnDeps = {
 };
 registerChatRoutes(app, turnDeps);
 registerActionRoutes(app, turnDeps);
+// Producer only: the engine enqueues, the worker (Phase 6) consumes.
+const jobQueue = await openJobQueue(config.databaseUrl, "producer");
 registerAdminRoutes(app, {
   db,
   adminApiKeySha256: config.adminApiKeySha256,
   masterKey: config.masterKey,
   prices,
+  jobs: jobQueue.queue,
 });
-
-// Producer only: the engine enqueues, the worker (Phase 6) consumes.
-const jobQueue = await openJobQueue(config.databaseUrl, "producer");
 registerWebhookRoutes(app, { db, jobs: jobQueue.queue, masterKey: config.masterKey, logger });
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

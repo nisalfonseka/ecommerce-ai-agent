@@ -1,6 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
+import { MemoryCommerceProvider } from "@ace/adapter-memory";
 import { createDb } from "@ace/db";
+import type { JobName, JobPayload, JobQueue } from "@ace/db/jobs";
 import { createTestDatabase } from "@ace/db/testing";
+import { createDemoEnricher, enrichStoredProduct, syncProduct } from "@ace/search";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { loadModelPrices } from "../budget";
@@ -10,7 +13,15 @@ import { registerAdminRoutes } from "./admin";
 const testDb = await createTestDatabase();
 const ADMIN_KEY = "admin-test-key-0123456789";
 
+class RecordingQueue implements JobQueue {
+  sent: JobName[] = [];
+  async send<N extends JobName>(name: N, _data: JobPayload<N>): Promise<void> {
+    this.sent.push(name);
+  }
+}
+
 describe.skipIf(testDb === null)("admin API", () => {
+  const jobs = new RecordingQueue();
   let pool: ReturnType<typeof createDb>;
   let app: ReturnType<typeof createApp>;
 
@@ -23,6 +34,7 @@ describe.skipIf(testDb === null)("admin API", () => {
       db: pool.db,
       adminApiKeySha256: createHash("sha256").update(ADMIN_KEY).digest("hex"),
       masterKey: randomBytes(32),
+      jobs,
       prices: loadModelPrices({
         models: {
           "demo:search-only": {
@@ -149,5 +161,97 @@ describe.skipIf(testDb === null)("admin API", () => {
       avgCostPerConversationUsdMicros: null,
     });
     expect((await call("GET", `/admin/tenants/not-a-uuid/usage`)).status).toBe(404);
+  });
+
+  describe("enrichment review and overrides", () => {
+    const SHIRT = "p_linen_shirt_black";
+    async function seededStore(name: string) {
+      const { tenantId } = await json(await call("POST", "/admin/tenants", { name }));
+      const { storeId } = await json(
+        await call("POST", `/admin/tenants/${tenantId}/stores`, { platform: "memory", currency: "LKR" }),
+      );
+      const deps = {
+        db: pool.db,
+        tenantId: tenantId ?? "",
+        storeId: storeId ?? "",
+        jobs: new RecordingQueue(),
+      };
+      await syncProduct(
+        { ...deps, provider: new MemoryCommerceProvider(), embeddingModel: "demo:embed" },
+        SHIRT,
+      );
+      await enrichStoredProduct({ ...deps, enricher: createDemoEnricher() }, SHIRT);
+      return { tenantId, storeId };
+    }
+    const overridesPath = (t?: string, s?: string) =>
+      `/admin/tenants/${t}/stores/${s}/products/${SHIRT}/overrides`;
+
+    it("lists enriched products with their overrides and edits them", async () => {
+      const { tenantId, storeId } = await seededStore("Review A");
+      jobs.sent = [];
+      const put = await call("PUT", overridesPath(tenantId, storeId), {
+        attributes: { color: ["navy"] },
+        hidden: true,
+      });
+      expect(put.status).toBe(200);
+      expect(await put.json()).toMatchObject({
+        productId: SHIRT,
+        overrides: { color: ["navy"] },
+        attributes: { color: ["navy"] },
+        hidden: true,
+      });
+      expect(jobs.sent).toEqual(["embed.product"]);
+
+      const list = await call("GET", `/admin/tenants/${tenantId}/stores/${storeId}/enrichment?limit=10`);
+      expect(list.status).toBe(200);
+      const page = (await list.json()) as { items: Record<string, unknown>[]; nextCursor: string | null };
+      expect(page.nextCursor).toBeNull();
+      expect(page.items).toHaveLength(1);
+      expect(page.items[0]).toMatchObject({
+        productId: SHIRT,
+        enrichmentModel: "demo:rules-v1",
+        overrides: { color: ["navy"] },
+        enriched: { fabric: ["linen"] },
+      });
+    });
+
+    it("pages with a cursor", async () => {
+      const { tenantId, storeId } = await seededStore("Review Page");
+      const first = (await (
+        await call("GET", `/admin/tenants/${tenantId}/stores/${storeId}/enrichment?limit=1`)
+      ).json()) as { nextCursor: string | null };
+      expect(first.nextCursor).toBeNull(); // one product only
+      expect(
+        (await call("GET", `/admin/tenants/${tenantId}/stores/${storeId}/enrichment?limit=0`)).status,
+      ).toBe(400);
+    });
+
+    it("rejects out-of-range or unknown overrides with 400", async () => {
+      const { tenantId, storeId } = await seededStore("Review B");
+      expect((await call("PUT", overridesPath(tenantId, storeId), { boost: 2 })).status).toBe(400);
+      expect(
+        (await call("PUT", overridesPath(tenantId, storeId), { attributes: { mood: ["x"] } })).status,
+      ).toBe(400);
+    });
+
+    it("answers 404 for another tenant's product or an unknown one", async () => {
+      const a = await seededStore("Review Owner");
+      const b = await seededStore("Review Intruder");
+      // tenant B's path with tenant A's store, and A's tenant with B's store
+      expect((await call("PUT", overridesPath(b.tenantId, a.storeId), { hidden: true })).status).toBe(404);
+      expect((await call("PUT", overridesPath(a.tenantId, b.storeId), { hidden: true })).status).toBe(404);
+      expect((await call("GET", `/admin/tenants/${b.tenantId}/stores/${a.storeId}/enrichment`)).status).toBe(
+        404,
+      );
+      expect(
+        (
+          await call("PUT", `/admin/tenants/${a.tenantId}/stores/${a.storeId}/products/nope/overrides`, {
+            hidden: true,
+          })
+        ).status,
+      ).toBe(404);
+      const own = await call("GET", `/admin/tenants/${a.tenantId}/stores/${a.storeId}/enrichment`);
+      expect(((await own.json()) as { items: { hidden: boolean }[] }).items[0]?.hidden).toBe(false);
+    });
   });
 });

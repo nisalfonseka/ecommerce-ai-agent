@@ -1,4 +1,4 @@
-import { and, eq, getTableColumns, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt, notInArray, sql } from "drizzle-orm";
 import type { Tx } from "../client";
 import { catalogProducts, catalogSyncState, catalogVariants } from "../schema";
 
@@ -157,4 +157,68 @@ export async function countCatalog(tx: Tx, storeId: string, embeddingModel?: str
     .from(p)
     .where(eq(p.storeId, storeId));
   return row ?? { active: 0, deleted: 0, enriched: 0, embedded: 0, staleEmbeddings: 0 };
+}
+
+export interface EnrichmentWrite {
+  /** Flat arrays per key (the shape the attribute merge reads). */
+  enriched: Record<string, string[]>;
+  enrichedHash: string;
+  enrichmentModel: string;
+  attributes: Record<string, string[]>;
+  searchSecondary: string;
+}
+
+export async function setEnrichment(
+  tx: Tx,
+  storeId: string,
+  productId: string,
+  write: EnrichmentWrite,
+): Promise<void> {
+  await tx
+    .update(catalogProducts)
+    .set(write)
+    .where(and(eq(catalogProducts.storeId, storeId), eq(catalogProducts.productId, productId)));
+}
+
+export interface OverridesWrite {
+  /** Flat attribute overrides; omit to leave the stored ones alone. */
+  overrides?: Record<string, string[]>;
+  hidden?: boolean;
+  boost?: number;
+  attributes: Record<string, string[]>;
+  searchSecondary: string;
+}
+
+/** Returns the updated row, or null when the product is not in this store (or tenant). */
+export async function setOverrides(
+  tx: Tx,
+  storeId: string,
+  productId: string,
+  write: OverridesWrite,
+): Promise<CatalogProductRow | null> {
+  const [row] = await tx
+    .update(catalogProducts)
+    .set(write)
+    .where(and(eq(catalogProducts.storeId, storeId), eq(catalogProducts.productId, productId)))
+    .returning(PRODUCT_COLUMNS);
+  return row ?? null;
+}
+
+/** One page of the onboarding review, ordered by product id. */
+export async function enrichmentReport(
+  tx: Tx,
+  storeId: string,
+  options: { limit: number; cursor?: string },
+): Promise<{ items: CatalogProductRow[]; nextCursor: string | null }> {
+  const conditions = [eq(catalogProducts.storeId, storeId), eq(catalogProducts.status, "active")];
+  if (options.cursor !== undefined) conditions.push(gt(catalogProducts.productId, options.cursor));
+  const rows = await tx
+    .select(PRODUCT_COLUMNS)
+    .from(catalogProducts)
+    .where(and(...conditions))
+    .orderBy(asc(catalogProducts.productId))
+    .limit(options.limit + 1);
+  const items = rows.slice(0, options.limit);
+  const last = items[items.length - 1];
+  return { items, nextCursor: rows.length > options.limit && last ? last.productId : null };
 }

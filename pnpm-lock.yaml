@@ -184,6 +184,9 @@ importers:
 
   apps/engine:
     dependencies:
+      '@ace/search':
+        specifier: workspace:*
+        version: link:../../packages/search
       '@ai-sdk/anthropic':
         specifier: ^4.0.76
         version: 4.0.76(zod@4.6.5)
@@ -399,9 +402,15 @@ importers:
       '@ace/db':
         specifier: workspace:*
         version: link:../db
+      ai:
+        specifier: ^7.0.133
+        version: 7.0.133(zod@4.6.5)
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@types/pg@8.23.1)(pg@8.23.1)
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
     devDependencies:
       '@ace/adapter-memory':
         specifier: workspace:*

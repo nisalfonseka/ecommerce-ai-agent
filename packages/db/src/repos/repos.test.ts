@@ -23,7 +23,7 @@ import {
   releaseLease,
   saveSessionAndRelease,
 } from "./conversations";
-import { monthToDateCostMicros, recordToolCalls, recordTurn, usageReport } from "./telemetry";
+import { monthToDateCostMicros, recordJobUsage, recordToolCalls, recordTurn, usageReport } from "./telemetry";
 import {
   getWebhookEvent,
   markWebhookEnqueued,
@@ -221,6 +221,29 @@ describe.skipIf(testDb === null)("repositories (as ace_app)", () => {
       expect(await withTenant(app.db, otherTenantId, (tx) => usageReport(tx, now))).toMatchObject({
         costUsdMicros: 0,
         conversations: 0,
+      });
+    });
+
+    it("counts only turns as turns once job usage shares the ledger", async () => {
+      const enrichTenant = (await createTenant(app.db, { name: "Enrich usage" })).tenantId;
+      const storeId = await withTenant(
+        app.db,
+        enrichTenant,
+        async (tx) => (await createStore(tx, enrichTenant, { platform: "memory", currency: "LKR" })).id,
+      );
+      await withTenant(app.db, enrichTenant, (tx) =>
+        recordJobUsage(tx, enrichTenant, {
+          storeId,
+          kind: "enrich",
+          turnId: "job:j1",
+          model: "google:cheap",
+          inputTokens: 10,
+          outputTokens: 5,
+        }),
+      );
+      expect(await withTenant(app.db, enrichTenant, (tx) => usageReport(tx, new Date()))).toMatchObject({
+        turns: 0,
+        costUsdMicros: 0,
       });
     });
   });

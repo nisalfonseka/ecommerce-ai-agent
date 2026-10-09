@@ -54,6 +54,7 @@ describe.skipIf(testDb === null)("webhook ingress", () => {
       adminApiKeySha256: createHash("sha256").update(ADMIN_KEY).digest("hex"),
       masterKey,
       prices: loadModelPrices({ models: {} }),
+      jobs,
     });
     registerWebhookRoutes(app, {
       db: pool.db,

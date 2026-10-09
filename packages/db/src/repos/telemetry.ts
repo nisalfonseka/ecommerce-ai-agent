@@ -67,6 +67,22 @@ export async function recordTurn(tx: Tx, tenantId: string, turn: TurnRecord): Pr
   });
 }
 
+/** Billing row for background work that has no bot (enrichment); `storeId` says whose it is. */
+export async function recordJobUsage(
+  tx: Tx,
+  tenantId: string,
+  usage: {
+    storeId: string;
+    kind: "enrich" | "embed";
+    turnId: string;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+  },
+): Promise<void> {
+  await tx.insert(usageLedger).values({ tenantId, botId: null, costUsdMicros: null, ...usage });
+}
+
 function monthBounds(now: Date): { start: Date; end: Date } {
   return {
     start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
@@ -103,7 +119,8 @@ export async function usageReport(
   const [usage] = await tx
     .select({
       cost: sql<number>`coalesce(sum(${usageLedger.costUsdMicros}), 0)::int`,
-      turns: sql<number>`count(*)::int`,
+      // Enrichment rows share the ledger; only turns count as turns.
+      turns: sql<number>`count(*) filter (where ${usageLedger.kind} = 'turn')::int`,
     })
     .from(usageLedger)
     .where(and(gte(usageLedger.createdAt, start), lt(usageLedger.createdAt, end)));
