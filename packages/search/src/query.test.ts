@@ -44,6 +44,19 @@ describe("normalizeQuery", () => {
     expect(normalizeQuery("උත්සවයට").text).toBe("උත්සවයට");
   });
 
+  it("passes Object.prototype names through as plain words", () => {
+    for (const word of ["constructor", "tostring", "constructorak", "hasownproperty", "valueof"]) {
+      expect(normalizeQuery(`${word} dress`), word).toEqual({
+        text: `${word} dress`,
+        terms: [word, "dress"],
+      });
+    }
+    // The tokenizer drops underscores, so "__proto__" reaches the lexicon as the plain word "proto".
+    expect(normalizeQuery("__proto__ dress")).toEqual({ text: "proto dress", terms: ["proto", "dress"] });
+    expect(normalizeQuery("toString").terms.every((term) => typeof term === "string")).toBe(true);
+    expect(normalizeQuery("toString").text).toBe("tostring");
+  });
+
   it("maps 't shirt' and 'tshirt' to the t-shirt category", () => {
     expect(normalizeQuery("gym ekata t shirt").text).toBe("gym ekata t-shirt");
     expect(normalizeQuery("tshirt").text).toBe("t-shirt");
