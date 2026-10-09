@@ -1,6 +1,6 @@
 # Phase 1 — Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Create the monorepo, the universal commerce contract (`@ace/contracts`), an adapter conformance test suite, and an in-memory clothing-store adapter (`@ace/adapter-memory`) that passes it.
 
@@ -90,7 +90,7 @@
   - `parseInput<S extends z.ZodType>(schema: S, value: unknown): z.output<S>` (throws `CommerceError("INVALID_INPUT")`)
   - `CurrencyCodeSchema`, `MoneySchema`, `type Money`, `money(amount, currency)`, `addMoney(a, b)`, `multiplyMoney(m, factor)`
 
-- [ ] **Step 1: Initialise git and root files**
+- [x] **Step 1: Initialise git and root files**
 
 ```bash
 git init
@@ -185,7 +185,7 @@ coverage/
 24
 ```
 
-- [ ] **Step 2: Pin pnpm and install root tooling**
+- [x] **Step 2: Pin pnpm and install root tooling**
 
 ```bash
 corepack enable
@@ -195,7 +195,7 @@ pnpm add -Dw turbo typescript vitest @biomejs/biome @types/node
 
 Expected: `package.json` gains `"packageManager": "pnpm@…"` and the five devDependencies; `pnpm-lock.yaml` is created.
 
-- [ ] **Step 3: Create the contracts package shell**
+- [x] **Step 3: Create the contracts package shell**
 
 `packages/contracts/package.json`:
 
@@ -229,7 +229,7 @@ pnpm --filter @ace/contracts add zod@^4
 pnpm --filter @ace/contracts add -D vitest typescript
 ```
 
-- [ ] **Step 4: Write the failing tests**
+- [x] **Step 4: Write the failing tests**
 
 `packages/contracts/src/errors.test.ts`:
 
@@ -318,12 +318,12 @@ describe("money", () => {
 });
 ```
 
-- [ ] **Step 5: Run tests to verify they fail**
+- [x] **Step 5: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/contracts test`
 Expected: FAIL with "Failed to resolve import "./errors"" (and "./money").
 
-- [ ] **Step 6: Implement `errors.ts` and `money.ts`**
+- [x] **Step 6: Implement `errors.ts` and `money.ts`**
 
 `packages/contracts/src/errors.ts`:
 
@@ -409,17 +409,17 @@ export function multiplyMoney(value: Money, factor: number): Money {
 }
 ```
 
-- [ ] **Step 7: Run tests to verify they pass**
+- [x] **Step 7: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/contracts test`
 Expected: PASS — 2 files, 11 tests.
 
-- [ ] **Step 8: Run lint and typecheck**
+- [x] **Step 8: Run lint and typecheck**
 
 Run: `pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: no errors.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add .
@@ -447,7 +447,7 @@ git commit -m "chore: scaffold monorepo; feat(contracts): add CommerceError, par
   - `InventoryLevelSchema`/`InventoryLevel` = `{ variantId; availability; quantityAvailable: number | null }`, `GetInventoryInputSchema` (1–100 IDs)
   - Test-only: `sampleVariant(overrides?)`, `sampleProduct(overrides?)` from `src/test-fixtures.ts`
 
-- [ ] **Step 1: Write the test fixtures**
+- [x] **Step 1: Write the test fixtures**
 
 `packages/contracts/src/test-fixtures.ts`:
 
@@ -492,7 +492,7 @@ export function sampleProduct(overrides: Partial<Product> = {}): Product {
 }
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `packages/contracts/src/catalog.test.ts`:
 
@@ -584,12 +584,12 @@ describe("InventoryLevelSchema", () => {
 });
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/contracts test`
 Expected: FAIL with "Failed to resolve import "./catalog"".
 
-- [ ] **Step 4: Implement `catalog.ts` and `inventory.ts`**
+- [x] **Step 4: Implement `catalog.ts` and `inventory.ts`**
 
 `packages/contracts/src/catalog.ts`:
 
@@ -736,12 +736,12 @@ export type InventoryLevel = z.infer<typeof InventoryLevelSchema>;
 export const GetInventoryInputSchema = z.array(z.string().min(1)).min(1).max(100);
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/contracts test`
 Expected: PASS — 3 files, 23 tests.
 
-- [ ] **Step 6: Lint, typecheck, commit**
+- [x] **Step 6: Lint, typecheck, commit**
 
 ```bash
 pnpm lint:fix && pnpm lint && pnpm typecheck
@@ -770,7 +770,7 @@ git commit -m "feat(contracts): add catalog and inventory schemas"
   - `VerifiedIdentitySchema`/`VerifiedIdentity`, `type OrderOwner`, `identityMatches(identity, owner): boolean`
   - `OrderSchema`/`Order`, `LookupOrderInputSchema`/`LookupOrderInput`, `ListOrdersInputSchema`/`ListOrdersInput`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/contracts/src/cart.test.ts`:
 
@@ -873,12 +873,12 @@ describe("LookupOrderInputSchema", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/contracts test`
 Expected: FAIL with "Failed to resolve import "./cart"" and "./identity".
 
-- [ ] **Step 3: Implement the four modules**
+- [x] **Step 3: Implement the four modules**
 
 `packages/contracts/src/cart.ts`:
 
@@ -1062,12 +1062,12 @@ export const ListOrdersInputSchema = z.object({
 export type ListOrdersInput = z.input<typeof ListOrdersInputSchema>;
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/contracts test`
 Expected: PASS — 5 files, 36 tests.
 
-- [ ] **Step 5: Lint, typecheck, commit**
+- [x] **Step 5: Lint, typecheck, commit**
 
 ```bash
 pnpm lint:fix && pnpm lint && pnpm typecheck
@@ -1091,7 +1091,7 @@ git commit -m "feat(contracts): add cart, checkout, identity and order schemas"
   - `interface CommerceProvider` (exact signatures below)
   - `@ace/contracts` index re-exporting all public modules (not `test-fixtures`)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `packages/contracts/src/capabilities.test.ts`:
 
@@ -1124,12 +1124,12 @@ describe("capabilities", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm --filter @ace/contracts test`
 Expected: FAIL with "Failed to resolve import "./capabilities"".
 
-- [ ] **Step 3: Implement capabilities, provider interface and index**
+- [x] **Step 3: Implement capabilities, provider interface and index**
 
 `packages/contracts/src/capabilities.ts`:
 
@@ -1236,12 +1236,12 @@ export * from "./orders";
 export type { CommerceProvider } from "./provider";
 ```
 
-- [ ] **Step 4: Run tests and typecheck**
+- [x] **Step 4: Run tests and typecheck**
 
 Run: `pnpm --filter @ace/contracts test && pnpm typecheck`
 Expected: PASS — 6 files, 39 tests; typecheck clean.
 
-- [ ] **Step 5: Write ADR-001**
+- [x] **Step 5: Write ADR-001**
 
 `docs/adr/001-commerce-contract.md`:
 
@@ -1274,7 +1274,7 @@ The agent depends only on `CommerceProvider` from `@ace/contracts`:
 - Contract changes are versioned. Additive changes add a capability; breaking changes need a new ADR.
 ```
 
-- [ ] **Step 6: Lint and commit**
+- [x] **Step 6: Lint and commit**
 
 ```bash
 pnpm lint:fix && pnpm lint
@@ -1297,7 +1297,7 @@ git commit -m "feat(contracts): add capabilities and CommerceProvider interface;
   - `interface ConformanceSubject { provider: CommerceProvider; fixtures: ConformanceFixtures }`
   - `describeProviderConformance(name: string, setup: () => Promise<ConformanceSubject>): void`
 
-- [ ] **Step 1: Write the fixtures type**
+- [x] **Step 1: Write the fixtures type**
 
 `packages/contracts/src/testing/fixtures.ts`:
 
@@ -1328,7 +1328,7 @@ export interface ConformanceSubject {
 }
 ```
 
-- [ ] **Step 2: Write the failing self-test**
+- [x] **Step 2: Write the failing self-test**
 
 `packages/contracts/src/testing/conformance.self.test.ts`:
 
@@ -1376,12 +1376,12 @@ describeProviderConformance("read-only stub", async () => ({
 }));
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `pnpm --filter @ace/contracts test`
 Expected: FAIL with "Failed to resolve import "./conformance"".
 
-- [ ] **Step 4: Implement the suite**
+- [x] **Step 4: Implement the suite**
 
 `packages/contracts/src/testing/conformance.ts`:
 
@@ -1638,12 +1638,12 @@ export { describeProviderConformance } from "./conformance";
 export type { ConformanceFixtures, ConformanceSubject } from "./fixtures";
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/contracts test`
 Expected: PASS — the self-test reports **2 passed** (platform id, getProduct) and **17 skipped**, plus the 39 earlier tests.
 
-- [ ] **Step 6: Lint, typecheck, commit**
+- [x] **Step 6: Lint, typecheck, commit**
 
 ```bash
 pnpm lint:fix && pnpm lint && pnpm typecheck
@@ -1668,7 +1668,7 @@ git commit -m "feat(contracts): add adapter conformance suite"
   - `encodeCursor(offset: number): string`, `decodeCursor(cursor: string | undefined): number`
   - `searchCatalog(products: Product[], input: SearchProductsInput): SearchProductsResult`
 
-- [ ] **Step 1: Create the package shell**
+- [x] **Step 1: Create the package shell**
 
 `packages/adapter-memory/package.json`:
 
@@ -1697,7 +1697,7 @@ pnpm --filter @ace/adapter-memory add @ace/contracts@workspace:*
 pnpm --filter @ace/adapter-memory add -D vitest typescript
 ```
 
-- [ ] **Step 2: Write the seed data**
+- [x] **Step 2: Write the seed data**
 
 `packages/adapter-memory/src/seed.ts`:
 
@@ -1899,7 +1899,7 @@ export const memoryFixtures: ConformanceFixtures = {
 };
 ```
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 `packages/adapter-memory/src/cursor.test.ts`:
 
@@ -1988,12 +1988,12 @@ describe("searchCatalog", () => {
 });
 ```
 
-- [ ] **Step 4: Run tests to verify they fail**
+- [x] **Step 4: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/adapter-memory test`
 Expected: FAIL with "Failed to resolve import "./cursor"" and "./search".
 
-- [ ] **Step 5: Implement `cursor.ts` and `search.ts`**
+- [x] **Step 5: Implement `cursor.ts` and `search.ts`**
 
 `packages/adapter-memory/src/cursor.ts`:
 
@@ -2097,12 +2097,12 @@ export function searchCatalog(products: Product[], input: SearchProductsInput): 
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/adapter-memory test`
 Expected: PASS — 2 files, 11 tests.
 
-- [ ] **Step 7: Lint, typecheck, commit**
+- [x] **Step 7: Lint, typecheck, commit**
 
 ```bash
 pnpm lint:fix && pnpm lint && pnpm typecheck
@@ -2125,7 +2125,7 @@ git commit -m "feat(adapter-memory): add seeded clothing catalog, cursors and se
   - `interface MemoryProviderOptions { seed?: MemorySeed; now?: () => Date; checkoutBaseUrl?: string }`
   - `class MemoryCommerceProvider implements CommerceProvider` with read methods implemented. In this task, the cart and checkout methods throw `NOT_SUPPORTED`, and `cart.write`/`checkout.handoff` are not declared yet.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/adapter-memory/src/memory-provider.test.ts`:
 
@@ -2227,12 +2227,12 @@ describe("MemoryCommerceProvider — orders", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/adapter-memory test`
 Expected: FAIL with "Failed to resolve import "./memory-provider"".
 
-- [ ] **Step 3: Implement the read side**
+- [x] **Step 3: Implement the read side**
 
 `packages/adapter-memory/src/memory-provider.ts`:
 
@@ -2408,12 +2408,12 @@ export { searchCatalog } from "./search";
 export { defaultSeed, type MemorySeed, memoryFixtures, type SeedOrder } from "./seed";
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/adapter-memory test`
 Expected: PASS — 3 files, 22 tests.
 
-- [ ] **Step 5: Lint, typecheck, commit**
+- [x] **Step 5: Lint, typecheck, commit**
 
 ```bash
 pnpm lint:fix && pnpm lint && pnpm typecheck
@@ -2434,7 +2434,7 @@ git commit -m "feat(adapter-memory): add read-side provider (catalog, inventory,
 - Consumes: Task 7 provider; `CreateCartInputSchema`, `AddCartLinesInputSchema`, `UpdateCartLineInputSchema`, `WriteOptionsSchema`, `MAX_LINE_QUANTITY`, `addMoney`, `money`, `multiplyMoney`, `CAPABILITIES` (`@ace/contracts`); `describeProviderConformance` (`@ace/contracts/testing`).
 - Produces: `MemoryCommerceProvider` declaring every capability in `CAPABILITIES` and passing the full conformance suite.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `packages/adapter-memory/src/memory-provider.test.ts`, replace the test `"does not declare cart capabilities yet"` with:
 
@@ -2559,12 +2559,12 @@ describeProviderConformance("memory", async () => ({
 }));
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/adapter-memory test`
 Expected: FAIL — "declares every capability" fails, the cart tests fail with `NOT_SUPPORTED`, and the conformance cart/checkout tests are skipped or fail.
 
-- [ ] **Step 3: Implement carts, checkout and idempotency**
+- [x] **Step 3: Implement carts, checkout and idempotency**
 
 In `packages/adapter-memory/src/memory-provider.ts`:
 
@@ -2799,17 +2799,17 @@ Add these helpers to the `// helpers` section:
   }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/adapter-memory test`
 Expected: PASS — 4 files. The conformance suite reports **19 passed, 0 skipped**.
 
-- [ ] **Step 5: Run the whole workspace**
+- [x] **Step 5: Run the whole workspace**
 
 Run: `pnpm lint:fix && pnpm lint && pnpm typecheck && pnpm test`
 Expected: all green across both packages.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/adapter-memory
@@ -2827,7 +2827,7 @@ git commit -m "feat(adapter-memory): add carts, checkout and idempotency; pass f
 - Consumes: root scripts `lint`, `typecheck`, `test` (Task 1).
 - Produces: a CI check named `check` that must pass on every pull request.
 
-- [ ] **Step 1: Write the CI workflow**
+- [x] **Step 1: Write the CI workflow**
 
 `.github/workflows/ci.yml`:
 
@@ -2855,7 +2855,7 @@ jobs:
       - run: pnpm test
 ```
 
-- [ ] **Step 2: Write the README**
+- [x] **Step 2: Write the README**
 
 `README.md`:
 
@@ -2886,12 +2886,12 @@ pnpm lint && pnpm typecheck && pnpm test
 | `@ace/adapter-memory` | In-memory LKR clothing store used by tests, evals and local development |
 ````
 
-- [ ] **Step 3: Verify locally exactly what CI runs**
+- [x] **Step 3: Verify locally exactly what CI runs**
 
 Run: `pnpm install --frozen-lockfile && pnpm lint && pnpm typecheck && pnpm test`
 Expected: all succeed.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .github README.md
@@ -2902,9 +2902,9 @@ git commit -m "ci: add lint, typecheck and test workflow; docs: add README"
 
 ## Phase 1 exit checklist
 
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` green locally and in CI.
-- [ ] Memory adapter: conformance suite 19/19 passed, 0 skipped.
-- [ ] Every Review Focus item has a passing test (Tasks 1, 6, 7, 8).
-- [ ] ADR-001 committed.
-- [ ] `AGENTS.md` "Commands" section matches the real scripts.
-- [ ] Next: write the Phase 2 (agent core) plan from the roadmap.
+- [ ] `pnpm lint && pnpm typecheck && pnpm test` green locally and in CI — pending first push
+- [x] Memory adapter: conformance suite 20 passed, 1 skipped (the NOT_SUPPORTED probe skips because the memory adapter declares every capability; suite extended per controller ruling R6).
+- [x] Every Review Focus item has a passing test (Tasks 1, 6, 7, 8).
+- [x] ADR-001 committed.
+- [x] `AGENTS.md` "Commands" section matches the real scripts.
+- [x] Next: write the Phase 2 (agent core) plan from the roadmap.
