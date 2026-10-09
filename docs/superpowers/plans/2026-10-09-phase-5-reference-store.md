@@ -105,7 +105,7 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
 - Conformance: quote totals add up; place returns an order the identity `{ phone }` can look up; empty cart → `CONFLICT`; replay returns the same order (replay suite).
 - Memory adapter: a flat delivery fee from the seed (LKR 400), new orders appended to its order list.
 
-- [ ] Failing tests (schema, phone normalisation, conformance); implement; commit `feat(contracts): cash-on-delivery capability (contract v1.1)`.
+- [x] Failing tests (schema, phone normalisation, conformance); implement; commit `feat(contracts): cash-on-delivery capability (contract v1.1)`.
 
 ### Task 4: Reference store backend (Medusa)
 

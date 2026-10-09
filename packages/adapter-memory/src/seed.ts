@@ -12,6 +12,8 @@ export interface MemorySeed {
   /** variantId → units available. Variant availability is derived from this at read time. */
   stock: Record<string, number>;
   orders: SeedOrder[];
+  /** Flat cash-on-delivery delivery fee, and the countries the store delivers to (ISO 3166-1 alpha-2). */
+  delivery: { fee: Money; countries: string[] };
 }
 
 const UPDATED_AT = "2026-10-01T00:00:00.000Z";
@@ -183,6 +185,7 @@ export function defaultSeed(): MemorySeed {
     products: PRODUCTS.map(clothingProduct),
     stock: STOCK,
     orders: ORDERS,
+    delivery: { fee: lkr(400), countries: ["LK"] },
   });
 }
 

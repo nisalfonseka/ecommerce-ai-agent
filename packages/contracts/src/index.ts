@@ -2,6 +2,7 @@ export * from "./capabilities";
 export * from "./cart";
 export * from "./catalog";
 export * from "./checkout";
+export * from "./cod";
 export * from "./datetime";
 export * from "./errors";
 export * from "./identity";

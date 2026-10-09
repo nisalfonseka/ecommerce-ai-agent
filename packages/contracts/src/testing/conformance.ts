@@ -3,6 +3,7 @@ import { CAPABILITIES, type Capability } from "../capabilities";
 import { ATTRIBUTION_ATTRIBUTE, type Cart, type CartLine, CartSchema, MAX_LINE_QUANTITY } from "../cart";
 import { ListProductsResultSchema, ProductSchema, SearchProductsResultSchema } from "../catalog";
 import { CheckoutHandoffSchema } from "../checkout";
+import { CodQuoteSchema } from "../cod";
 import { CommerceError, type CommerceErrorCode } from "../errors";
 import type { VerifiedIdentity } from "../identity";
 import { InventoryLevelSchema } from "../inventory";
@@ -25,6 +26,15 @@ async function expectCommerceError(promise: Promise<unknown>, code: CommerceErro
   await expect(promise).rejects.toBeInstanceOf(CommerceError);
   await expect(promise).rejects.toMatchObject({ code });
 }
+
+/** Delivery details for COD tests. The phone is reserved for the suite, so its orders are recognisable. */
+const COD_DETAILS = {
+  name: "Conformance Shopper",
+  phone: "0770000001",
+  email: "conformance@example.com",
+  address: { line1: "1 Test Road", city: "Colombo", countryCode: "LK" },
+} as const;
+const COD_PHONE = "+94770000001";
 
 const UTC_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
@@ -107,6 +117,7 @@ export function describeProviderConformance(
         "cart.write": () => provider.createCart({}, writeKey()),
         "checkout.handoff": () => provider.createCheckout("conformance-cart", writeKey()),
         "orders.lookup": () => provider.lookupOrder({ orderNumber: f.orderNumber, identity: f.orderOwner }),
+        "orders.place_cod": () => provider.quoteCodOrder("conformance-cart", COD_DETAILS),
       };
       const undeclared = CAPABILITIES.filter((capability) => !provider.capabilities.has(capability));
       if (undeclared.length === 0) ctx.skip();
@@ -531,6 +542,94 @@ export function describeProviderConformance(
       const placed = mine.map((order) => Date.parse(order.placedAt));
       expect(placed).toEqual([...placed].sort((a, b) => b - a));
       expect(await provider.listOrders({ identity: f.stranger })).toEqual([]);
+    });
+
+    // cash on delivery (contract v1.1) -------------------------------------
+
+    /** Places a COD order for one unit, restoring the variant's stock afterwards when the store allows it. */
+    async function withCodOrder(body: (cart: Cart) => Promise<void>): Promise<void> {
+      const cart = await newCart();
+      await addOne(cart);
+      try {
+        await body(cart);
+      } finally {
+        await f.control?.setStock(f.inStockVariantId, f.inStockQuantity);
+      }
+    }
+
+    it("quoteCodOrder adds the delivery fee to the cart subtotal", async (ctx) => {
+      needs(ctx, "cart.write", "orders.place_cod");
+      const cart = await addOne(await newCart(), f.inStockVariantId, 2);
+      const quote = await provider.quoteCodOrder(cart.id, COD_DETAILS);
+      expect(() => CodQuoteSchema.parse(quote)).not.toThrow();
+      expect(quote.cartId).toBe(cart.id);
+      expect(quote.subtotal).toEqual(cart.subtotal);
+      expect(quote.itemCount).toBe(2);
+      expect(quote.total.amount).toBe(quote.subtotal.amount + quote.deliveryFee.amount);
+      await expectCommerceError(provider.quoteCodOrder((await newCart()).id, COD_DETAILS), "CONFLICT");
+      await expectCommerceError(provider.quoteCodOrder("no-such-cart", COD_DETAILS), "NOT_FOUND");
+      await expectCommerceError(
+        provider.quoteCodOrder(cart.id, { ...COD_DETAILS, phone: "12" }),
+        "INVALID_INPUT",
+      );
+    });
+
+    it("placeCodOrder places an order the shopper's phone can look up, and completes the cart", async (ctx) => {
+      needs(ctx, "cart.write", "orders.place_cod", "orders.lookup");
+      await withCodOrder(async (cart) => {
+        const quote = await provider.quoteCodOrder(cart.id, COD_DETAILS);
+        const order = await provider.placeCodOrder(cart.id, COD_DETAILS, writeKey());
+        expect(() => OrderSchema.parse(order)).not.toThrow();
+        expect(order.paymentStatus).toBe("cod_pending");
+        expect(order.total).toEqual(quote.total);
+        expect(order.lines.map((line) => line.quantity)).toEqual([1]);
+        expect(order.placedAt).toMatch(UTC_DATETIME);
+        const owner = {
+          method: "phone_otp",
+          phone: COD_PHONE,
+          verifiedAt: new Date().toISOString(),
+        } as const;
+        expect((await provider.lookupOrder({ orderNumber: order.number, identity: owner }))?.id).toBe(
+          order.id,
+        );
+        expect(await provider.lookupOrder({ orderNumber: order.number, identity: f.stranger })).toBeNull();
+        await expectCommerceError(provider.placeCodOrder(cart.id, COD_DETAILS, writeKey()), "CONFLICT");
+        await expectCommerceError(addOne(cart), "CONFLICT");
+      });
+    });
+
+    it("placeCodOrder refuses an empty cart and invalid details, changing nothing", async (ctx) => {
+      needs(ctx, "cart.write", "orders.place_cod");
+      await expectCommerceError(
+        provider.placeCodOrder((await newCart()).id, COD_DETAILS, writeKey()),
+        "CONFLICT",
+      );
+      const cart = await addOne(await newCart());
+      await expectCommerceError(
+        provider.placeCodOrder(cart.id, { ...COD_DETAILS, name: "" }, writeKey()),
+        "INVALID_INPUT",
+      );
+      expect((await provider.getCart(cart.id))?.itemCount).toBe(1);
+    });
+
+    it("placeCodOrder returns OUT_OF_STOCK when a line can no longer be fulfilled", async (ctx) => {
+      needs(ctx, "cart.write", "orders.place_cod");
+      const control = needsControl(ctx);
+      const cart = await addOne(await newCart(), f.inStockVariantId, 2);
+      await withStock(control, f.inStockVariantId, 1, f.inStockQuantity, async () => {
+        await expectCommerceError(provider.placeCodOrder(cart.id, COD_DETAILS, writeKey()), "OUT_OF_STOCK");
+      });
+      expect((await provider.getCart(cart.id))?.itemCount).toBe(2);
+    });
+
+    it("replaying placeCodOrder returns the same order", async (ctx) => {
+      needs(ctx, "cart.write", "orders.place_cod");
+      needsReplay(ctx);
+      await withCodOrder(async (cart) => {
+        const opts = writeKey();
+        const first = await provider.placeCodOrder(cart.id, COD_DETAILS, opts);
+        expect(await provider.placeCodOrder(cart.id, COD_DETAILS, opts)).toEqual(first);
+      });
     });
   });
 }

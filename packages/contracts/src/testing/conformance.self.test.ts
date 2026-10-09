@@ -24,6 +24,8 @@ function readOnlyStub(): CommerceProvider {
     updateCartAttributes: notSupported,
     createCheckout: notSupported,
     lookupOrder: notSupported,
+    quoteCodOrder: notSupported,
+    placeCodOrder: notSupported,
     listOrders: notSupported,
   };
 }

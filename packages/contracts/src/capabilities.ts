@@ -8,6 +8,8 @@ export const CAPABILITIES = [
   "cart.write",
   "checkout.handoff",
   "orders.lookup",
+  /** Contract v1.1: cash-on-delivery orders placed after the shopper confirms (ADR-007). */
+  "orders.place_cod",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];

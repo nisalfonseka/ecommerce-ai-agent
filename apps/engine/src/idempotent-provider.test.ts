@@ -9,7 +9,7 @@ const kurtaM = { lines: [{ variantId: "p_kurta_navy_m", quantity: 1 }] };
 /** Counts inner calls and can fail a chosen call before or after applying it. */
 class FlakyProvider extends MemoryCommerceProvider {
   addCalls = 0;
-  failNext: "before" | "after" | null = null;
+  failNext: "before" | "after" | "after-translated" | null = null;
 
   override async addCartLines(cartId: string, input: AddCartLinesInput, opts: WriteOptions): Promise<Cart> {
     this.addCalls += 1;
@@ -21,6 +21,7 @@ class FlakyProvider extends MemoryCommerceProvider {
       idempotencyKey: `inner-${this.addCalls}-${opts.idempotencyKey}`,
     });
     if (mode === "after") throw new Error("socket hang up");
+    if (mode === "after-translated") throw new CommerceError("UPSTREAM_UNAVAILABLE", "timed out");
     return cart;
   }
 }
@@ -86,6 +87,35 @@ describe("IdempotentCommerceProvider", () => {
     expect(replay.itemCount).toBe(1);
     expect(inner.addCalls).toBe(2);
     expect((await provider.addCartLines(cart.id, kurtaM, key("add"))).itemCount).toBe(1);
+  });
+
+  it("treats an adapter's UPSTREAM_UNAVAILABLE on a write as ambiguous (a timeout may hide an applied write)", async () => {
+    const { inner, provider } = setup();
+    const cart = await provider.createCart({}, key("cart"));
+    inner.failNext = "after-translated";
+    await expect(provider.addCartLines(cart.id, kurtaM, key("add"))).rejects.toMatchObject({
+      code: "UPSTREAM_UNAVAILABLE",
+    });
+    const replay = await provider.addCartLines(cart.id, kurtaM, key("add"));
+    expect(replay.itemCount).toBe(1);
+    expect(inner.addCalls).toBe(1);
+  });
+
+  it("places a COD order once per key and passes quotes through", async () => {
+    const { provider } = setup();
+    const cart = await provider.createCart({}, key("cart"));
+    await provider.addCartLines(cart.id, kurtaM, key("add"));
+    const details = {
+      name: "Nimali",
+      phone: "0771234567",
+      address: { line1: "12 Galle Road", city: "Colombo", countryCode: "LK" },
+    };
+    expect((await provider.quoteCodOrder(cart.id, details)).itemCount).toBe(1);
+    const order = await provider.placeCodOrder(cart.id, details, key("cod"));
+    expect(await provider.placeCodOrder(cart.id, details, key("cod"))).toEqual(order);
+    await expect(provider.placeCodOrder(cart.id, details, key("cod-2"))).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
   });
 
   it("passes reads and capabilities through", async () => {
