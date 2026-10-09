@@ -101,13 +101,13 @@ docs/adr/004-reply-delivery.md, docs/adr/005-tenancy-in-postgres.md             
 - `CreateToolContextInput.onToolStart?: (name: string) => void`, for SSE status events. It is never given tool input, because that may contain PII.
 - `PROMPT_VERSION = "2026-10-09.1"`, exported. `TurnResult.promptVersion`.
 
-- [ ] **Step 1: Failing tests.**
-  - `buildTools`' `execute` appends one `toolLog` entry per call, with `ok:false` and the code for a failed `ToolResult`.
+- [x] **Step 1: Failing tests.**
+  - `buildTools`' `execute` appends one `toolLog` entry per call, with `ok:false` and the code for a failed `ToolResult` (driven through `runTurn` with a scripted model, because `ToolSet` types tool inputs as `never`).
   - `onToolStart` is called with the tool name before `run`.
   - `runTurn` returns `promptVersion === PROMPT_VERSION`.
-- [ ] **Step 2: Implement** in `buildTools`, wrapping `def.run`. Bump `PROMPT_VERSION` whenever `prompt.ts` text changes (prompt changes are versioned code changes, per AGENTS.md).
-- [ ] **Step 3:** `pnpm lint && pnpm typecheck && pnpm test`. These are non-behavioural agent changes; a short `pnpm evals --only refs --rpm 5` run confirms no regression.
-- [ ] **Step 4: Commit** `feat(agent): tool timing log, status hook and prompt version`.
+- [x] **Step 2: Implement** in `buildTools`, wrapping `def.run`. Bump `PROMPT_VERSION` whenever `prompt.ts` text changes (prompt changes are versioned code changes, per AGENTS.md).
+- [x] **Step 3:** `pnpm lint && pnpm typecheck && pnpm test`. These are non-behavioural agent changes; a short `pnpm evals --only refs --rpm 5` run confirms no regression (deferred: the free-tier daily quota was used up; it runs with the next eval batch).
+- [x] **Step 4: Commit** `feat(agent): tool timing log, status hook and prompt version`.
 
 ---
 

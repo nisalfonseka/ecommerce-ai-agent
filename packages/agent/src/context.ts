@@ -1,6 +1,17 @@
 import type { CommerceProvider, VerifiedIdentity, WriteOptions } from "@ace/contracts";
 import { createSession, type SessionState } from "./session";
+import type { ToolFailureCode } from "./tool-result";
 import type { UiPart } from "./ui";
+
+/** One tool call this turn, for traces. Never holds tool input or output (they may contain PII). */
+export interface ToolLogEntry {
+  name: string;
+  /** ms since epoch, from ctx.now */
+  startedAt: number;
+  ms: number;
+  ok: boolean;
+  errorCode?: ToolFailureCode;
+}
 
 /** Server-side state for one turn. Built by the engine; the model can never set any of it. */
 export interface ToolContext {
@@ -16,6 +27,10 @@ export interface ToolContext {
   readonly observedAmounts: Set<number>;
   /** Receives errors that are neither ToolFailure nor CommerceError (bugs, outages) for logging; never shown to the model. */
   readonly onUnexpectedError: (error: unknown) => void;
+  /** Called with the tool name before each tool runs (e.g. to stream "searching…"). */
+  readonly onToolStart: (name: string) => void;
+  readonly toolLog: ToolLogEntry[];
+  readonly now: () => number;
 }
 
 export interface CreateToolContextInput {
@@ -26,6 +41,8 @@ export interface CreateToolContextInput {
   session?: SessionState;
   cartId?: string | null;
   onUnexpectedError?: (error: unknown) => void;
+  onToolStart?: (name: string) => void;
+  now?: () => number;
 }
 
 /** Default hook: drop the error. */
@@ -42,6 +59,9 @@ export function createToolContext(input: CreateToolContextInput): ToolContext {
     ui: [],
     observedAmounts: new Set(),
     onUnexpectedError: input.onUnexpectedError ?? ignore,
+    onToolStart: input.onToolStart ?? ignore,
+    toolLog: [],
+    now: input.now ?? Date.now,
   };
 }
 

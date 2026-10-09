@@ -1,7 +1,9 @@
 import { MemoryCommerceProvider } from "@ace/adapter-memory";
 import type { Capability, CommerceProvider } from "@ace/contracts";
 import { describe, expect, it } from "vitest";
+import { runTurn } from "../agent";
 import { createToolContext } from "../context";
+import { callTool, say, scriptedModel } from "../testing";
 import { ALL_TOOLS, buildTools } from "./registry";
 
 describe("buildTools", () => {
@@ -79,5 +81,40 @@ describe("unexpected errors", () => {
       expect(JSON.stringify(result), def.name).not.toContain("socket hang up");
     }
     expect(reported.sort()).toEqual(Object.keys(inputs).sort());
+  });
+});
+
+describe("tool log and status hook", () => {
+  it("records each call's name, duration and outcome, and announces it first", async () => {
+    let clock = 1_000;
+    const started: string[] = [];
+    const ctx = createToolContext({
+      provider: new MemoryCommerceProvider(),
+      conversationId: "c",
+      turnId: "t",
+      onToolStart: (name) => {
+        started.push(name);
+        clock += 5;
+      },
+      now: () => clock,
+    });
+    await runTurn({
+      model: scriptedModel([
+        callTool("c1", "search_products", { query: "dress" }),
+        callTool("c2", "get_product", { ref: "#9" }),
+        say("Done."),
+      ]),
+      ctx,
+      persona: { assistantName: "Nila", storeName: "Demo", languages: ["English"] },
+      store: { currency: "LKR" },
+      history: [],
+      userMessage: "dresses",
+    });
+    expect(started).toEqual(["search_products", "get_product"]);
+    expect(ctx.toolLog.map(({ name, ok, errorCode }) => ({ name, ok, errorCode }))).toEqual([
+      { name: "search_products", ok: true, errorCode: undefined },
+      { name: "get_product", ok: false, errorCode: "UNKNOWN_REF" },
+    ]);
+    expect(ctx.toolLog[1]?.startedAt).toBe(1_010);
   });
 });

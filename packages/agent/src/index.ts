@@ -4,6 +4,7 @@ export {
   createToolContext,
   observeMoney,
   type ToolContext,
+  type ToolLogEntry,
   writeKey,
 } from "./context";
 export { formatMoney, formatPriceRange, toMinorUnits } from "./format";
@@ -15,7 +16,7 @@ export {
   shopperAmounts,
 } from "./guardrails";
 export { hasApiKey, PROVIDER_ENV_KEYS, type ProviderName, parseModelSpec, resolveModel } from "./models";
-export { composeInstructions, type Persona, SAFETY_CANARY, type StoreFacts } from "./prompt";
+export { composeInstructions, type Persona, PROMPT_VERSION, SAFETY_CANARY, type StoreFacts } from "./prompt";
 export { createSession, resolveProductRef, type SessionState, type ShownProduct } from "./session";
 export type { ToolError, ToolFailureCode, ToolResult } from "./tool-result";
 export { ALL_TOOLS, buildTools } from "./tools/registry";

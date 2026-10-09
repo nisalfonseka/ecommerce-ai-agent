@@ -28,7 +28,19 @@ export function buildTools(
     tools[def.name] = tool({
       description: def.description,
       inputSchema: def.inputSchema,
-      execute: (input, { toolCallId }) => def.run(ctx, input, toolCallId),
+      execute: async (input, { toolCallId }) => {
+        ctx.onToolStart(def.name);
+        const startedAt = ctx.now();
+        const result = await def.run(ctx, input, toolCallId);
+        ctx.toolLog.push({
+          name: def.name,
+          startedAt,
+          ms: ctx.now() - startedAt,
+          ok: result.ok,
+          errorCode: result.ok ? undefined : result.error.code,
+        });
+        return result;
+      },
     });
   }
   return tools;
