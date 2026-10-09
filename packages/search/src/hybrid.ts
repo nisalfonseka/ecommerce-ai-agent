@@ -83,14 +83,22 @@ const COLUMNS = sql`e.product_id, e.boost, e.variant_ids, e.availability_rank`;
 async function ftsLeg(tx: Tx, q: HybridQuery, text: string): Promise<LegRow[]> {
   // The English query ANDs every word (stemmed); the OR of the plain words keeps partial matches (a Singlish
   // word the lexicon does not know must not empty the result). Terms are letters/marks/digits only, quoted.
-  const anyTerm = tokenize(text)
-    .map((term) => `'${term}'`)
-    .join(" | ");
+  const terms = [...new Set(tokenize(text))];
+  const anyTerm = terms.map((term) => `'${term}'`).join(" | ");
+  // Coordination first: a product matching more of the query's words ranks above one that matches a single
+  // word many times ("checked shirt": the checked shirt before every other shirt). ts_rank_cd breaks ties.
+  const matched = sql.join(
+    terms.map(
+      (term) =>
+        sql`(e.search_tsv @@ (plainto_tsquery('english', ${term}) || to_tsquery('simple', ${`'${term}'`})))::int`,
+    ),
+    sql` + `,
+  );
   const result = await tx.execute<LegRow>(sql`with ${eligible(q.storeId, q.filters)},
     query as (select websearch_to_tsquery('english', ${text}) || to_tsquery('simple', ${anyTerm}) as q)
     select ${COLUMNS} from eligible e, query
     where e.search_tsv @@ query.q
-    order by ts_rank_cd(e.search_tsv, query.q) desc, e.product_id
+    order by ${matched} desc, ts_rank_cd(e.search_tsv, query.q) desc, e.product_id
     limit ${LEG_LIMIT}`);
   return result.rows;
 }

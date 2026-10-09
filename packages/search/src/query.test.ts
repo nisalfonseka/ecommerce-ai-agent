@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LEXICON } from "./lexicon";
+import { LEXICON, SUFFIX_RULES } from "./lexicon";
 import { normalizeQuery, queryFingerprint } from "./query";
 import { VOCAB } from "./vocabulary";
 
@@ -25,6 +25,28 @@ describe("normalizeQuery", () => {
     // ෆ්\u200dරොක් (frock) is written with a ZWJ (rakaransaya); it must stay one token and match.
     const frock = "ෆ්\u200dරොක්";
     expect(normalizeQuery(`රතු ${frock}`)).toEqual({ text: "red frock", terms: ["red", "frock"] });
+  });
+
+  it("maps inflected Sinhala, Tamil and Singlish words through a suffix rule to a lexicon stem", () => {
+    expect(normalizeQuery("කළු ගවුමක්").text).toBe("black dress");
+    expect(normalizeQuery("සුදු කමිසයක්").text).toBe("white shirt");
+    expect(normalizeQuery("කාර්යාලයට කලිසමක්").text).toBe("office trousers");
+    expect(normalizeQuery("பெண்களுக்கான குர்தா").text).toBe("women kurta");
+    expect(normalizeQuery("திருமணத்திற்கு பட்டு சேலை").text).toBe("wedding silk saree");
+    expect(normalizeQuery("கடற்கரைக்கு ஏற்ற உடை").text).toBe("beach ஏற்ற dress");
+    expect(normalizeQuery("rosa sariyak").text).toBe("pink saree");
+    expect(normalizeQuery("kalu gawumak").text).toBe("black dress");
+  });
+
+  it("strips a suffix only when the stem is a lexicon word", () => {
+    // "ekak" → "ek" and "break" → "bre" are not lexicon words; "ට" alone is too short to strip.
+    expect(normalizeQuery("frock ekak break ට").text).toBe("frock ekak break ට");
+    expect(normalizeQuery("උත්සවයට").text).toBe("උත්සවයට");
+  });
+
+  it("maps 't shirt' and 'tshirt' to the t-shirt category", () => {
+    expect(normalizeQuery("gym ekata t shirt").text).toBe("gym ekata t-shirt");
+    expect(normalizeQuery("tshirt").text).toBe("t-shirt");
   });
 
   it("passes unknown words through, punctuation dropped, terms unique", () => {
@@ -98,6 +120,13 @@ describe("LEXICON", () => {
     for (const [key, target] of Object.entries(required)) {
       expect(LEXICON[key.normalize("NFKC")], key).toBe(target);
     }
+  });
+});
+
+describe("SUFFIX_RULES", () => {
+  it("are ordered longest suffix first, so the most specific rule wins", () => {
+    const lengths = SUFFIX_RULES.map((rule) => rule.suffix.length);
+    expect(lengths).toEqual([...lengths].sort((a, b) => b - a));
   });
 });
 

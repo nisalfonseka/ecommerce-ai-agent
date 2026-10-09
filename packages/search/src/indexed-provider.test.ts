@@ -5,6 +5,7 @@ import { createTestDatabase, type TestDatabase } from "@ace/db/testing";
 import { createDemoEmbedder, type Embedder } from "@ace/knowledge";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { applyMerchantOverrides } from "./enrich";
+import { evalSeed } from "./eval/catalog";
 import { IndexedCatalogProvider } from "./indexed-provider";
 import { indexedStore, NullQueue, newTenantStore } from "./test-fixture";
 
@@ -80,6 +81,27 @@ describe.skipIf(testDb === null)("IndexedCatalogProvider", () => {
       expect(result.items.map((item) => [item.id, item.matchingVariantIds])).toEqual([
         ["p_oxford_shirt_white", ["p_oxford_shirt_white_xl"]],
       ]);
+    });
+
+    it("ranks products matching more query words first in the full-text leg", async () => {
+      // Full-text only. Plain shirts repeat "shirt" in title, category and description; the checked shirt and
+      // the linen pants are the only products matching every word, so they must come first.
+      const seed = evalSeed();
+      const subset = new Set([
+        "p_shirt_checked_red",
+        "p_shirt_batik_blue",
+        "p_shirt_denim_indigo",
+        "p_shirt_linen_white",
+        "p_shirt_linen_black",
+        "p_trousers_wideleg_cream",
+        "p_jacket_blazer_navy",
+      ]);
+      seed.products = seed.products.filter((product) => subset.has(product.id));
+      const inner = new MemoryCommerceProvider({ seed });
+      const store = await indexedStore(app.db, { provider: inner });
+      const { provider } = indexed({ inner, store, embedder: null });
+      expect((await ids(provider, { query: "checked shirt" }))[0]).toBe("p_shirt_checked_red");
+      expect((await ids(provider, { query: "linen trousers" }))[0]).toBe("p_trousers_wideleg_cream");
     });
 
     it("filters by category through the effective attributes", async () => {

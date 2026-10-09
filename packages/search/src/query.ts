@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SearchFilters } from "@ace/contracts";
-import { LEXICON } from "./lexicon";
+import { LEXICON, SUFFIX_RULES } from "./lexicon";
 import { stableJson } from "./stable-json";
 
 /**
@@ -16,6 +16,19 @@ export function tokenize(text: string): string[] {
   return text.normalize("NFKC").toLowerCase().match(TOKEN) ?? [];
 }
 
+/** A lexicon word, or an inflected form of one (SUFFIX_RULES); the stem must keep at least two characters. */
+function lookupWord(word: string): string | undefined {
+  const direct = LEXICON[word];
+  if (direct !== undefined) return direct;
+  for (const { suffix, replacement } of SUFFIX_RULES) {
+    if (word.length >= suffix.length + 2 && word.endsWith(suffix)) {
+      const stem = LEXICON[word.slice(0, -suffix.length) + replacement];
+      if (stem !== undefined) return stem;
+    }
+  }
+  return undefined;
+}
+
 /**
  * NFKC, lowercase, tokenise, then map lexicon phrases (longest match first) and words to catalog vocabulary.
  * Unknown words pass through. `text` is the rewritten query; `terms` its unique words, in order.
@@ -26,7 +39,8 @@ export function normalizeQuery(text: string): { text: string; terms: string[] } 
   for (let i = 0; i < tokens.length; ) {
     let consumed = 0;
     for (let size = Math.min(MAX_PHRASE_WORDS, tokens.length - i); size >= 1; size--) {
-      const mapped = LEXICON[tokens.slice(i, i + size).join(" ")];
+      const phrase = tokens.slice(i, i + size).join(" ");
+      const mapped = size === 1 ? lookupWord(phrase) : LEXICON[phrase];
       if (mapped !== undefined) {
         out.push(mapped);
         consumed = size;
