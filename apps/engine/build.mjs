@@ -16,7 +16,7 @@ function packageName(specifier) {
 }
 
 await build({
-  entryPoints: { main: "src/main.ts", migrate: "src/migrate-cli.ts" },
+  entryPoints: { main: "src/main.ts", migrate: "src/migrate-cli.ts", seed: "src/seed-cli.ts" },
   outdir: "dist",
   bundle: true,
   platform: "node",
@@ -43,4 +43,4 @@ if (missing.size > 0) {
   );
   process.exit(1);
 }
-console.log("built dist/main.js and dist/migrate.js");
+console.log("built dist/main.js, dist/migrate.js and dist/seed.js");

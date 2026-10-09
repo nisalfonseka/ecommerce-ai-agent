@@ -8,6 +8,9 @@ import {
   type Cart,
   type CartLine,
   type CheckoutHandoff,
+  type CodDetailsInput,
+  CodDetailsSchema,
+  type CodQuote,
   CommerceError,
   type CommerceProvider,
   type CreateCartInput,
@@ -54,6 +57,11 @@ export interface MemoryProviderOptions {
   seed?: MemorySeed;
   now?: () => Date;
   checkoutBaseUrl?: string;
+  /**
+   * Replay writes by idempotency key inside the adapter (default true). The engine passes false when it wraps the
+   * adapter in IdempotentCommerceProvider, so its replay tests exercise the decorator, not this map (ADR-002).
+   */
+  idempotency?: boolean;
 }
 
 interface StoredLine {
@@ -68,6 +76,8 @@ interface StoredCart {
   attributes: Record<string, string>;
   lines: StoredLine[];
   updatedAt: string;
+  /** Set when the cart became an order; a completed cart takes no more lines and cannot be ordered again. */
+  completedAt?: string;
 }
 
 export class MemoryCommerceProvider implements CommerceProvider {
@@ -79,12 +89,20 @@ export class MemoryCommerceProvider implements CommerceProvider {
   protected readonly checkoutBaseUrl: string;
   private readonly carts = new Map<string, StoredCart>();
   private readonly idempotentResults = new Map<string, unknown>();
+  private readonly replayWrites: boolean;
   private nextId = 1;
 
   constructor(options: MemoryProviderOptions = {}) {
     this.seed = structuredClone(options.seed ?? defaultSeed());
     this.now = options.now ?? (() => new Date());
     this.checkoutBaseUrl = options.checkoutBaseUrl ?? "https://demo-store.test/checkout";
+    this.replayWrites = options.idempotency ?? true;
+  }
+
+  /** Test hook (conformance `control`): sets the units available of a variant. */
+  setStock(variantId: string, quantity: number): void {
+    this.requireVariant(variantId);
+    this.seed.stock[variantId] = quantity;
   }
 
   // catalog ---------------------------------------------------------------
@@ -148,7 +166,7 @@ export class MemoryCommerceProvider implements CommerceProvider {
   async addCartLines(cartId: string, input: AddCartLinesInput, opts: WriteOptions): Promise<Cart> {
     return this.once("addCartLines", cartId, opts, () => {
       const query = parseInput(AddCartLinesInputSchema, input);
-      const cart = this.requireCart(cartId);
+      const cart = this.requireOpenCart(cartId);
       const next = cart.lines.map((line) => ({ ...line }));
       for (const { variantId, quantity } of query.lines) {
         const { variant } = this.requireVariant(variantId);
@@ -172,7 +190,7 @@ export class MemoryCommerceProvider implements CommerceProvider {
   async updateCartLine(cartId: string, input: UpdateCartLineInput, opts: WriteOptions): Promise<Cart> {
     return this.once("updateCartLine", cartId, opts, () => {
       const query = parseInput(UpdateCartLineInputSchema, input);
-      const cart = this.requireCart(cartId);
+      const cart = this.requireOpenCart(cartId);
       const line = cart.lines.find((candidate) => candidate.id === query.lineId);
       if (!line) throw new CommerceError("NOT_FOUND", "Cart line not found", { lineId: query.lineId });
       if (query.quantity === 0) {
@@ -202,10 +220,7 @@ export class MemoryCommerceProvider implements CommerceProvider {
 
   async createCheckout(cartId: string, opts: WriteOptions): Promise<CheckoutHandoff> {
     return this.once("createCheckout", cartId, opts, () => {
-      const cart = this.requireCart(cartId);
-      if (cart.lines.length === 0) throw new CommerceError("CONFLICT", "Cannot check out an empty cart");
-      for (const line of cart.lines)
-        this.assertInStock(this.requireVariant(line.variantId).variant, line.quantity);
+      this.requireOrderableCart(cartId);
       return { cartId, url: `${this.checkoutBaseUrl}/${encodeURIComponent(cartId)}`, expiresAt: null };
     });
   }
@@ -229,7 +244,78 @@ export class MemoryCommerceProvider implements CommerceProvider {
       .slice(0, query.limit);
   }
 
+  // cash on delivery --------------------------------------------------------
+
+  async quoteCodOrder(cartId: string, input: CodDetailsInput): Promise<CodQuote> {
+    const details = parseInput(CodDetailsSchema, input);
+    this.assertDelivers(details.address.countryCode);
+    return this.quote(this.requireOrderableCart(cartId));
+  }
+
+  async placeCodOrder(cartId: string, input: CodDetailsInput, opts: WriteOptions): Promise<Order> {
+    return this.once("placeCodOrder", cartId, opts, () => {
+      const details = parseInput(CodDetailsSchema, input);
+      this.assertDelivers(details.address.countryCode);
+      const stored = this.requireOrderableCart(cartId);
+      const quote = this.quote(stored);
+      const cart = this.toCart(stored);
+      for (const line of stored.lines) {
+        this.seed.stock[line.variantId] = (this.seed.stock[line.variantId] ?? 0) - line.quantity;
+      }
+      const placedAt = this.now().toISOString();
+      const order: Order = {
+        id: this.newId("ord"),
+        number: `ACE-${2000 + this.seed.orders.length}`,
+        status: "pending",
+        paymentStatus: "cod_pending",
+        placedAt,
+        total: quote.total,
+        lines: cart.lines.map((line) => ({
+          title: line.title,
+          variantTitle: line.variantTitle,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+        })),
+        tracking: [],
+      };
+      this.seed.orders.push({ order, owner: { email: details.email, phone: details.phone } });
+      stored.completedAt = placedAt;
+      stored.updatedAt = placedAt;
+      return structuredClone(order);
+    });
+  }
+
   // helpers ---------------------------------------------------------------
+
+  private quote(cart: StoredCart): CodQuote {
+    const { subtotal, itemCount } = this.toCart(cart);
+    const deliveryFee = { ...this.seed.delivery.fee };
+    return { cartId: cart.id, subtotal, deliveryFee, total: addMoney(subtotal, deliveryFee), itemCount };
+  }
+
+  private assertDelivers(countryCode: string): void {
+    if (!this.seed.delivery.countries.includes(countryCode)) {
+      throw new CommerceError("INVALID_INPUT", "The store does not deliver to this country.", {
+        countryCode,
+      });
+    }
+  }
+
+  private requireOpenCart(cartId: string): StoredCart {
+    const cart = this.requireCart(cartId);
+    if (cart.completedAt) throw new CommerceError("CONFLICT", "This cart was already ordered.", { cartId });
+    return cart;
+  }
+
+  /** An open, non-empty cart whose every line can still be fulfilled. */
+  private requireOrderableCart(cartId: string): StoredCart {
+    const cart = this.requireOpenCart(cartId);
+    if (cart.lines.length === 0) throw new CommerceError("CONFLICT", "The cart is empty.", { cartId });
+    for (const line of cart.lines) {
+      this.assertInStock(this.requireVariant(line.variantId).variant, line.quantity);
+    }
+    return cart;
+  }
 
   protected liveProducts(): Product[] {
     return this.seed.products.map((product) => this.withLiveAvailability(product));
@@ -246,6 +332,7 @@ export class MemoryCommerceProvider implements CommerceProvider {
   /** Runs a write once per (operation, target, key); replays return a copy of the first result. */
   private once<T>(operation: string, target: string, opts: WriteOptions, write: () => T): T {
     const { idempotencyKey } = parseInput(WriteOptionsSchema, opts);
+    if (!this.replayWrites) return write();
     const storageKey = `${operation}:${target}:${idempotencyKey}`;
     if (this.idempotentResults.has(storageKey)) {
       return structuredClone(this.idempotentResults.get(storageKey)) as T;

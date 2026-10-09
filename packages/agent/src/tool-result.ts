@@ -5,7 +5,11 @@ export type ToolFailureCode =
   | "UNKNOWN_REF"
   | "NEEDS_OPTIONS"
   | "NEEDS_VERIFICATION"
-  | "NO_CART";
+  | "NO_CART"
+  | "COD_UNAVAILABLE"
+  | "COD_LIMIT"
+  | "NO_DRAFT"
+  | "QUOTE_CHANGED";
 
 export interface ToolError {
   code: ToolFailureCode;

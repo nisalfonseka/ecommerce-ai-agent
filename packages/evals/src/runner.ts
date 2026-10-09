@@ -29,6 +29,7 @@ export async function runCase(evalCase: EvalCase, options: RunCaseOptions): Prom
         turnId: `${evalCase.id}_t${index + 1}`,
         identity: evalCase.setup?.identity ?? null,
         session,
+        cod: evalCase.setup?.cod ? { maxTotal: null, allowedCities: null, countryCode: "LK" } : null,
         cartId,
       });
       const started = Date.now();

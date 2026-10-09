@@ -24,6 +24,23 @@ describe("CommerceError", () => {
     expect(isCommerceError(new Error("x"))).toBe(false);
     expect(isCommerceError("x")).toBe(false);
   });
+
+  it("keeps the platform error as cause", () => {
+    const platform = new Error("HTTP 409 from upstream");
+    const error = new CommerceError("CONFLICT", "cart changed", { cartId: "c1" }, { cause: platform });
+    expect(error.cause).toBe(platform);
+    expect(error.details).toEqual({ cartId: "c1" });
+  });
+
+  it("recognises errors from another copy of the package by their brand", () => {
+    const foreign = Object.assign(new Error("x"), {
+      code: "NOT_FOUND",
+      [Symbol.for("ace.commerce-error")]: true,
+    });
+    expect(isCommerceError(foreign)).toBe(true);
+    const lookalike = Object.assign(new Error("x"), { name: "CommerceError", code: "NOT_FOUND" });
+    expect(isCommerceError(lookalike)).toBe(false);
+  });
 });
 
 describe("parseInput", () => {

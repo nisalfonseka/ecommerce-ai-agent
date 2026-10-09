@@ -133,17 +133,21 @@ the conversation as an event so the agent knows about it on the next turn.
 
 ---
 
-## E. Cash-on-Delivery order (Phase 5+, only if the tenant enables COD)
+## E. Cash-on-Delivery order (Phase 5, only if the tenant enables COD; ADR-007)
 
-1. The shopper asks to pay cash on delivery.
-2. The agent collects delivery details through a **form card** (not free text): name, phone, address, city. The phone is
-   verified by OTP if the tenant requires it.
-3. `place_cod_order` is a tool with `toolApproval: 'user-approval'`. The widget shows an **order summary card** (items,
-   delivery fee, total, address) with **Confirm** / **Edit** buttons. Approval is bound to the server with the
-   approval secret, so a crafted client message cannot skip it.
-4. On Confirm, the adapter places the order (idempotency key), and the shopper gets the order number plus the
-   confirmation the store normally sends.
-5. Business rules in code: COD limits (max order value, allowed cities), from tenant config.
+1. The shopper asks to pay cash on delivery. The agent calls `start_cod_order` (no input). It is offered only when the
+   store supports `orders.place_cod` and the bot has `storeFacts.cod.enabled`.
+2. The widget shows a **delivery form card**: name, phone, address, city, optional email and note. Details are typed
+   into the form, never into chat. Phone verification by OTP, if the tenant requires it, comes with Phase 7 identity.
+3. The form posts the UI action `cod_quote`. The engine validates the details and applies the COD rules in code: allowed
+   cities and the order-value limit `maxTotal`. It gets the store's quote, delivery fee included, and keeps a draft in
+   the session. The widget shows an **order summary card** (items, delivery fee, total, address) with **Confirm** /
+   **Edit**.
+4. **Confirm** posts the UI action `place_cod_order`, which is the shopper's approval.
+   - The engine re-quotes. If the total changed, the shopper gets a new summary to confirm.
+   - Otherwise the adapter places the order (`placeCodOrder`, idempotency key = the click's `actionId`).
+   - The shopper gets the order card with the number. The store sends its usual confirmation.
+5. The model has no tool that places orders, and nothing the model writes can confirm one.
 
 ---
 

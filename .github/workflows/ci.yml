@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Nightly: the Medusa conformance run catches platform drift (AGENTS.md testing rules).
+    - cron: "17 2 * * *"
 
 permissions:
   contents: read
@@ -42,3 +45,146 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+  image:
+    # The engine image and compose stack: build, migrate, start, health check, seed and an admin call.
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci-owner-password
+      ACE_APP_DB_PASSWORD: ci_app_password_0123
+      ADMIN_API_KEY_SHA256: 4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5 # sha256("10")
+      CONVERSATION_TOKEN_SECRET: ci-conversation-token-secret-0123456789
+      ACE_DOMAIN: localhost
+      # Throwaway CI-only value (32 random bytes, base64); never used outside this job.
+      ACE_MASTER_KEY: NSHgkAbZNUQ/n9Qmk6nLBFuv+CcVDnsKJVzV9n5+7y8=
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the engine image
+        run: docker compose build migrate
+      - name: Start postgres, migrate and the engine
+        run: docker compose up -d --wait engine
+      - name: Health, seed and admin API inside the network
+        run: |
+          docker compose exec -T engine node -e "fetch('http://127.0.0.1:8080/healthz').then(async (r) => { console.log(await r.text()); process.exit(r.ok ? 0 : 1); })"
+          docker compose exec -T engine node dist/seed.js
+          docker compose exec -T engine node -e "fetch('http://127.0.0.1:8080/admin/tenants/00000000-0000-4000-8000-000000000000/usage', { headers: { authorization: 'Bearer 10' } }).then(async (r) => { console.log(r.status, await r.text()); process.exit(r.status === 200 ? 0 : 1); })"
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+  e2e:
+    # The widget in Chromium against the real engine (keyless demo model) and Postgres: scripts/dev-stack.sh.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @ace/widget exec playwright install --with-deps chromium
+      - run: pnpm --filter @ace/widget e2e
+      - name: Traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: widget-e2e-results
+          path: packages/widget/test-results
+          retention-days: 7
+
+  medusa:
+    # The reference store (Medusa v2, ADR-006) and @ace/adapter-medusa conformance, directly and through the
+    # engine's idempotency layer (ADR-002).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ACE_STORE_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
+      ACE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      ACE_REQUIRE_DB_TESTS: "1"
+      ACE_MEDUSA_SEED_OUTPUT: /tmp/ace-store/seed-output.json
+      ACE_REQUIRE_MEDUSA_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-reference-store-${{ hashFiles('apps/reference-store/backend/package-lock.json') }}
+      - run: pnpm install --frozen-lockfile
+      - name: Reference store unit tests (PayHere, webhooks)
+        working-directory: apps/reference-store/backend
+        run: |
+          npm ci --no-audit --no-fund
+          npx tsc --noEmit
+          npx vitest run
+      - name: Start the reference store (migrate, seed, backend on :9000)
+        run: scripts/reference-store.sh start
+      - run: pnpm --filter @ace/adapter-medusa test
+      - run: pnpm --filter @ace/engine exec vitest run src/conformance.test.ts
+      - name: Logs on failure
+        if: failure()
+        run: tail -n 200 /tmp/ace-store/*.log
+
+  store-e2e:
+    # The reference store end to end in Chromium: chat card → shared cart → storefront checkout → cash on delivery,
+    # with the order carrying ace_conversation_id (scripts/store-stack.sh).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ACE_STORE_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-reference-store-${{ hashFiles('apps/reference-store/*/package-lock.json') }}
+      - run: pnpm install --frozen-lockfile
+      - name: Install the reference store
+        run: |
+          (cd apps/reference-store/backend && npm ci --no-audit --no-fund)
+          (cd apps/reference-store/storefront && npm ci --no-audit --no-fund && npx tsc --noEmit)
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/reference-store/storefront
+      - run: npm run e2e
+        working-directory: apps/reference-store/storefront
+      - name: Logs and traces on failure
+        if: failure()
+        run: tail -n 100 /tmp/ace-store/*.log /tmp/ace-store-stack/*.log
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: store-e2e-results
+          path: apps/reference-store/storefront/test-results
+          retention-days: 7

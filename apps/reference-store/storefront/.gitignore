@@ -1,0 +1,9 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+test-results/
+playwright-report/
+.env.local
+# Copied from packages/widget/dist by scripts/reference-store.sh
+public/ace.js

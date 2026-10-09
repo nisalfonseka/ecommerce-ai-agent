@@ -3,10 +3,12 @@ import {
   type AddCartLinesInput,
   type Cart,
   type CheckoutHandoff,
+  type CodDetailsInput,
   CommerceError,
   type CommerceProvider,
   type CreateCartInput,
   isCommerceError,
+  type Order,
   type UpdateCartAttributesInput,
   type UpdateCartLineInput,
   type WriteOptions,
@@ -65,6 +67,18 @@ export class IdempotentCommerceProvider implements CommerceProvider {
   getCart: CommerceProvider["getCart"] = (id) => this.inner.getCart(id);
   lookupOrder: CommerceProvider["lookupOrder"] = (input) => this.inner.lookupOrder(input);
   listOrders: CommerceProvider["listOrders"] = (input) => this.inner.listOrders(input);
+  quoteCodOrder: CommerceProvider["quoteCodOrder"] = (cartId, input) =>
+    this.inner.quoteCodOrder(cartId, input);
+
+  /**
+   * After an ambiguous failure, running again is safe: if the first attempt did place the order, the cart is
+   * completed and the store answers CONFLICT instead of placing a second one.
+   */
+  placeCodOrder(cartId: string, input: CodDetailsInput, opts: WriteOptions): Promise<Order> {
+    return this.once("placeCodOrder", cartId, input, opts, () =>
+      this.inner.placeCodOrder(cartId, input, opts),
+    );
+  }
 
   createCart(input: CreateCartInput, opts: WriteOptions): Promise<Cart> {
     return this.once("createCart", "-", input, opts, () => this.inner.createCart(input, opts));
@@ -162,7 +176,9 @@ export class IdempotentCommerceProvider implements CommerceProvider {
       await this.store.complete(scope, result);
       return result;
     } catch (error) {
-      if (isCommerceError(error)) {
+      // A CommerceError means nothing changed (contract), except UPSTREAM_UNAVAILABLE: adapters report timeouts
+      // that way, and a timed-out write may have been applied.
+      if (isCommerceError(error) && error.code !== "UPSTREAM_UNAVAILABLE") {
         await this.store.remove(scope);
         throw error;
       }

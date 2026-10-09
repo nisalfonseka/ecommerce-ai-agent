@@ -23,6 +23,37 @@ describe("ProductSchema", () => {
     const variant = sampleVariant({ price: { amount: 10.5, currency: "LKR" } });
     expect(ProductSchema.safeParse(sampleProduct({ variants: [variant] })).success).toBe(false);
   });
+
+  it("rejects a variant that belongs to another product", () => {
+    const variant = sampleVariant({ productId: "prod_other" });
+    expect(ProductSchema.safeParse(sampleProduct({ variants: [variant] })).success).toBe(false);
+  });
+
+  it("requires priceRange to match the variant prices", () => {
+    const cheap = sampleVariant({ id: "v_s", price: { amount: 1000000, currency: "LKR" } });
+    const dear = sampleVariant({ id: "v_l", price: { amount: 2000000, currency: "LKR" } });
+    const variants = [cheap, dear];
+    expect(
+      ProductSchema.safeParse(sampleProduct({ variants, priceRange: { min: cheap.price, max: dear.price } }))
+        .success,
+    ).toBe(true);
+    expect(
+      ProductSchema.safeParse(sampleProduct({ variants, priceRange: { min: cheap.price, max: cheap.price } }))
+        .success,
+    ).toBe(false);
+  });
+
+  it("rejects variants priced in different currencies", () => {
+    const lkr = sampleVariant({ id: "v_s" });
+    const usd = sampleVariant({ id: "v_l", price: { amount: 1850000, currency: "USD" } });
+    expect(ProductSchema.safeParse(sampleProduct({ variants: [lkr, usd] })).success).toBe(false);
+  });
+
+  it("rejects datetimes with an offset (adapters normalise to UTC)", () => {
+    expect(ProductSchema.safeParse(sampleProduct({ updatedAt: "2026-10-01T05:30:00+05:30" })).success).toBe(
+      false,
+    );
+  });
 });
 
 describe("SearchProductsInputSchema", () => {

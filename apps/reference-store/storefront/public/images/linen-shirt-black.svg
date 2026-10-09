@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500" viewBox="0 0 400 500" role="img" aria-label="Black Linen Shirt">
+  <rect width="400" height="500" fill="#2b2b2b"/>
+  <path d="M140 90 L200 120 L260 90 L330 140 L300 200 L270 185 L270 420 L130 420 L130 185 L100 200 L70 140 Z" fill="none" stroke="#fff" stroke-width="6" stroke-linejoin="round" opacity=".6"/>
+  <text x="200" y="470" font-family="system-ui, sans-serif" font-size="22" fill="#fff" text-anchor="middle">Black Linen Shirt</text>
+</svg>

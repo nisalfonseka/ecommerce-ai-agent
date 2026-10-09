@@ -1,0 +1,86 @@
+# Production stack for one VPS (AGENTS.md rule 17). Secrets come from .env.production (never committed);
+# copy .env.production.example and fill it in. Start: docker compose --env-file .env.production up -d
+name: ace
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      # The owner runs migrations only; the engine connects as ace_app, which cannot bypass RLS (ADR-005).
+      POSTGRES_USER: ace_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ace
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ace_owner -d ace"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    image: ${ACE_ENGINE_IMAGE:-ace-engine:local}
+    build: .
+    command: ["node", "dist/migrate.js"]
+    environment:
+      MIGRATION_DATABASE_URL: postgres://ace_owner:${POSTGRES_PASSWORD}@postgres:5432/ace
+      ACE_APP_DB_PASSWORD: ${ACE_APP_DB_PASSWORD:?set ACE_APP_DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  engine:
+    image: ${ACE_ENGINE_IMAGE:-ace-engine:local}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://ace_app:${ACE_APP_DB_PASSWORD}@postgres:5432/ace
+      ACE_MASTER_KEY: ${ACE_MASTER_KEY:?set ACE_MASTER_KEY}
+      ADMIN_API_KEY_SHA256: ${ADMIN_API_KEY_SHA256:?set ADMIN_API_KEY_SHA256}
+      CONVERSATION_TOKEN_SECRET: ${CONVERSATION_TOKEN_SECRET:?set CONVERSATION_TOKEN_SECRET}
+      TRUST_PROXY_HOPS: "1"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ACE_DOMAIN: ${ACE_DOMAIN:?set ACE_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - engine
+
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: ace_owner
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ace
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./deploy/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

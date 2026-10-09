@@ -9,13 +9,13 @@
     "dev": "tsx watch src/main.ts",
     "migrate": "tsx src/migrate-cli.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "seed": "tsx src/seed-cli.ts"
   },
   "dependencies": {
-    "@ace/adapter-memory": "workspace:*",
-    "@ace/agent": "workspace:*",
-    "@ace/contracts": "workspace:*",
-    "@ace/db": "workspace:*",
+    "@ai-sdk/anthropic": "^4.0.76",
+    "@ai-sdk/google": "^4.0.92",
+    "@ai-sdk/openai": "^4.0.89",
     "@hono/node-server": "^2.1.4",
     "ai": "^7.0.133",
     "drizzle-orm": "^0.45.3",
@@ -25,6 +25,12 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@ace/adapter-medusa": "workspace:*",
+    "@ace/adapter-memory": "workspace:*",
+    "@ace/agent": "workspace:*",
+    "@ace/contracts": "workspace:*",
+    "@ace/db": "workspace:*",
+    "@ai-sdk/provider": "^4.0.25",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

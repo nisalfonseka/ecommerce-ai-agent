@@ -117,6 +117,27 @@ export const EN_CASES: EvalCase[] = [
     ],
   },
   {
+    id: "en-cod",
+    language: "en",
+    tags: ["cart", "cod"],
+    description: "Cash on delivery shows the delivery form; the assistant never collects details in chat",
+    setup: { cod: true },
+    turns: [
+      {
+        user: "Add the navy cotton kurta in M to my cart",
+        expect: { toolsCalled: ["add_to_cart"], cartContains: ["p_kurta_navy_m"] },
+      },
+      {
+        user: "Can I pay cash on delivery?",
+        expect: {
+          toolsCalled: ["start_cod_order"],
+          toolsNotCalled: ["start_checkout"],
+          mentionsAny: ["form", "details"],
+        },
+      },
+    ],
+  },
+  {
     id: "en-change-quantity",
     language: "en",
     tags: ["cart"],

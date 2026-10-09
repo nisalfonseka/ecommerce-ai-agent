@@ -6,6 +6,8 @@ import { buildTools } from "./tools/registry";
 import type { UiPart } from "./ui";
 
 export const DEFAULT_MAX_STEPS = 8;
+/** Spec §5: retry a provider error once, then let the engine fall back to another model. */
+export const DEFAULT_MAX_RETRIES = 1;
 
 export class AgentInputError extends Error {
   readonly reason: "empty" | "too_long";
@@ -26,6 +28,7 @@ export interface TurnInput {
   history: ModelMessage[];
   userMessage: string;
   maxSteps?: number;
+  maxRetries?: number;
 }
 
 export interface TurnResult {
@@ -52,6 +55,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     model: input.model,
     instructions,
     tools,
+    maxRetries: input.maxRetries ?? DEFAULT_MAX_RETRIES,
     stopWhen: stepCountIs(input.maxSteps ?? DEFAULT_MAX_STEPS),
   });
   const userMessage: ModelMessage = { role: "user", content: input.userMessage };
@@ -77,6 +81,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       instructions,
       tools,
       toolChoice: "none",
+      maxRetries: input.maxRetries ?? DEFAULT_MAX_RETRIES,
       stopWhen: stepCountIs(1),
     });
     const correction: ModelMessage = {

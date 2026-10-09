@@ -23,22 +23,43 @@ export type Variant = z.infer<typeof VariantSchema>;
 
 const PriceRangeSchema = z.object({ min: MoneySchema, max: MoneySchema });
 
-export const ProductSchema = z.object({
-  id: z.string().min(1),
-  handle: z.string().min(1),
-  title: z.string().min(1),
-  description: z.string(),
-  url: z.url().optional(),
-  category: z.string().optional(),
-  tags: z.array(z.string()),
-  /** Normalised attributes for filtering, e.g. { color: ["black"], occasion: ["wedding"] }. */
-  attributes: z.record(z.string(), z.array(z.string())),
-  images: z.array(ImageSchema),
-  options: z.array(z.object({ name: z.string().min(1), values: z.array(z.string()).min(1) })),
-  variants: z.array(VariantSchema).min(1),
-  priceRange: PriceRangeSchema,
-  updatedAt: z.iso.datetime(),
-});
+export const ProductSchema = z
+  .object({
+    id: z.string().min(1),
+    handle: z.string().min(1),
+    title: z.string().min(1),
+    description: z.string(),
+    url: z.url().optional(),
+    category: z.string().optional(),
+    tags: z.array(z.string()),
+    /** Normalised attributes for filtering, e.g. { color: ["black"], occasion: ["wedding"] }. */
+    attributes: z.record(z.string(), z.array(z.string())),
+    images: z.array(ImageSchema),
+    options: z.array(z.object({ name: z.string().min(1), values: z.array(z.string()).min(1) })),
+    variants: z.array(VariantSchema).min(1),
+    priceRange: PriceRangeSchema,
+    updatedAt: z.iso.datetime(),
+  })
+  .superRefine((product, ctx) => {
+    const issue = (message: string, path: PropertyKey[]) => ctx.addIssue({ code: "custom", message, path });
+    product.variants.forEach((variant, index) => {
+      if (variant.productId !== product.id)
+        issue("variant.productId must equal product.id", ["variants", index]);
+    });
+    const currencies = new Set(product.variants.map((variant) => variant.price.currency));
+    currencies.add(product.priceRange.min.currency).add(product.priceRange.max.currency);
+    if (currencies.size > 1) {
+      issue("all prices must share one currency", ["priceRange"]);
+      return;
+    }
+    const amounts = product.variants.map((variant) => variant.price.amount);
+    if (
+      product.priceRange.min.amount !== Math.min(...amounts) ||
+      product.priceRange.max.amount !== Math.max(...amounts)
+    ) {
+      issue("priceRange must span the variant prices", ["priceRange"]);
+    }
+  });
 export type Product = z.infer<typeof ProductSchema>;
 
 export const ProductSummarySchema = z.object({
