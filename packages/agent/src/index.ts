@@ -24,7 +24,15 @@ export {
   scrubPrices,
   shopperAmounts,
 } from "./guardrails";
-export { hasApiKey, PROVIDER_ENV_KEYS, type ProviderName, parseModelSpec, resolveModel } from "./models";
+export {
+  hasApiKey,
+  PROVIDER_ENV_KEYS,
+  type ProviderName,
+  parseModelSpec,
+  type ResolvedEmbeddingModel,
+  resolveEmbeddingModel,
+  resolveModel,
+} from "./models";
 export { composeInstructions, type Persona, PROMPT_VERSION, SAFETY_CANARY, type StoreFacts } from "./prompt";
 export {
   type CodDraft,
