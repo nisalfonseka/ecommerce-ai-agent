@@ -232,7 +232,12 @@ Final design for the lookup (as built): `widget_key_lookup(key_hash pk, tenant_i
   - `recordTurn(tx, { trace, usage })`.
   - `monthToDateCostMicros(tx, botId, now)`.
 
-- [ ] **Step 1: Failing tests.**
+**As built:**
+- `@ace/db` stays free of the AI SDK. `loadMessages` returns stored JSON rows and the engine maps them to `ModelMessage`s (action rows become shopper-action notes).
+- `createTenant` accepts an explicit `id`, so seeds re-run with deterministic IDs (RLS hides lookups by name).
+- `usageReport(tx, month)` gives cost, turns, conversations and the average per conversation.
+
+- [x] **Step 1: Failing tests.**
   - A widget key resolves; a revoked key → `null`; an unknown key → `null`.
   - Only the hash is stored (the plaintext never appears in any row).
   - A second `acquireTurnLease` while one is held → `null`; it succeeds after expiry.
@@ -240,7 +245,7 @@ Final design for the lookup (as built): `widget_key_lookup(key_hash pk, tenant_i
   - History round-trips assistant tool calls and tool results unchanged.
   - Tool-call inputs are stored redacted.
   - The month-to-date cost sums only the current calendar month (UTC).
-- [ ] **Step 2: Implement; checks; commit** `feat(db): admin, conversation and telemetry repositories`.
+- [x] **Step 2: Implement; checks; commit** `feat(db): admin, conversation and telemetry repositories`.
 
 ---
 
