@@ -31,6 +31,7 @@
     "@ace/agent": "workspace:*",
     "@ace/contracts": "workspace:*",
     "@ace/db": "workspace:*",
+    "@ace/knowledge": "workspace:*",
     "@ai-sdk/provider": "^4.0.25",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15",

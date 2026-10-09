@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
+import { resolveEmbeddingModel } from "@ace/agent";
 import { createDb, createPgIdempotencyStore, resolveWidgetKey } from "@ace/db";
 import { openJobQueue } from "@ace/db/jobs";
+import { embedderFor } from "@ace/knowledge";
 import { serve } from "@hono/node-server";
 import { sql } from "drizzle-orm";
 import { createApp } from "./app";
@@ -44,6 +46,13 @@ const turnDeps = {
   providers: createProviderFactory({
     idempotencyStore: (tenantId) => createPgIdempotencyStore(db, tenantId),
     masterKey: config.masterKey,
+    // Index-mode stores (config.search.mode) search the read model; demo:* embedders only outside production.
+    index: {
+      db,
+      embedderFor: (spec) =>
+        embedderFor(spec, { allowDemo: config.allowDemoModel, resolve: resolveEmbeddingModel }),
+    },
+    logger,
   }),
   tokens: createConversationTokens(config.conversationTokenSecret),
   models: createModelResolver({ allowDemo: config.allowDemoModel }),

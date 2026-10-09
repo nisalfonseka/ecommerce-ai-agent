@@ -222,3 +222,23 @@ export async function enrichmentReport(
   const last = items[items.length - 1];
   return { items, nextCursor: rows.length > options.limit && last ? last.productId : null };
 }
+
+export interface EmbeddingWrite {
+  /** EMBEDDING_DIMENSIONS numbers. */
+  embedding: number[];
+  /** embeddingHash of the text that was embedded. */
+  embeddedHash: string;
+  embeddingModel: string;
+}
+
+export async function setEmbedding(
+  tx: Tx,
+  storeId: string,
+  productId: string,
+  write: EmbeddingWrite,
+): Promise<void> {
+  await tx
+    .update(catalogProducts)
+    .set(write)
+    .where(and(eq(catalogProducts.storeId, storeId), eq(catalogProducts.productId, productId)));
+}

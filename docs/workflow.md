@@ -115,8 +115,8 @@ the conversation as an event so the agent knows about it on the next turn.
 
 > Shopper: "I need a black dress for a wedding, under 20,000, size M"
 
-1. **Normalise:** cheap model → `{ text: "black dress wedding", filters: { category: "dress", options: { color: ["Black"], size: ["M"] }, priceMax: 2000000, inStockOnly: true } }` (LKR minor units).
-2. **Search:** `search_products` → top 3–5 summaries; session state stores them as `#1…#5`.
+1. **Normalise:** the agent model fills the `search_products` input → `{ query: "black dress wedding", filters: { category: "dress", options: { color: ["Black"], size: ["M"] }, priceMax: 2000000, inStockOnly: true } }` (LKR minor units). No extra model call: in index mode a fixed lexicon maps Singlish, Sinhala and Tamil words to catalog English (ADR-008, S2).
+2. **Search:** `search_products` → top 3–5 summaries; session state stores them as `#1…#5`. In index mode the read model picks the candidates (full-text + vector, RRF) and every candidate is re-read live, so prices and stock come from the store (ADR-008).
 3. **Respond:** short text plus product cards rendered from tool data (image, title, price, stock badge).
 4. > "Is #2 available in large too? What's the fabric?"
    → `get_product(#2)` + `check_availability` (live). Answer from data; fabric from product attributes or knowledge base.

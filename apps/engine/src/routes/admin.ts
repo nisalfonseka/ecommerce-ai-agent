@@ -15,7 +15,7 @@ import {
   withTenant,
 } from "@ace/db";
 import type { JobQueue } from "@ace/db/jobs";
-import { applyMerchantOverrides, MerchantOverridesSchema } from "@ace/search";
+import { applyMerchantOverrides, MerchantOverridesSchema, StoreSearchConfigSchema } from "@ace/search";
 import { eq } from "drizzle-orm";
 import type { Hono, MiddlewareHandler } from "hono";
 import { z } from "zod";
@@ -40,7 +40,14 @@ const PLATFORMS = ["memory", "medusa"] as const;
 const StoreBody = z.object({
   platform: z.enum(PLATFORMS),
   currency: z.string().regex(/^[A-Z]{3}$/),
-  config: z.record(z.string(), z.unknown()).optional(),
+  /** Stored as given; `search` must satisfy StoreSearchConfigSchema (defaults are applied when read). */
+  config: z
+    .record(z.string(), z.unknown())
+    .refine((config) => StoreSearchConfigSchema.safeParse(config.search).success, {
+      message: "config.search is invalid",
+      path: ["search"],
+    })
+    .optional(),
   /** Store API credentials; sealed before storage, never returned. */
   credentials: z.string().min(1).max(4096).optional(),
 });

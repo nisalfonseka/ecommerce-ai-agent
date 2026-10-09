@@ -1,17 +1,20 @@
 import { CommerceError } from "@ace/contracts";
-import { sealSecret } from "@ace/db";
-import { describe, expect, it } from "vitest";
+import { type Db, sealSecret } from "@ace/db";
+import { createDemoEmbedder } from "@ace/knowledge";
+import { IndexedCatalogProvider } from "@ace/search";
+import { describe, expect, it, vi } from "vitest";
 import { createMemoryIdempotencyStore, IdempotentCommerceProvider } from "./idempotent-provider";
 import { createProviderFactory } from "./providers";
 
 const masterKey = Buffer.alloc(32, 7);
 const factory = () =>
   createProviderFactory({ idempotencyStore: () => createMemoryIdempotencyStore(), masterKey });
-const store = (id: string, platform = "memory", credentialsSealed: Buffer | null = null) => ({
-  id,
-  platform,
-  credentialsSealed,
-});
+const store = (
+  id: string,
+  platform = "memory",
+  credentialsSealed: Buffer | null = null,
+  config: unknown = {},
+) => ({ id, platform, credentialsSealed, config });
 const medusaCredentials = {
   baseUrl: "https://store-api.example.lk",
   publishableKey: "pk_123",
@@ -63,5 +66,86 @@ describe("createProviderFactory", () => {
       expect(JSON.stringify(error)).not.toContain("sk_123");
       expect(String((error as Error).message)).not.toContain("sk_123");
     }
+  });
+});
+
+describe("createProviderFactory with the search index", () => {
+  // Construction never touches the database; the decorator's own tests cover queries.
+  const db = {} as Db;
+  const logger = () => ({ warn: vi.fn(), error: vi.fn() });
+  const indexFactory = (log = logger(), embedderFor = vi.fn(() => createDemoEmbedder())) => ({
+    log,
+    embedderFor,
+    providers: createProviderFactory({
+      idempotencyStore: () => createMemoryIdempotencyStore(),
+      masterKey,
+      index: { db, embedderFor },
+      logger: log,
+    }),
+  });
+  const indexMode = { search: { mode: "index", embeddingModel: "demo:hash-v1" } };
+
+  it("serves index-mode stores through IndexedCatalogProvider around the idempotency layer", () => {
+    const { providers, embedderFor } = indexFactory();
+    const provider = providers("t1", store("s1", "memory", null, indexMode));
+    expect(provider).toBeInstanceOf(IndexedCatalogProvider);
+    expect(provider.platform).toBe("memory");
+    expect(embedderFor).toHaveBeenCalledWith("demo:hash-v1");
+    expect(providers("t1", store("s1", "memory", null, indexMode))).toBe(provider);
+  });
+
+  it("leaves live-mode and unconfigured stores unchanged", () => {
+    const { providers } = indexFactory();
+    expect(providers("t1", store("s1"))).toBeInstanceOf(IdempotentCommerceProvider);
+    expect(providers("t1", store("s2", "memory", null, { search: { mode: "live" } }))).toBeInstanceOf(
+      IdempotentCommerceProvider,
+    );
+    expect(providers("t1", { id: "s3", platform: "memory" })).toBeInstanceOf(IdempotentCommerceProvider);
+  });
+
+  it("rebuilds the provider when the search config changes", () => {
+    const { providers } = indexFactory();
+    const live = providers("t1", store("s1"));
+    const indexed = providers("t1", store("s1", "memory", null, indexMode));
+    expect(indexed).not.toBe(live);
+    expect(
+      providers(
+        "t1",
+        store("s1", "memory", null, { search: { ...indexMode.search, knowledgeThreshold: 0.5 } }),
+      ),
+    ).not.toBe(indexed);
+  });
+
+  it("refuses a bad search config with INVALID_INPUT and logs it", () => {
+    const { providers, log } = indexFactory();
+    expect(() => providers("t1", store("s1", "memory", null, { search: { mode: "fast" } }))).toThrow(
+      expect.objectContaining({ code: "INVALID_INPUT" }),
+    );
+    expect(log.error).toHaveBeenCalledTimes(1);
+    expect(log.error.mock.calls[0]?.[0]).toMatchObject({ tenantId: "t1", storeId: "s1" });
+  });
+
+  it("searches full-text only when the embedding model cannot be built", () => {
+    const { providers, log } = indexFactory(
+      logger(),
+      vi.fn(() => {
+        throw new Error("demo models are not allowed in production");
+      }),
+    );
+    expect(providers("t1", store("s1", "memory", null, indexMode))).toBeInstanceOf(IndexedCatalogProvider);
+    expect(log.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves index-mode stores live when the factory has no index", () => {
+    const log = logger();
+    const providers = createProviderFactory({
+      idempotencyStore: () => createMemoryIdempotencyStore(),
+      masterKey,
+      logger: log,
+    });
+    expect(providers("t1", store("s1", "memory", null, indexMode))).toBeInstanceOf(
+      IdempotentCommerceProvider,
+    );
+    expect(log.warn).toHaveBeenCalledTimes(1);
   });
 });

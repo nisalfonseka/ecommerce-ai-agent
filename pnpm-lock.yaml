@@ -233,6 +233,9 @@ importers:
       '@ace/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ace/knowledge':
+        specifier: workspace:*
+        version: link:../../packages/knowledge
       '@ai-sdk/provider':
         specifier: ^4.0.25
         version: 4.0.25
@@ -402,6 +405,9 @@ importers:
       '@ace/db':
         specifier: workspace:*
         version: link:../db
+      '@ace/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
       ai:
         specifier: ^7.0.133
         version: 7.0.133(zod@4.6.5)

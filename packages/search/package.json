@@ -13,6 +13,7 @@
   "dependencies": {
     "@ace/contracts": "workspace:*",
     "@ace/db": "workspace:*",
+    "@ace/knowledge": "workspace:*",
     "ai": "^7.0.133",
     "drizzle-orm": "^0.45.3",
     "zod": "^4.6.5"

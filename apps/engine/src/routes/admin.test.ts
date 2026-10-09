@@ -1,9 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import { MemoryCommerceProvider } from "@ace/adapter-memory";
-import { createDb } from "@ace/db";
+import { createDb, schema, withTenant } from "@ace/db";
 import type { JobName, JobPayload, JobQueue } from "@ace/db/jobs";
 import { createTestDatabase } from "@ace/db/testing";
 import { createDemoEnricher, enrichStoredProduct, syncProduct } from "@ace/search";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { loadModelPrices } from "../budget";
@@ -118,6 +119,28 @@ describe.skipIf(testDb === null)("admin API", () => {
     const created = await create({ credentials: JSON.stringify(credentials) });
     expect(created.status).toBe(201);
     expect(await created.text()).not.toContain("sk_super_secret");
+  });
+
+  it("validates and stores the store's search config", async () => {
+    const { tenantId } = await json(await call("POST", "/admin/tenants", { name: "Admin Search Config" }));
+    const create = (config: unknown) =>
+      call("POST", `/admin/tenants/${tenantId}/stores`, { platform: "memory", currency: "LKR", config });
+    for (const search of [{ mode: "fast" }, { knowledgeThreshold: 1.5 }, { embeddingModel: 7 }, "index"]) {
+      const res = await create({ search });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: { code: "invalid_input" } });
+    }
+    const search = { mode: "index", embeddingModel: "demo:hash-v1" };
+    const created = await create({ search, other: true });
+    expect(created.status).toBe(201);
+    const { storeId } = await json(created);
+    const [row] = await withTenant(pool.db, tenantId ?? "", (tx) =>
+      tx
+        .select({ config: schema.stores.config })
+        .from(schema.stores)
+        .where(eq(schema.stores.id, storeId ?? "")),
+    );
+    expect(row?.config).toEqual({ search, other: true });
   });
 
   it("validates bots: known models, persona shape and caps", async () => {
