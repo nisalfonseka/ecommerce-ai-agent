@@ -195,7 +195,7 @@ Final design for the lookup (as built): `widget_key_lookup(key_hash pk, tenant_i
 - `redactDeep(value: unknown, maxBytes = 8192): unknown` redacts every string and truncates large values with a `[truncated]` marker.
 - `SHOPPER_DATA_TABLES: { table: string; retentionDays: number; subject: "conversation" }[]`. Covers `conversations` (180), `messages` (180), `tool_calls` (30), `turn_traces` (30), `usage_ledger` (none; holds no shopper data, so it is excluded and the test documents why).
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
   - The seal round-trip works.
   - A tampered byte → throws.
   - A wrong master key → throws.
@@ -203,7 +203,7 @@ Final design for the lookup (as built): `widget_key_lookup(key_hash pk, tenant_i
   - A 31-byte master key is rejected.
   - Redaction table tests: `+94771234567`, `0771234567`, `a.b@x.lk`, `4111 1111 1111 1111`, `ACE-1001` (kept), `LKR 18,500.00` (kept).
   - The registry test: every table in `schema.ts` that has a `conversation_id` column is in `SHOPPER_DATA_TABLES`.
-- [ ] **Step 2: Implement; checks; commit** `feat(db): secret sealing, PII redaction and shopper-data registry`.
+- [x] **Step 2: Implement; checks; commit** `feat(db): secret sealing, PII redaction and shopper-data registry`.
 
 ---
 
