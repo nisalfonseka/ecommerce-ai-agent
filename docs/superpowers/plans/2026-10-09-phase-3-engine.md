@@ -467,9 +467,16 @@ The host site sends `cartId` with each message. If a tool created or replaced th
 - `caddy` (80/443, `reverse_proxy engine:8080`, automatic TLS for `$ACE_DOMAIN`).
 - `backup`: a nightly `pg_dump -Fc` to a mounted directory, kept 14 days, plus an optional `rclone` copy to the off-site target configured by the owner.
 
-- [ ] **Step 1:** CI gains a `docker build .` job (no push) so the image always builds.
-- [ ] **Step 2:** Locally: `docker compose up` (where Docker is available), then `pnpm seed` against it and `curl -N` a chat turn with the memory adapter and a scripted model flag (`ACE_FAKE_MODEL=1`, accepted only when `NODE_ENV !== "production"`), to prove the stack without API keys.
-- [ ] **Step 3: Commit** `chore(deploy): engine image, compose stack, Caddy and backups`.
+**As built:**
+- The image is a two-stage `node:24-slim` build. pnpm 12 comes from npm, `pnpm deploy --prod` produces the runtime folder, and `@ace/*` are dev dependencies of the engine because they are bundled. The image holds `dist/` (main, migrate, seed), production `node_modules`, `migrations/` and `model-prices.json`, runs as the `node` user, and has a health check.
+- Compose: `postgres` (owner `ace_owner`), `migrate` (one-shot), `engine`, `caddy` (TLS; `flush_interval -1` for SSE), `backup` (nightly `pg_dump -Fc`, kept 14 days in `./backups`; the off-site copy is the owner's choice). Secrets come from `.env.production` (`.env.production.example` is committed).
+- Postgres' owner is a superuser in the official image. Only `migrate` uses it; the engine connects as `ace_app` (no `BYPASSRLS`), so RLS holds.
+- There is no Docker daemon in the development container. The local proof is the `pnpm deploy` output running on its own (migrate, start in production mode, `/healthz`) plus `docker compose config`. The image itself is proven by the new CI job `image`: build, `up --wait`, health check, seed, admin call.
+- The keyless chat smoke stays local (`NODE_ENV=development`), because the image refuses the demo model in production.
+
+- [x] **Step 1:** CI gains a `docker build .` job (no push) so the image always builds.
+- [x] **Step 2:** Locally: `docker compose up` (where Docker is available), then `pnpm seed` against it and `curl -N` a chat turn with the memory adapter and a scripted model flag (`ACE_FAKE_MODEL=1`, accepted only when `NODE_ENV !== "production"`), to prove the stack without API keys.
+- [x] **Step 3: Commit** `chore(deploy): engine image, compose stack, Caddy and backups`.
 
 ---
 

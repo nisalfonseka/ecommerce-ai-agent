@@ -13,10 +13,6 @@
     "seed": "tsx src/seed-cli.ts"
   },
   "dependencies": {
-    "@ace/adapter-memory": "workspace:*",
-    "@ace/agent": "workspace:*",
-    "@ace/contracts": "workspace:*",
-    "@ace/db": "workspace:*",
     "@ai-sdk/anthropic": "^4.0.76",
     "@ai-sdk/google": "^4.0.92",
     "@ai-sdk/openai": "^4.0.89",
@@ -29,6 +25,10 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@ace/adapter-memory": "workspace:*",
+    "@ace/agent": "workspace:*",
+    "@ace/contracts": "workspace:*",
+    "@ace/db": "workspace:*",
     "@ai-sdk/provider": "^4.0.25",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15",

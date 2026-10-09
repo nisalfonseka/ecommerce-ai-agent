@@ -42,3 +42,29 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+  image:
+    # The engine image and compose stack: build, migrate, start, health check, seed and an admin call.
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci-owner-password
+      ACE_APP_DB_PASSWORD: ci_app_password_0123
+      ADMIN_API_KEY_SHA256: 4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5 # sha256("10")
+      CONVERSATION_TOKEN_SECRET: ci-conversation-token-secret-0123456789
+      ACE_DOMAIN: localhost
+      # Throwaway CI-only value (32 random bytes, base64); never used outside this job.
+      ACE_MASTER_KEY: NSHgkAbZNUQ/n9Qmk6nLBFuv+CcVDnsKJVzV9n5+7y8=
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the engine image
+        run: docker compose build migrate
+      - name: Start postgres, migrate and the engine
+        run: docker compose up -d --wait engine
+      - name: Health, seed and admin API inside the network
+        run: |
+          docker compose exec -T engine node -e "fetch('http://127.0.0.1:8080/healthz').then(async (r) => { console.log(await r.text()); process.exit(r.ok ? 0 : 1); })"
+          docker compose exec -T engine node dist/seed.js
+          docker compose exec -T engine node -e "fetch('http://127.0.0.1:8080/admin/tenants/00000000-0000-4000-8000-000000000000/usage', { headers: { authorization: 'Bearer 10' } }).then(async (r) => { console.log(r.status, await r.text()); process.exit(r.status === 200 ? 0 : 1); })"
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color
