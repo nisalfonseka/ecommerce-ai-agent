@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
+import { installJobSchema } from "./jobs";
 import { runMigrations } from "./migrate";
 
 /** Fixed so parallel test files agree; ace_app is cluster-wide. Test clusters only. */
@@ -36,6 +37,7 @@ export async function createTestDatabase(): Promise<TestDatabase | null> {
     await admin.query("select pg_advisory_lock(7731001)");
     await admin.query(`CREATE DATABASE ${name}`);
     await runMigrations(owner.toString(), TEST_APP_PASSWORD);
+    await installJobSchema(owner.toString());
   } finally {
     await admin.query("select pg_advisory_unlock(7731001)").catch(() => undefined);
     await admin.end();

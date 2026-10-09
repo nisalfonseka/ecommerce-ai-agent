@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./jobs": "./src/jobs.ts",
     "./testing": "./src/testing.ts"
   },
   "scripts": {
@@ -15,6 +16,7 @@
   "dependencies": {
     "drizzle-orm": "^0.45.3",
     "pg": "^8.23.1",
+    "pg-boss": "12.34.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
