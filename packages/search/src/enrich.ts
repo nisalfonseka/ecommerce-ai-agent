@@ -6,6 +6,7 @@ import {
   recordJobUsage,
   setEnrichment,
   setOverrides,
+  type Tx,
   withTenant,
 } from "@ace/db";
 import { JOBS, type JobQueue } from "@ace/db/jobs";
@@ -45,12 +46,18 @@ export interface Enricher {
 }
 
 export class EnrichmentError extends Error {
+  readonly usage: { inputTokens: number; outputTokens: number } | null;
   constructor(
     readonly code: "invalid_output",
     message: string,
-    options?: { cause?: unknown },
+    options?: {
+      cause?: unknown;
+      /** Tokens the failed call still spent; the caller bills them. */
+      usage?: { inputTokens: number; outputTokens: number } | null;
+    },
   ) {
-    super(message, options);
+    super(message, { cause: options?.cause });
+    this.usage = options?.usage ?? null;
     this.name = "EnrichmentError";
   }
 }
@@ -87,6 +94,7 @@ export function createLlmEnricher(spec: string, model: LanguageModel): Enricher 
   return {
     model: spec,
     async enrich(input) {
+      let usage: { inputTokens: number; outputTokens: number } | null = null;
       try {
         const result = await generateText({
           model,
@@ -95,22 +103,21 @@ export function createLlmEnricher(spec: string, model: LanguageModel): Enricher 
           prompt: productPrompt(input),
           maxRetries: 1,
         });
+        usage = { inputTokens: result.usage.inputTokens ?? 0, outputTokens: result.usage.outputTokens ?? 0 };
         const attributes = EnrichedAttributesSchema.parse(result.output);
-        return {
-          attributes,
-          usage: {
-            inputTokens: result.usage.inputTokens ?? 0,
-            outputTokens: result.usage.outputTokens ?? 0,
-          },
-        };
+        return { attributes, usage };
       } catch (error) {
         if (
           NoObjectGeneratedError.isInstance(error) ||
           NoOutputGeneratedError.isInstance(error) ||
           error instanceof z.ZodError
         ) {
+          const spent = NoObjectGeneratedError.isInstance(error) ? error.usage : undefined;
           throw new EnrichmentError("invalid_output", "Model output was not valid enrichment.", {
             cause: error,
+            usage:
+              usage ??
+              (spent ? { inputTokens: spent.inputTokens ?? 0, outputTokens: spent.outputTokens ?? 0 } : null),
           });
         }
         throw error;
@@ -223,6 +230,15 @@ async function enqueueEmbed(deps: { jobs: JobQueue; tenantId: string; storeId: s
   await deps.jobs.send(JOBS.embedProduct, { tenantId: deps.tenantId, storeId: deps.storeId, productId });
 }
 
+const recordEnrichUsage = (tx: Tx, deps: EnrichDeps, usage: { inputTokens: number; outputTokens: number }) =>
+  recordJobUsage(tx, deps.tenantId, {
+    storeId: deps.storeId,
+    kind: "enrich",
+    turnId: `job:${deps.jobId ?? "adhoc"}`,
+    model: deps.enricher.model,
+    ...usage,
+  });
+
 /**
  * Loads the row, enriches (outside any transaction: the model call is slow), stores enriched + hash + model +
  * effective attributes, and enqueues embed.product when the embedding text changed. No-op when the stored
@@ -253,14 +269,24 @@ export async function enrichStoredProduct(
       options[name] = [...new Set([...(options[name] ?? []), value])];
     }
   }
-  const result = await deps.enricher.enrich({
-    title: row.title,
-    description: row.description,
-    category: row.category,
-    tags: row.tags,
-    attributes: asLists(row.platformAttributes),
-    options,
-  });
+  let result: Awaited<ReturnType<Enricher["enrich"]>>;
+  try {
+    result = await deps.enricher.enrich({
+      title: row.title,
+      description: row.description,
+      category: row.category,
+      tags: row.tags,
+      attributes: asLists(row.platformAttributes),
+      options,
+    });
+  } catch (error) {
+    // The failed call still cost tokens, and the job layer will retry: bill each attempt.
+    if (error instanceof EnrichmentError && error.usage) {
+      const spent = error.usage;
+      await withTenant(deps.db, deps.tenantId, (tx) => recordEnrichUsage(tx, deps, spent));
+    }
+    throw error;
+  }
   const enriched = flattenEnriched(result.attributes);
 
   const embedChanged = await withTenant(deps.db, deps.tenantId, async (tx) => {
@@ -277,14 +303,7 @@ export async function enrichStoredProduct(
       searchSecondary: derived.searchSecondary,
     });
     if (result.usage) {
-      await recordJobUsage(tx, deps.tenantId, {
-        storeId: deps.storeId,
-        kind: "enrich",
-        turnId: `job:${deps.jobId ?? "adhoc"}`,
-        model: deps.enricher.model,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-      });
+      await recordEnrichUsage(tx, deps, result.usage);
     }
     return current.embeddedHash !== derived.embeddedHashWanted;
   });

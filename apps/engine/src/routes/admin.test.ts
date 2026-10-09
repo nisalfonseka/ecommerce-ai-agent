@@ -215,15 +215,41 @@ describe.skipIf(testDb === null)("admin API", () => {
       });
     });
 
-    it("pages with a cursor", async () => {
+    it("pages with a cursor without overlap", async () => {
       const { tenantId, storeId } = await seededStore("Review Page");
-      const first = (await (
-        await call("GET", `/admin/tenants/${tenantId}/stores/${storeId}/enrichment?limit=1`)
-      ).json()) as { nextCursor: string | null };
-      expect(first.nextCursor).toBeNull(); // one product only
-      expect(
-        (await call("GET", `/admin/tenants/${tenantId}/stores/${storeId}/enrichment?limit=0`)).status,
-      ).toBe(400);
+      const deps = {
+        db: pool.db,
+        tenantId: tenantId ?? "",
+        storeId: storeId ?? "",
+        jobs: new RecordingQueue(),
+      };
+      for (const id of ["p_oxford_shirt_white", "p_wrap_dress_black"]) {
+        await syncProduct(
+          { ...deps, provider: new MemoryCommerceProvider(), embeddingModel: "demo:embed" },
+          id,
+        );
+        await enrichStoredProduct({ ...deps, enricher: createDemoEnricher() }, id);
+      }
+      type Page = { items: { productId: string }[]; nextCursor: string | null };
+      const base = `/admin/tenants/${tenantId}/stores/${storeId}/enrichment`;
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      let pages = 0;
+      do {
+        const res = await call(
+          "GET",
+          `${base}?limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+        );
+        const page = (await res.json()) as Page;
+        expect(page.items).toHaveLength(1);
+        seen.push(...page.items.map((i) => i.productId));
+        cursor = page.nextCursor;
+        pages += 1;
+        if (pages === 1) expect(cursor).not.toBeNull();
+      } while (cursor);
+      expect(pages).toBe(3);
+      expect(seen).toEqual(["p_linen_shirt_black", "p_oxford_shirt_white", "p_wrap_dress_black"]);
+      expect((await call("GET", `${base}?limit=0`)).status).toBe(400);
     });
 
     it("rejects out-of-range or unknown overrides with 400", async () => {

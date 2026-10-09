@@ -224,15 +224,27 @@ describe.skipIf(testDb === null)("enrichStoredProduct", () => {
   });
 
   it("leaves the row unchanged when the enricher output is invalid", async () => {
-    const { deps, row, jobs } = await setup();
+    const { deps, row, jobs, tenantId, storeId } = await setup();
     const bad = createLlmEnricher("google:cheap", jsonModel({ ...ATTRS, color: ["rm -rf"] }));
-    await expect(enrichStoredProduct({ ...deps, enricher: bad }, SHIRT)).rejects.toBeInstanceOf(
-      EnrichmentError,
-    );
+    await expect(
+      enrichStoredProduct({ ...deps, enricher: bad, jobId: "job-bad" }, SHIRT),
+    ).rejects.toBeInstanceOf(EnrichmentError);
     const stored = await row();
     expect(stored?.enriched).toBeNull();
     expect(stored?.enrichedHash).toBeNull();
     expect(jobs.sent).toEqual([]);
+    // the failed call's tokens are still billed
+    const ledger = await withTenant(app.db, tenantId, (tx) => tx.select().from(schema.usageLedger));
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]).toMatchObject({
+      kind: "enrich",
+      storeId,
+      botId: null,
+      turnId: "job:job-bad",
+      model: "google:cheap",
+      inputTokens: 120,
+      outputTokens: 30,
+    });
   });
 
   it("overrides win over enrichment, survive a re-sync and are not lost on re-enrichment", async () => {
