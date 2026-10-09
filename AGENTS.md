@@ -18,7 +18,7 @@ adapter**. The agent only knows the universal commerce contract, never Shopify, 
 
 ## Current status
 
-**Phase 1 (Foundation) is complete**: `@ace/contracts` (commerce contract + conformance suite) and `@ace/adapter-memory`. **Next:** write the Phase 2 (agent core) plan. Before Phase 2 tools are built, the contract gains cart attribution on existing carts (see roadmap Phase 2). Work only on the current phase's plan; do not scaffold later phases early.
+**Phase 1 (Foundation) is complete. Phase 2 (agent core) is built**: commerce contract v1.1 (`updateCartAttributes`) + conformance suite, in-memory adapter, `@ace/agent` (tools, session refs, attribution, price grounding, `runTurn`) and `@ace/evals` (34 golden cases in English, Sinhala, Tamil and Singlish). **Next:** Phase 2 Task 10 (owner-gated): run `pnpm evals` with real API keys, check the exit criteria (≥ 90% pass, 0 safety failures, all ordinal cases) and decide D3 in `docs/adr/003-default-models.md`. Then write the Phase 3 (engine API + persistence) plan. Work only on the current phase's plan; do not scaffold later phases early.
 
 ## Architecture rules (non-negotiable)
 
@@ -95,9 +95,11 @@ pnpm typecheck          # tsc --noEmit in every package
 pnpm lint               # Biome check
 pnpm lint:fix           # Biome check --write (format + safe fixes)
 pnpm --filter @ace/contracts test     # one package
+pnpm evals              # live agent evals (needs API keys in .env; costs money)
+pnpm evals --models google:gemini-flash-latest --only si   # one model, Sinhala cases only
 ```
 
-Phase 2 adds `pnpm evals`. Keep this section in sync with the real scripts.
+Keep this section in sync with the real scripts.
 
 ## Code conventions
 

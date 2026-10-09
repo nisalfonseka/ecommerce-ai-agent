@@ -2614,7 +2614,7 @@ git commit -m "feat(evals): add eval case types, deterministic scorers, runner a
   - `parseCliArgs(argv: string[]): { models: string[] | null; only: string | null; out: string | null }`
   - the root command `pnpm evals`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/evals/src/cases/cases.test.ts`:
 
@@ -2682,12 +2682,12 @@ describe("parseCliArgs", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/evals test`
 Expected: FAIL with "Failed to resolve import "./index"" and "./cli-args".
 
-- [ ] **Step 3: Write the cases**
+- [x] **Step 3: Write the cases**
 
 `packages/evals/src/cases/en.ts`:
 
@@ -3101,7 +3101,7 @@ export const ALL_CASES: EvalCase[] = [...EN_CASES, ...SI_CASES, ...TA_CASES, ...
 
 The total is 10 + 6 + 5 + 6 + 5 = 32 cases. Safety cases count as `en`, and `si-order-unverified` also carries the `safety` tag.
 
-- [ ] **Step 4: Write config, CLI args and CLI**
+- [x] **Step 4: Write config, CLI args and CLI**
 
 `packages/evals/src/config.ts`:
 
@@ -3214,7 +3214,7 @@ console.table(
 console.log(`Report: ${out}`);
 ```
 
-- [ ] **Step 5: Wire the repo**
+- [x] **Step 5: Wire the repo**
 
 Root `package.json` scripts — add:
 
@@ -3255,7 +3255,7 @@ pnpm evals --models google:gemini-flash-latest --only si   # one model, Sinhala 
 `evals-reports/*.md` (pass rate per language, Sinhala/Tamil transcripts, tokens, latency).
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `pnpm install && pnpm lint:fix && pnpm lint && pnpm typecheck && pnpm test`
 Expected: PASS. Evals: 5 files, 21 tests.
@@ -3265,7 +3265,7 @@ Expected: six `skip … (no …_API_KEY)` lines, an empty summary table, `Report
 
 If a `.env` with real keys exists in the repo root, the CLI loads it. In that case, run the smoke test from a temporary copy of the env that hides keys, or skip it and say so. Never print key values.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/evals .env.example .gitignore package.json AGENTS.md docs/superpowers/plans/2026-10-08-roadmap.md pnpm-lock.yaml
@@ -3290,3 +3290,16 @@ Not a coding task. It needs the owner's API keys.
 - [ ] Every Review Focus item has a passing test (Tasks 2, 4, 5, 6, 7).
 - [ ] `pnpm evals` runs end-to-end and skips providers without keys.
 - [ ] D3 decided after the owner runs the live evals (Task 10).
+
+## Implementation notes (2026-10-09)
+
+Where the code differs from the blocks above, and why:
+
+- **Attribution per cart (Task 4).** `SessionState.attributionTagged: boolean` became `attributedCartId: string | null`. The host site can hand over a new cart mid-conversation (for example after a checkout). With a boolean, that cart was never tagged and the order lost its attribution. Test: "tags a new host cart that replaces an already tagged one".
+- **Null stock counts (Task 3).** `check_availability` keeps `quantityAvailable: null` from stores that hide exact counts, instead of reporting `0`.
+- **Unexpected-error hook (Task 5).** Every tool passes `ctx.onUnexpectedError` to `runTool` (the hook from commit `cf5858b`), so bugs and outages reach logging. Test: registry "unexpected errors".
+- **Local price formats (Task 6).** Price detection also accepts `/-` and currency words after the number (`18,500 ரூபாய்`, `18,500 රුපියල්`, `18,500 රු.`), the natural order in Tamil and Sinhala.
+- **Shopper amounts are grounded (Task 7).** Numbers the shopper wrote in the current turn (`shopperAmounts`) are allowed in the reply, so "dresses under Rs. 20,000" is not flagged or regenerated.
+- **Rewrite step keeps tools (Task 7).** The grounding rewrite sends the same tools with `toolChoice: "none"`. Some providers reject tool-call history when no tools are declared.
+- **`stepCountIs` (Task 7).** `ai@7` exports the step-limit helper as `stepCountIs`, not `isStepCount`.
+- **Ordinal cases (Task 9).** The `refs` cases now use real ordinals ("the second one", "දෙවෙනි එක", "இரண்டாவது", "deweni eka") that resolve to #2, the Floral Maxi Dress. The descriptive "black one" case is kept as `en-descriptive-ref`, and `ta-ordinal-add` was added, for 34 cases. `cases.test.ts` pins the dress search order these cases rely on. The new Sinhala and Tamil phrasings need the native-speaker review in Task 10.
