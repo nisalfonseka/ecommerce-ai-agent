@@ -54,6 +54,11 @@ export interface MemoryProviderOptions {
   seed?: MemorySeed;
   now?: () => Date;
   checkoutBaseUrl?: string;
+  /**
+   * Replay writes by idempotency key inside the adapter (default true). The engine passes false when it wraps the
+   * adapter in IdempotentCommerceProvider, so its replay tests exercise the decorator, not this map (ADR-002).
+   */
+  idempotency?: boolean;
 }
 
 interface StoredLine {
@@ -79,12 +84,20 @@ export class MemoryCommerceProvider implements CommerceProvider {
   protected readonly checkoutBaseUrl: string;
   private readonly carts = new Map<string, StoredCart>();
   private readonly idempotentResults = new Map<string, unknown>();
+  private readonly replayWrites: boolean;
   private nextId = 1;
 
   constructor(options: MemoryProviderOptions = {}) {
     this.seed = structuredClone(options.seed ?? defaultSeed());
     this.now = options.now ?? (() => new Date());
     this.checkoutBaseUrl = options.checkoutBaseUrl ?? "https://demo-store.test/checkout";
+    this.replayWrites = options.idempotency ?? true;
+  }
+
+  /** Test hook (conformance `control`): sets the units available of a variant. */
+  setStock(variantId: string, quantity: number): void {
+    this.requireVariant(variantId);
+    this.seed.stock[variantId] = quantity;
   }
 
   // catalog ---------------------------------------------------------------
@@ -246,6 +259,7 @@ export class MemoryCommerceProvider implements CommerceProvider {
   /** Runs a write once per (operation, target, key); replays return a copy of the first result. */
   private once<T>(operation: string, target: string, opts: WriteOptions, write: () => T): T {
     const { idempotencyKey } = parseInput(WriteOptionsSchema, opts);
+    if (!this.replayWrites) return write();
     const storageKey = `${operation}:${target}:${idempotencyKey}`;
     if (this.idempotentResults.has(storageKey)) {
       return structuredClone(this.idempotentResults.get(storageKey)) as T;

@@ -212,6 +212,23 @@ describe("MemoryCommerceProvider — carts", () => {
     expect(resultB.itemCount).toBe(1);
   });
 
+  it("can leave replay to the engine (idempotency: false)", async () => {
+    const provider = new MemoryCommerceProvider({ idempotency: false });
+    const cart = await provider.createCart({}, key());
+    const same = key();
+    await provider.addCartLines(cart.id, add("p_kurta_navy_m", 1), same);
+    expect((await provider.addCartLines(cart.id, add("p_kurta_navy_m", 1), same)).itemCount).toBe(2);
+  });
+
+  it("setStock changes live availability (test hook)", async () => {
+    const provider = new MemoryCommerceProvider();
+    provider.setStock("p_linen_shirt_black_l", 5);
+    expect(await provider.getInventory(["p_linen_shirt_black_l"])).toEqual([
+      { variantId: "p_linen_shirt_black_l", availability: "in_stock", quantityAvailable: 5 },
+    ]);
+    expect(() => provider.setStock("nope", 1)).toThrow();
+  });
+
   it("keeps carts separate between provider instances", async () => {
     const first = new MemoryCommerceProvider();
     const second = new MemoryCommerceProvider();

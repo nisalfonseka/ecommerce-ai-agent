@@ -82,7 +82,7 @@ New tests:
 
 Memory adapter parity: `MemoryCommerceProvider({ idempotency: false })` turns off its own replay map. The memory fixtures provide `control`. The engine runs the whole suite over `IdempotentCommerceProvider(new MemoryCommerceProvider({ idempotency: false }))` on Postgres, which proves the replay tests against the decorator (ADR-002).
 
-- [ ] Write the new tests; see the memory adapter fail where it lacks parity; fix the adapter; commit `test(contracts): conformance suite v2 and memory adapter parity`.
+- [x] Write the new tests; see the memory adapter fail where it lacks parity; fix the adapter; commit `test(contracts): conformance suite v2 and memory adapter parity`.
 
 ### Task 3: Contract v1.1 — cash on delivery
 

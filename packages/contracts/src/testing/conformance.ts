@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, type TestContext } from "vitest";
 import { CAPABILITIES, type Capability } from "../capabilities";
-import { ATTRIBUTION_ATTRIBUTE, type Cart, type CartLine, CartSchema } from "../cart";
+import { ATTRIBUTION_ATTRIBUTE, type Cart, type CartLine, CartSchema, MAX_LINE_QUANTITY } from "../cart";
 import { ListProductsResultSchema, ProductSchema, SearchProductsResultSchema } from "../catalog";
 import { CheckoutHandoffSchema } from "../checkout";
 import { CommerceError, type CommerceErrorCode } from "../errors";
@@ -8,7 +8,12 @@ import type { VerifiedIdentity } from "../identity";
 import { InventoryLevelSchema } from "../inventory";
 import { OrderSchema } from "../orders";
 import type { CommerceProvider } from "../provider";
-import type { ConformanceFixtures, ConformanceSubject } from "./fixtures";
+import type {
+  ConformanceControl,
+  ConformanceFixtures,
+  ConformanceOptions,
+  ConformanceSubject,
+} from "./fixtures";
 
 let keyCounter = 0;
 function writeKey(): { idempotencyKey: string } {
@@ -20,6 +25,8 @@ async function expectCommerceError(promise: Promise<unknown>, code: CommerceErro
   await expect(promise).rejects.toBeInstanceOf(CommerceError);
   await expect(promise).rejects.toMatchObject({ code });
 }
+
+const UTC_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
 function onlyLine(cart: Cart): CartLine {
   expect(cart.lines).toHaveLength(1);
@@ -34,7 +41,12 @@ function onlyLine(cart: Cart): CartLine {
  * `setup` runs before every test, including ones that end up skipped, and must return a provider with
  * fresh, isolated state so tests cannot affect each other.
  */
-export function describeProviderConformance(name: string, setup: () => Promise<ConformanceSubject>): void {
+export function describeProviderConformance(
+  name: string,
+  setup: () => Promise<ConformanceSubject>,
+  options: ConformanceOptions = {},
+): void {
+  const replay = options.replay ?? true;
   describe(`CommerceProvider conformance: ${name}`, () => {
     let provider: CommerceProvider;
     let f: ConformanceFixtures;
@@ -45,6 +57,36 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
 
     function needs(ctx: TestContext, ...capabilities: Capability[]): void {
       if (!capabilities.every((capability) => provider.capabilities.has(capability))) ctx.skip();
+    }
+
+    function needsReplay(ctx: TestContext): void {
+      if (!replay) ctx.skip();
+    }
+
+    function needsControl(ctx: TestContext): ConformanceControl {
+      if (!f.control) ctx.skip();
+      if (!f.control) throw new Error("unreachable: skipped");
+      return f.control;
+    }
+
+    /** Runs `body` with a variant's stock changed, then restores it even if `body` fails. */
+    async function withStock(
+      control: ConformanceControl,
+      variantId: string,
+      quantity: number,
+      restoreTo: number,
+      body: () => Promise<void>,
+    ): Promise<void> {
+      await control.setStock(variantId, quantity);
+      try {
+        await body();
+      } finally {
+        await control.setStock(variantId, restoreTo);
+      }
+    }
+
+    async function addOne(cart: Cart, variantId = f.inStockVariantId, quantity = 1): Promise<Cart> {
+      return provider.addCartLines(cart.id, { lines: [{ variantId, quantity }] }, writeKey());
     }
 
     async function newCart(): Promise<Cart> {
@@ -70,6 +112,22 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
       if (undeclared.length === 0) ctx.skip();
       for (const capability of undeclared) {
         await expectCommerceError(probes[capability](), "NOT_SUPPORTED");
+      }
+    });
+
+    // fixtures ------------------------------------------------------------
+
+    it("fixtures describe the store correctly", async (ctx) => {
+      needs(ctx, "inventory.read");
+      expect(f.inStockQuantity).toBeGreaterThanOrEqual(2);
+      expect(f.inStockQuantity).toBeLessThan(MAX_LINE_QUANTITY);
+      const levels = await provider.getInventory([f.inStockVariantId, f.outOfStockVariantId]);
+      const byId = new Map(levels.map((level) => [level.variantId, level]));
+      const inStock = byId.get(f.inStockVariantId)?.quantityAvailable;
+      if (inStock !== null) expect(inStock).toBe(f.inStockQuantity);
+      expect(byId.get(f.outOfStockVariantId)?.quantityAvailable ?? 0).toBe(0);
+      if (provider.capabilities.has("catalog.read")) {
+        expect(await provider.getProduct(f.productId)).not.toBeNull();
       }
     });
 
@@ -114,6 +172,37 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
       const page = await provider.listProducts({ limit: 2 });
       expect(() => ListProductsResultSchema.parse(page)).not.toThrow();
       expect(page.items.length).toBeGreaterThan(0);
+    });
+
+    it("listProducts treats updatedSince as inclusive", async (ctx) => {
+      needs(ctx, "catalog.list");
+      const [first] = (await provider.listProducts({ limit: 1 })).items;
+      if (!first) throw new Error("expected at least one product");
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 20; page += 1) {
+        const result = await provider.listProducts({ updatedSince: first.updatedAt, limit: 250, cursor });
+        seen.push(...result.items.map((item) => item.id));
+        if (result.nextCursor === null || seen.includes(first.id)) break;
+        cursor = result.nextCursor;
+      }
+      expect(seen).toContain(first.id);
+    });
+
+    it("reports every datetime in UTC with Z", async (ctx) => {
+      needs(ctx, "catalog.read");
+      expect((await provider.getProduct(f.productId))?.updatedAt).toMatch(UTC_DATETIME);
+      if (provider.capabilities.has("cart.write")) expect((await newCart()).updatedAt).toMatch(UTC_DATETIME);
+      if (provider.capabilities.has("orders.lookup")) {
+        const order = await provider.lookupOrder({ orderNumber: f.orderNumber, identity: f.orderOwner });
+        expect(order?.placedAt).toMatch(UTC_DATETIME);
+      }
+    });
+
+    it("getInventory omits unknown variant ids", async (ctx) => {
+      needs(ctx, "inventory.read");
+      const levels = await provider.getInventory([f.inStockVariantId, "no-such-variant-000"]);
+      expect(levels.map((level) => level.variantId)).toEqual([f.inStockVariantId]);
     });
 
     it("getInventory reports in-stock and out-of-stock variants", async (ctx) => {
@@ -166,6 +255,7 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
 
     it("replaying an idempotency key does not add twice", async (ctx) => {
       needs(ctx, "cart.write");
+      needsReplay(ctx);
       const cart = await newCart();
       const opts = writeKey();
       const input = { lines: [{ variantId: f.inStockVariantId, quantity: 1 }] };
@@ -173,6 +263,78 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
       const replay = await provider.addCartLines(cart.id, input, opts);
       expect(replay.itemCount).toBe(1);
       expect(replay).toEqual(first);
+    });
+
+    it("replaying createCart returns the same cart", async (ctx) => {
+      needs(ctx, "cart.write");
+      needsReplay(ctx);
+      const opts = writeKey();
+      const first = await provider.createCart({}, opts);
+      expect(await provider.createCart({}, opts)).toEqual(first);
+    });
+
+    it("replaying updateCartLine returns the first result, even after the cart changed", async (ctx) => {
+      needs(ctx, "cart.write");
+      needsReplay(ctx);
+      const cart = await newCart();
+      const lineId = onlyLine(await addOne(cart)).id;
+      const opts = writeKey();
+      const first = await provider.updateCartLine(cart.id, { lineId, quantity: 2 }, opts);
+      await provider.updateCartLine(cart.id, { lineId, quantity: 1 }, writeKey());
+      expect(await provider.updateCartLine(cart.id, { lineId, quantity: 2 }, opts)).toEqual(first);
+      expect(onlyLine((await provider.getCart(cart.id)) ?? first).quantity).toBe(1);
+    });
+
+    it("replaying createCheckout returns the same handoff", async (ctx) => {
+      needs(ctx, "cart.write", "checkout.handoff");
+      needsReplay(ctx);
+      const cart = await newCart();
+      await addOne(cart);
+      const opts = writeKey();
+      const first = await provider.createCheckout(cart.id, opts);
+      expect(await provider.createCheckout(cart.id, opts)).toEqual(first);
+    });
+
+    it("a failed write does not hold its idempotency key", async (ctx) => {
+      needs(ctx, "cart.write");
+      const cart = await newCart();
+      const opts = writeKey();
+      await expectCommerceError(
+        provider.addCartLines(cart.id, { lines: [{ variantId: f.outOfStockVariantId, quantity: 1 }] }, opts),
+        "OUT_OF_STOCK",
+      );
+      const retried = await provider.addCartLines(
+        cart.id,
+        { lines: [{ variantId: f.inStockVariantId, quantity: 1 }] },
+        opts,
+      );
+      expect(onlyLine(retried).variantId).toBe(f.inStockVariantId);
+    });
+
+    it("retrying a failed write with the same key succeeds once the cause is gone", async (ctx) => {
+      needs(ctx, "cart.write");
+      const control = needsControl(ctx);
+      const cart = await newCart();
+      const opts = writeKey();
+      const input = { lines: [{ variantId: f.outOfStockVariantId, quantity: 1 }] };
+      await expectCommerceError(provider.addCartLines(cart.id, input, opts), "OUT_OF_STOCK");
+      await withStock(control, f.outOfStockVariantId, 3, 0, async () => {
+        expect(onlyLine(await provider.addCartLines(cart.id, input, opts)).quantity).toBe(1);
+      });
+    });
+
+    it("rejects quantities above the available stock and leaves the cart unchanged", async (ctx) => {
+      needs(ctx, "cart.write");
+      const cart = await newCart();
+      await expectCommerceError(addOne(cart, f.inStockVariantId, f.inStockQuantity + 1), "OUT_OF_STOCK");
+      expect((await provider.getCart(cart.id))?.lines).toHaveLength(0);
+      const line = onlyLine(await addOne(cart, f.inStockVariantId, 1));
+      await expectCommerceError(
+        provider.updateCartLine(cart.id, { lineId: line.id, quantity: f.inStockQuantity + 1 }, writeKey()),
+        "OUT_OF_STOCK",
+      );
+      await expectCommerceError(addOne(cart, f.inStockVariantId, f.inStockQuantity), "OUT_OF_STOCK");
+      expect(onlyLine((await provider.getCart(cart.id)) ?? cart).quantity).toBe(1);
     });
 
     it("rejects out-of-stock variants and leaves the cart unchanged", async (ctx) => {
@@ -206,6 +368,28 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
         "OUT_OF_STOCK",
       );
       expect((await provider.getCart(cart.id))?.lines).toHaveLength(0);
+    });
+
+    it("is atomic when the cart already holds one of the variants", async (ctx) => {
+      needs(ctx, "cart.write");
+      const cart = await newCart();
+      const before = await addOne(cart);
+      await expectCommerceError(
+        provider.addCartLines(
+          cart.id,
+          {
+            lines: [
+              { variantId: f.inStockVariantId, quantity: 1 },
+              { variantId: f.outOfStockVariantId, quantity: 1 },
+            ],
+          },
+          writeKey(),
+        ),
+        "OUT_OF_STOCK",
+      );
+      const after = await provider.getCart(cart.id);
+      expect(after?.lines.map((line) => [line.variantId, line.quantity])).toEqual([[f.inStockVariantId, 1]]);
+      expect(after?.subtotal).toEqual(before.subtotal);
     });
 
     it("rejects invalid quantities with INVALID_INPUT", async (ctx) => {
@@ -306,6 +490,17 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
       const handoff = await provider.createCheckout(cart.id, writeKey());
       expect(() => CheckoutHandoffSchema.parse(handoff)).not.toThrow();
       expect(handoff.cartId).toBe(cart.id);
+      if (handoff.expiresAt !== null) expect(handoff.expiresAt).toMatch(UTC_DATETIME);
+    });
+
+    it("createCheckout returns OUT_OF_STOCK when a line can no longer be fulfilled", async (ctx) => {
+      needs(ctx, "cart.write", "checkout.handoff");
+      const control = needsControl(ctx);
+      const cart = await newCart();
+      await addOne(cart, f.inStockVariantId, 2);
+      await withStock(control, f.inStockVariantId, 1, f.inStockQuantity, async () => {
+        await expectCommerceError(provider.createCheckout(cart.id, writeKey()), "OUT_OF_STOCK");
+      });
     });
 
     // orders --------------------------------------------------------------
@@ -332,6 +527,9 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
       needs(ctx, "orders.lookup");
       const mine = await provider.listOrders({ identity: f.orderOwner });
       expect(mine.map((order) => order.number)).toContain(f.orderNumber);
+      for (const order of mine) expect(() => OrderSchema.parse(order)).not.toThrow();
+      const placed = mine.map((order) => Date.parse(order.placedAt));
+      expect(placed).toEqual([...placed].sort((a, b) => b - a));
       expect(await provider.listOrders({ identity: f.stranger })).toEqual([]);
     });
   });

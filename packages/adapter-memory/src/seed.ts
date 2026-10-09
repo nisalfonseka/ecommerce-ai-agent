@@ -194,6 +194,7 @@ export const memoryFixtures: ConformanceFixtures = {
   searchTerm: "black",
   productId: "p_wrap_dress_black",
   inStockVariantId: "p_wrap_dress_black_m",
+  inStockQuantity: 4,
   outOfStockVariantId: "p_linen_shirt_black_l",
   orderNumber: "ACE-1001",
   orderOwner: owner,

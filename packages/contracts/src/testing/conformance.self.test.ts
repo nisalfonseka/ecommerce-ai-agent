@@ -34,6 +34,7 @@ describeProviderConformance("read-only stub", async () => ({
     searchTerm: "dress",
     productId: "prod_dress",
     inStockVariantId: "unused",
+    inStockQuantity: 2,
     outOfStockVariantId: "unused",
     orderNumber: "unused",
     orderOwner: { method: "email_otp", email: "owner@example.com", verifiedAt },

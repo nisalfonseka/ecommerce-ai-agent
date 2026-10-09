@@ -15,14 +15,16 @@ if (testDb) {
     await app.close();
     await testDb.drop();
   });
-  describeProviderConformance("memory + IdempotentCommerceProvider (Postgres)", async () => ({
-    provider: new IdempotentCommerceProvider(
-      new MemoryCommerceProvider(),
-      createPgIdempotencyStore(app.db, tenantId),
-      { storeId: "00000000-0000-4000-8000-000000000001" },
-    ),
-    fixtures: memoryFixtures,
-  }));
+  // The memory adapter's own replay map is off, so the replay tests exercise the decorator.
+  describeProviderConformance("memory + IdempotentCommerceProvider (Postgres)", async () => {
+    const memory = new MemoryCommerceProvider({ idempotency: false });
+    return {
+      provider: new IdempotentCommerceProvider(memory, createPgIdempotencyStore(app.db, tenantId), {
+        storeId: "00000000-0000-4000-8000-000000000001",
+      }),
+      fixtures: { ...memoryFixtures, control: { setStock: async (id, qty) => memory.setStock(id, qty) } },
+    };
+  });
 } else {
   describe.skip("conformance over Postgres idempotency (needs ACE_TEST_DATABASE_URL)", () => {
     it("skipped", () => {});
