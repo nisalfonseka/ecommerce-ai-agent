@@ -90,7 +90,7 @@ Interfaces:
 - `window.ACE = { open(), close(), setCart(cartId: string | null) }`. Calls made before the script loads are queued (`window.ACE = window.ACE || { q: [] }` snippet) and replayed.
 - `emitCartUpdated(cartId, itemCount)` → `window.dispatchEvent(new CustomEvent("ace:cart-updated", { detail }))`.
 
-- [ ] Failing tests: queued `setCart` before load is applied; the event fires with the detail. Implement; commit.
+- [x] Failing tests: queued `setCart` before load is applied; the event fires with the detail. Implement; commit.
 
 ### Task 5: UI
 
@@ -109,16 +109,16 @@ Interfaces:
   - `CheckoutCard` (a link button with `rel="noopener"`)
   - `OrderCard`
   - `Notice` (verification needed: "Order lookup needs verification, coming soon")
-- `main.tsx`: create a host `<div>`, attach a closed Shadow DOM, inject styles, render; restore the saved conversation via `GET /v1/conversations/:id` (404 → clear).
+- `main.tsx`: create a host `<div>`, attach an open Shadow DOM (open so the end-to-end test and assistive tech can reach it; isolation is the same), inject styles, render; restore the saved conversation via `GET /v1/conversations/:id` (404 → clear).
 
-- [ ] Failing render tests (happy-dom):
+- [x] Failing render tests (happy-dom):
   - XSS strings render as text
   - a `javascript:` checkout URL is not rendered as a link
   - size buttons disable out-of-stock variants
   - one click → one action with a fresh `actionId`, and buttons are disabled while it runs
   - consent gates the composer
   - a reply updates the cart badge event
-- [ ] Implement; checks; bundle under budget; commit `feat(widget): chat panel, product, cart and checkout cards`.
+- [x] Implement; checks; bundle under budget (11.9 kB gzipped); commit `feat(widget): chat panel, product, cart and checkout cards`.
 
 ### Task 6: Demo host page and local stack
 
