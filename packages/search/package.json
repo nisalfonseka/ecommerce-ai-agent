@@ -8,7 +8,8 @@
   },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "search-evals": "tsx src/eval/cli.ts"
   },
   "dependencies": {
     "@ace/contracts": "workspace:*",
@@ -20,6 +21,8 @@
   },
   "devDependencies": {
     "@ace/adapter-memory": "workspace:*",
+    "@ace/agent": "workspace:*",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
   }

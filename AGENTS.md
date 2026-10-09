@@ -102,6 +102,8 @@ pnpm --filter @ace/contracts test     # one package
 pnpm evals              # live agent evals (needs API keys in .env; costs money)
 pnpm evals --models google:gemini-flash-latest --only si   # one model, Sinhala cases only
 pnpm evals --models google:gemini-flash-latest --rpm 5    # free tier: max 5 model requests/minute
+pnpm search-evals --embedding google:gemini-embedding-001 --enrichment google:gemini-flash-lite-latest
+                        # live search relevance (nDCG@5, 50 queries); needs keys + ACE_TEST_DATABASE_URL; costs money
 scripts/test-postgres.sh start   # throwaway Postgres for @ace/db / @ace/engine integration tests (prints ACE_TEST_DATABASE_URL)
 pnpm seed               # two demo tenants + widget keys (needs DATABASE_URL; keyless demo model by default)
 scripts/dev-stack.sh start   # local Postgres + engine (demo model) + demo store page on http://localhost:5173; `stop` to end
