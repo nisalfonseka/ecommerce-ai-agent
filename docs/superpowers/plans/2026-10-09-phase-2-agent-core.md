@@ -221,7 +221,7 @@ git commit -m "feat(contracts): add updateCartAttributes (contract v1.1) for car
 - Consumes: `@ace/contracts` (`Money`, `CommerceProvider`, `VerifiedIdentity`, `WriteOptions`, `ProductSummary`, `Product`, `Cart`, `CheckoutHandoff`, `Order`, `CommerceErrorCode`, `isCommerceError`).
 - Produces:
   - `formatMoney(m: Money): string` (`"LKR 18,500.00"`), `formatPriceRange(r: { min: Money; max: Money }): string`, `toMinorUnits(major: number | undefined): number | undefined`
-  - `interface ShownProduct { ref: string; productId: string; title: string; variantIds: string[] }`, `interface SessionState { shown: ShownProduct[]; attributionTagged: boolean }`, `createSession()`, `rememberShown(session, items: Omit<ShownProduct, "ref">[]): ShownProduct[]`, `resolveProductRef(session, ref: string): ShownProduct | undefined`
+  - `interface ShownProduct { ref: string; productId: string; title: string; variantIds: string[] }`, `interface SessionState { shown: ShownProduct[]; attributedCartId: string | null }`, `createSession()`, `rememberShown(session, items: Omit<ShownProduct, "ref">[]): ShownProduct[]`, `resolveProductRef(session, ref: string): ShownProduct | undefined`
   - `type UiPart` (see code)
   - `interface ToolContext`, `createToolContext(input: CreateToolContextInput): ToolContext`, `writeKey(ctx, toolCallId): WriteOptions`, `observeMoney(ctx, value: unknown): void`
   - `type ToolFailureCode`, `type ToolResult<T>`, `class ToolFailure(code, message, details?)`, `runTool<T>(fn: () => Promise<T>): Promise<ToolResult<T>>`
@@ -461,11 +461,11 @@ export interface ShownProduct {
 /** Per-conversation state owned by the engine and persisted between turns. */
 export interface SessionState {
   shown: ShownProduct[];
-  attributionTagged: boolean;
+  attributedCartId: string | null;
 }
 
 export function createSession(): SessionState {
-  return { shown: [], attributionTagged: false };
+  return { shown: [], attributedCartId: null };
 }
 
 /** Replaces the shown list; refs restart at #1 so "the second one" means the latest results. */
@@ -1019,7 +1019,7 @@ git commit -m "feat(agent): add catalog tools with numbered results and live ava
   - `ensureCart(ctx, toolCallId): Promise<string>`, which reuses and tags the host cart or creates a tagged cart, and sets `ctx.cartId`
   - `compactCart(cart: Cart)`, the model-facing cart shape `{ itemCount, subtotal, lines: { lineId, title, variantTitle, quantity, lineTotal }[] }`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/agent/src/tools/cart.test.ts`:
 
@@ -1068,7 +1068,7 @@ describe("add_to_cart", () => {
     await addToCartTool.run(ctx, { productId: "p_kurta_navy", size: "M", quantity: 1 }, "c1");
     await addToCartTool.run(ctx, { productId: "p_kurta_navy", size: "L", quantity: 1 }, "c2");
     expect(ctx.cartId).toBe(host.id);
-    expect(ctx.session.attributionTagged).toBe(true);
+    expect(ctx.session.attributedCartId).toBe(host.id);
     const cart = await provider.getCart(host.id);
     expect(cart?.itemCount).toBe(2);
     expect(cart?.attributes.ace_conversation_id).toBe("conv_9");
@@ -1130,12 +1130,12 @@ describe("view_cart / update_cart_line / start_checkout", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./cart"".
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `packages/agent/src/tools/cart.ts`:
 
@@ -1172,10 +1172,10 @@ function showCart(ctx: ToolContext, cart: Cart) {
 export async function ensureCart(ctx: ToolContext, toolCallId: string): Promise<string> {
   const attributes = { [ATTRIBUTION_ATTRIBUTE]: ctx.conversationId };
   if (ctx.cartId !== null) {
-    if (ctx.session.attributionTagged) return ctx.cartId;
+    if (ctx.session.attributedCartId === ctx.cartId) return ctx.cartId;
     try {
       await ctx.provider.updateCartAttributes(ctx.cartId, { attributes }, writeKey(ctx, `${toolCallId}:attr`));
-      ctx.session.attributionTagged = true;
+      ctx.session.attributedCartId = ctx.cartId;
       return ctx.cartId;
     } catch (error) {
       if (!(isCommerceError(error) && error.code === "NOT_FOUND")) throw error;
@@ -1183,7 +1183,7 @@ export async function ensureCart(ctx: ToolContext, toolCallId: string): Promise<
   }
   const cart = await ctx.provider.createCart({ attributes }, writeKey(ctx, `${toolCallId}:cart`));
   ctx.cartId = cart.id;
-  ctx.session.attributionTagged = true;
+  ctx.session.attributedCartId = cart.id;
   return cart.id;
 }
 
@@ -1288,12 +1288,12 @@ export const startCheckoutTool = defineTool({
 });
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 6 files, 31 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/agent

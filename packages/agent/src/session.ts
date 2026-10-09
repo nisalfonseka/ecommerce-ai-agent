@@ -10,11 +10,15 @@ export interface ShownProduct {
 /** Per-conversation state owned by the engine and persisted between turns. */
 export interface SessionState {
   shown: ShownProduct[];
-  attributionTagged: boolean;
+  /**
+   * The cart already tagged with ace_conversation_id. A cart ID, not a flag: the host site can hand over a
+   * new cart mid-conversation (e.g. after a checkout), and that cart must be tagged too.
+   */
+  attributedCartId: string | null;
 }
 
 export function createSession(): SessionState {
-  return { shown: [], attributionTagged: false };
+  return { shown: [], attributedCartId: null };
 }
 
 /** Replaces the shown list; refs restart at #1 so "the second one" means the latest results. */
