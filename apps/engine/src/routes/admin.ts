@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   createBot,
   createStore,
@@ -8,6 +8,7 @@ import {
   revokeWidgetKey,
   schema,
   sealSecret,
+  setStoreWebhookSecret,
   usageReport,
   withTenant,
 } from "@ace/db";
@@ -141,6 +142,19 @@ export function registerAdminRoutes(app: Hono<WidgetEnv>, deps: AdminDeps): void
       }),
     );
     return c.json({ storeId: created.id }, 201);
+  });
+
+  // Rotation: the previous secret stops working at once. The secret is shown only in this response.
+  admin.post("/tenants/:tenantId/stores/:storeId/webhook-secret", async (c) => {
+    const tenantId = tenantParam(c.req.param("tenantId"));
+    const storeId = c.req.param("storeId");
+    if (!tenantId || !UUID.safeParse(storeId).success)
+      return errorResponse(c, 404, "not_found", "Unknown store.");
+    const secret = randomBytes(32).toString("base64url");
+    const sealed = sealSecret(secret, deps.masterKey);
+    const stored = await withTenant(deps.db, tenantId, (tx) => setStoreWebhookSecret(tx, storeId, sealed));
+    if (!stored) return errorResponse(c, 404, "not_found", "Unknown store.");
+    return c.json({ secret, path: `/webhooks/${storeId}` }, 201);
   });
 
   admin.post("/tenants/:tenantId/bots", async (c) => {

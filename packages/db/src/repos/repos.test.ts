@@ -24,6 +24,13 @@ import {
   saveSessionAndRelease,
 } from "./conversations";
 import { monthToDateCostMicros, recordToolCalls, recordTurn, usageReport } from "./telemetry";
+import {
+  getWebhookEvent,
+  markWebhookEnqueued,
+  markWebhookProcessed,
+  recordWebhookEvent,
+  setStoreWebhookSecret,
+} from "./webhooks";
 
 const testDb = await createTestDatabase();
 
@@ -215,6 +222,47 @@ describe.skipIf(testDb === null)("repositories (as ace_app)", () => {
         costUsdMicros: 0,
         conversations: 0,
       });
+    });
+  });
+  describe("webhooks", () => {
+    it("records an event once, tracks enqueue and processing, and rotates the store secret", async () => {
+      const storeId = await withTenant(app.db, tenantId, async (tx) => {
+        const [row] = await tx
+          .execute<{ id: string }>(sql`select id from stores limit 1`)
+          .then((r) => r.rows);
+        return row?.id ?? "";
+      });
+      const event = { storeId, eventId: "product.updated:p_1:1", type: "product.updated", payload: { a: 1 } };
+      const first = await withTenant(app.db, tenantId, (tx) => recordWebhookEvent(tx, tenantId, event));
+      expect(first).toMatchObject({ isNew: true, enqueuedAt: null });
+      const again = await withTenant(app.db, tenantId, (tx) => recordWebhookEvent(tx, tenantId, event));
+      expect(again).toMatchObject({ id: first.id, isNew: false, enqueuedAt: null });
+      await withTenant(app.db, tenantId, (tx) => markWebhookEnqueued(tx, first.id));
+      const third = await withTenant(app.db, tenantId, (tx) => recordWebhookEvent(tx, tenantId, event));
+      expect(third.isNew).toBe(false);
+      expect(third.enqueuedAt).toBeInstanceOf(Date);
+      await withTenant(app.db, tenantId, (tx) => markWebhookProcessed(tx, storeId, event.eventId));
+      const processed = await withTenant(app.db, tenantId, (tx) =>
+        tx.execute<{ processed_at: Date | null }>(sql`select processed_at from webhook_events`),
+      );
+      expect(processed.rows[0]?.processed_at).toBeTruthy();
+      expect(await withTenant(app.db, tenantId, (tx) => getWebhookEvent(tx, storeId, event.eventId))).toEqual(
+        {
+          type: "product.updated",
+          payload: { a: 1 },
+        },
+      );
+      expect(await withTenant(app.db, tenantId, (tx) => getWebhookEvent(tx, storeId, "nope"))).toBeNull();
+      // Another tenant sees nothing and cannot touch the store.
+      expect(
+        await withTenant(app.db, otherTenantId, (tx) => getWebhookEvent(tx, storeId, event.eventId)),
+      ).toBeNull();
+      expect(
+        await withTenant(app.db, otherTenantId, (tx) => setStoreWebhookSecret(tx, storeId, Buffer.from("x"))),
+      ).toBe(false);
+      expect(
+        await withTenant(app.db, tenantId, (tx) => setStoreWebhookSecret(tx, storeId, Buffer.from("x"))),
+      ).toBe(true);
     });
   });
 });

@@ -7,6 +7,7 @@ export * from "./repos/conversations";
 export * from "./repos/idempotency";
 export * from "./repos/routing";
 export * from "./repos/telemetry";
+export * from "./repos/webhooks";
 export * as schema from "./schema";
 export { TENANT_TABLES } from "./schema";
 export { SHOPPER_DATA_TABLES } from "./shopper-data";

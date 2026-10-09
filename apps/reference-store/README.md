@@ -14,7 +14,7 @@ scripts/reference-store.sh stop
 The seed writes the publishable key, the secret key and the conformance fixture IDs to
 `${TMPDIR:-/tmp}/ace-store/seed-output.json` (mode 600). Never commit it.
 
-- `backend/` — Medusa config, seed (`src/scripts/seed.ts`, catalog in `catalog.ts`), PayHere provider, order webhooks
+- `backend/` — Medusa config, seed (`src/scripts/seed.ts`, catalog in `catalog.ts`), PayHere provider, ACE webhooks (product, inventory and order events)
 - `storefront/` — Next.js storefront: catalog, product, cart, checkout (cash on delivery or PayHere), `/cart/adopt`
   for the assistant's checkout handoff, and the assistant widget sharing the site's cart
 

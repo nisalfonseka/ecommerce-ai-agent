@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { createDb, createPgIdempotencyStore, resolveWidgetKey } from "@ace/db";
+import { openJobQueue } from "@ace/db/jobs";
 import { serve } from "@hono/node-server";
 import { sql } from "drizzle-orm";
 import { createApp } from "./app";
@@ -13,6 +14,7 @@ import { createRateLimiter } from "./rate-limit";
 import { registerActionRoutes } from "./routes/actions";
 import { registerAdminRoutes } from "./routes/admin";
 import { registerChatRoutes } from "./routes/chat";
+import { registerWebhookRoutes } from "./routes/webhooks";
 
 const config = loadConfig(process.env);
 // Next to the bundle in the image (dist/../model-prices.json); override with ACE_MODEL_PRICES.
@@ -60,6 +62,10 @@ registerAdminRoutes(app, {
   prices,
 });
 
+// Producer only: the engine enqueues, the worker (Phase 6) consumes.
+const jobQueue = await openJobQueue(config.databaseUrl, "producer");
+registerWebhookRoutes(app, { db, jobs: jobQueue.queue, masterKey: config.masterKey, logger });
+
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   logger.info({ port: info.port }, "engine listening");
 });
@@ -67,7 +73,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
 function shutdown(signal: string) {
   logger.info({ signal }, "shutting down");
   server.close(() => {
-    void close().finally(() => process.exit(0));
+    void Promise.allSettled([jobQueue.stop(), close()]).finally(() => process.exit(0));
   });
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));

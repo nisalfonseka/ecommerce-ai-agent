@@ -7,6 +7,8 @@ export type ErrorCode =
   | "rate_limited"
   | "invalid_input"
   | "not_found"
+  | "invalid_signature"
+  | "unavailable"
   | "turn_in_progress"
   | "internal";
 
