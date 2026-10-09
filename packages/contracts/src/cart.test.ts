@@ -3,6 +3,7 @@ import {
   AddCartLinesInputSchema,
   CreateCartInputSchema,
   MAX_LINE_QUANTITY,
+  UpdateCartAttributesInputSchema,
   UpdateCartLineInputSchema,
   WriteOptionsSchema,
 } from "./cart";
@@ -43,5 +44,23 @@ describe("cart inputs", () => {
   it("requires an idempotency key of at least 8 characters", () => {
     expect(WriteOptionsSchema.safeParse({ idempotencyKey: "short" }).success).toBe(false);
     expect(WriteOptionsSchema.safeParse({ idempotencyKey: "turn-1:call-1" }).success).toBe(true);
+  });
+});
+
+describe("UpdateCartAttributesInputSchema", () => {
+  it("requires at least one attribute", () => {
+    expect(UpdateCartAttributesInputSchema.safeParse({ attributes: {} }).success).toBe(false);
+  });
+
+  it("caps key and value length", () => {
+    expect(UpdateCartAttributesInputSchema.safeParse({ attributes: { ["k".repeat(65)]: "v" } }).success).toBe(
+      false,
+    );
+    expect(UpdateCartAttributesInputSchema.safeParse({ attributes: { k: "v".repeat(256) } }).success).toBe(
+      false,
+    );
+    expect(
+      UpdateCartAttributesInputSchema.safeParse({ attributes: { ace_conversation_id: "conv_1" } }).success,
+    ).toBe(true);
   });
 });

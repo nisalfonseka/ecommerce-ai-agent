@@ -261,6 +261,37 @@ export function describeProviderConformance(name: string, setup: () => Promise<C
       expect(removed.subtotal.amount).toBe(0);
     });
 
+    it("updateCartAttributes merges attributes into an existing cart", async (ctx) => {
+      needs(ctx, "cart.write");
+      const cart = await provider.createCart({}, writeKey());
+      const tagged = await provider.updateCartAttributes(
+        cart.id,
+        { attributes: { [ATTRIBUTION_ATTRIBUTE]: "conv_existing" } },
+        writeKey(),
+      );
+      expect(tagged.attributes[ATTRIBUTION_ATTRIBUTE]).toBe("conv_existing");
+      const merged = await provider.updateCartAttributes(
+        cart.id,
+        { attributes: { channel: "web" } },
+        writeKey(),
+      );
+      expect(merged.attributes).toMatchObject({ [ATTRIBUTION_ATTRIBUTE]: "conv_existing", channel: "web" });
+      const overwritten = await provider.updateCartAttributes(
+        cart.id,
+        { attributes: { [ATTRIBUTION_ATTRIBUTE]: "conv_new" } },
+        writeKey(),
+      );
+      expect(overwritten.attributes).toMatchObject({ [ATTRIBUTION_ATTRIBUTE]: "conv_new", channel: "web" });
+      await expectCommerceError(
+        provider.updateCartAttributes("no-such-cart", { attributes: { channel: "web" } }, writeKey()),
+        "NOT_FOUND",
+      );
+      await expectCommerceError(
+        provider.updateCartAttributes(cart.id, { attributes: {} }, writeKey()),
+        "INVALID_INPUT",
+      );
+    });
+
     // checkout ------------------------------------------------------------
 
     it("createCheckout returns CONFLICT for an empty cart and a handoff URL otherwise", async (ctx) => {

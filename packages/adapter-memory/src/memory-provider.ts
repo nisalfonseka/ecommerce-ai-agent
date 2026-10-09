@@ -30,6 +30,8 @@ import {
   parseInput,
   type SearchProductsInput,
   type SearchProductsResult,
+  type UpdateCartAttributesInput,
+  UpdateCartAttributesInputSchema,
   type UpdateCartLineInput,
   UpdateCartLineInputSchema,
   type Variant,
@@ -179,6 +181,20 @@ export class MemoryCommerceProvider implements CommerceProvider {
         this.assertInStock(this.requireVariant(line.variantId).variant, query.quantity);
         line.quantity = query.quantity;
       }
+      cart.updatedAt = this.now().toISOString();
+      return this.toCart(cart);
+    });
+  }
+
+  async updateCartAttributes(
+    cartId: string,
+    input: UpdateCartAttributesInput,
+    opts: WriteOptions,
+  ): Promise<Cart> {
+    return this.once("updateCartAttributes", cartId, opts, () => {
+      const query = parseInput(UpdateCartAttributesInputSchema, input);
+      const cart = this.requireCart(cartId);
+      cart.attributes = { ...cart.attributes, ...query.attributes };
       cart.updatedAt = this.now().toISOString();
       return this.toCart(cart);
     });
