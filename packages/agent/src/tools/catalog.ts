@@ -93,7 +93,7 @@ export const searchProductsTool = defineTool({
         })),
         more: result.nextCursor !== null,
       };
-    }),
+    }, ctx.onUnexpectedError),
 });
 
 export const getProductTool = defineTool({
@@ -120,7 +120,7 @@ export const getProductTool = defineTool({
           availability: variant.availability,
         })),
       };
-    }),
+    }, ctx.onUnexpectedError),
 });
 
 export const checkAvailabilityTool = defineTool({
@@ -149,5 +149,5 @@ export const checkAvailabilityTool = defineTool({
           };
         }),
       };
-    }),
+    }, ctx.onUnexpectedError),
 });

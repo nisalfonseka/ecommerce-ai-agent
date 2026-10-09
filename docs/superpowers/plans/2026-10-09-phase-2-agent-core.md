@@ -1315,7 +1315,7 @@ git commit -m "feat(agent): add cart tools with variant resolution, attribution 
   - `ALL_TOOLS: CommerceToolDef<z.ZodType, unknown>[]`
   - `buildTools(ctx: ToolContext, defs?: CommerceToolDef<z.ZodType, unknown>[]): ToolSet`, which registers only tools whose `requires` are all declared by `ctx.provider`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `packages/agent/src/tools/orders.test.ts`:
 
@@ -1404,12 +1404,12 @@ describe("buildTools", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @ace/agent test`
 Expected: FAIL with "Failed to resolve import "./orders"" and "./registry".
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `packages/agent/src/tools/orders.ts`:
 
@@ -1488,12 +1488,12 @@ export function buildTools(ctx: ToolContext, defs: CommerceToolDef<z.ZodType, un
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @ace/agent test && pnpm lint:fix && pnpm lint && pnpm typecheck`
 Expected: PASS. 8 files, 36 tests. If `tool({...})` does not accept the generic `z.ZodType` schema or the `execute` signature under strict typing, make the smallest typing adjustment in `registry.ts` only, without `any`, and explain it in the report.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/agent

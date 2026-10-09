@@ -101,7 +101,7 @@ export const viewCartTool = defineTool({
       const cart = ctx.cartId === null ? null : await ctx.provider.getCart(ctx.cartId);
       if (!cart) return { itemCount: 0, subtotal: null, lines: [] };
       return showCart(ctx, cart);
-    }),
+    }, ctx.onUnexpectedError),
 });
 
 export const addToCartTool = defineTool({
@@ -133,7 +133,7 @@ export const addToCartTool = defineTool({
         writeKey(ctx, toolCallId),
       );
       return showCart(ctx, cart);
-    }),
+    }, ctx.onUnexpectedError),
 });
 
 export const updateCartLineTool = defineTool({
@@ -149,7 +149,7 @@ export const updateCartLineTool = defineTool({
     runTool(async () => {
       const cart = await ctx.provider.updateCartLine(requireCartId(ctx), input, writeKey(ctx, toolCallId));
       return showCart(ctx, cart);
-    }),
+    }, ctx.onUnexpectedError),
 });
 
 export const startCheckoutTool = defineTool({
@@ -166,5 +166,5 @@ export const startCheckoutTool = defineTool({
         checkoutShown: true,
         note: "A checkout button is now shown to the shopper. Do not paste the link.",
       };
-    }),
+    }, ctx.onUnexpectedError),
 });
