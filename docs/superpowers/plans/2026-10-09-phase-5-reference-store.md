@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress (2026-10-09). D1 = Medusa v2, D4 = no pilot client yet, so the store is built generically (ADR-006). Live evals (Phase 2 Task 10) and the VPS (Phase 3 Task 12) are on hold, so the staging exit (Task 11) waits for the owner. Everything else runs locally: Medusa 2.21.2 runs in the cloud container on the throwaway Postgres without Docker or Redis.
+**Status:** Built except staging (2026-10-09). D1 = Medusa v2, D4 = no pilot client yet, so the store is built generically (ADR-006). Live evals (Phase 2 Task 10) and the VPS (Phase 3 Task 12) are on hold, so the staging exit (Task 11) waits for the owner. Everything else runs locally: Medusa 2.21.2 runs in the cloud container on the throwaway Postgres without Docker or Redis.
 
 **Goal:** A real store behind the contract. A Medusa v2 backend and Next.js storefront for a generic Sri Lankan clothing shop, with PayHere card payments and cash on delivery. `@ace/adapter-medusa` passes the (now stricter) conformance suite. The widget runs on the storefront with real cart sync, and a shopper can place a COD order from chat after an explicit confirmation.
 
 **Architecture:** `apps/reference-store` is a standalone npm project (ADR-006) with two parts: `backend/` (Medusa: config, seed, PayHere payment provider, order webhook subscriber) and `storefront/` (Next.js). `@ace/adapter-medusa` is a workspace package that uses `fetch` against Medusa's Store API (publishable key) and Admin API (secret key), and validates every response with Zod. The engine builds it from sealed store credentials. COD placement is a deterministic UI action confirmed by the shopper, never a model tool (ADR-007).
 
-**Tech Stack:** Medusa 2.21.2 (`@medusajs/medusa`, `@medusajs/framework`, `@medusajs/cli`), Next.js 15 (storefront), Zod 4, Vitest, Playwright.
+**Tech Stack:** Medusa 2.21.2 (`@medusajs/medusa`, `@medusajs/framework`, `@medusajs/cli`), Next.js 16 (storefront), Zod 4, Vitest, Playwright.
 
 **Spec:** §3 G2, G5, G18; J4; §11 D1/D4. Workflow §C, §E, §F. ADR-001, ADR-002, ADR-006, ADR-007. Roadmap Phase 5.
 
@@ -184,7 +184,7 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
 
 ### Task 8: Storefront (Next.js)
 
-- `apps/reference-store/storefront`: Next.js 15 (App Router) with `@medusajs/js-sdk`. Pages:
+- `apps/reference-store/storefront`: Next.js 16 (App Router), Store API calls on the server. Pages:
   - home/catalog
   - product (size buttons, add to cart)
   - cart
@@ -193,7 +193,7 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
 - `/cart/adopt?cart_id=` sets the cart cookie and redirects to `/checkout`.
 - The widget install snippet is in the root layout. The header cart badge listens for `ace:cart-updated`, and `ACE.setCart(cartId)` runs whenever the storefront creates a cart, so the widget and the site share one cart.
 - PayHere: checkout POSTs the provider's form fields to the sandbox URL (`https://sandbox.payhere.lk/pay/checkout`), or to live when `PAYHERE_SANDBOX=false`.
-- [ ] Playwright (local stack: Postgres, Medusa, engine on the Medusa adapter, storefront):
+- [x] Playwright (local stack: Postgres, Medusa, engine on the Medusa adapter, storefront):
   1. add a product from a chat card
   2. the header badge updates
   3. Checkout opens the storefront checkout with the same cart
@@ -202,6 +202,19 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
   6. the order's metadata carries `ace_conversation_id` (Admin API)
 
   Commit `feat(reference-store): Next.js storefront with widget and shared cart`.
+
+**As built (Task 8).**
+- `scripts/store-stack.sh start` runs the whole thing with no API keys:
+  - the Medusa backend
+  - the engine on a fresh database
+  - `scripts/connect-reference-store.mjs`, which registers the store through the admin API: a `medusa` store with sealed credentials, a demo-model bot with COD on, and a widget key for :8000
+  - the widget build, copied into the storefront
+  - the storefront (`next build` + `next start`)
+- **Shared cart.** The cart cookie is `store_cart_id`, deliberately not httpOnly. The layout passes the server's cart ID to the widget (`ACE.setCart`) on every change, and the page adopts a cart the assistant creates (`ace:cart-updated`). The first e2e run caught the widget getting the ID only on first mount: a site add then left the assistant on its own cart.
+- **e2e** (`apps/reference-store/storefront/e2e/store.e2e.ts`, 2 tests, CI job `store-e2e`):
+  1. chat card → badge 1 → Checkout → `/cart/adopt` → storefront checkout → cash on delivery → the order (Admin API) carries `ace_conversation_id` and LKR 18,900
+  2. a site add-to-cart, then a chat add, lands in one cart (badge 2)
+- **PayHere pages.** `/checkout/payhere` auto-posts the server-signed form; the return page waits for the notification. They are built but only exercised with real sandbox credentials (Task 11).
 
 ### Task 9: COD through chat (ADR-007)
 
@@ -228,7 +241,7 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
 ### Task 10: CI and docs
 
 - [x] CI job `medusa`: Postgres service, `npm ci` in `apps/reference-store/backend`, migrate, seed, start, then the adapter conformance (`ACE_REQUIRE_MEDUSA_TESTS=1`) and the engine replay run. Nightly schedule for the same job.
-- [ ] Docs:
+- [x] Docs:
   - AGENTS.md: status, commands, plan link
   - `docs/workflow.md` §E (as built, ADR-007) and §F
   - ADR-007
@@ -240,8 +253,8 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
 
 ## Phase 5 exit checklist
 
-- [ ] Conformance v2 passes for memory (direct and through the engine decorator) and Medusa.
-- [ ] Local e2e: chat card → shared cart → storefront checkout → COD order with attribution.
-- [ ] COD through chat places exactly one order, only after Confirm.
+- [x] Conformance v2 passes for memory (direct and through the engine decorator) and Medusa.
+- [x] Local e2e: chat card → shared cart → storefront checkout → COD order with attribution.
+- [x] COD through chat places exactly one order, only after Confirm (engine + agent tests; a model-driven run needs live evals).
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` green; CI `medusa` and `e2e` green.
 - [ ] Staging exit (Task 11), when the owner unblocks staging.

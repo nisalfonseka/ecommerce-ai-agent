@@ -13,12 +13,16 @@ adapter**. The agent only knows the universal commerce contract, never Shopify, 
 - Design and gap analysis: [`docs/superpowers/specs/2026-10-08-ai-commerce-engine-design.md`](docs/superpowers/specs/2026-10-08-ai-commerce-engine-design.md)
 - Start-to-end workflow: [`docs/workflow.md`](docs/workflow.md)
 - Roadmap (phases and exit criteria): [`docs/superpowers/plans/2026-10-08-roadmap.md`](docs/superpowers/plans/2026-10-08-roadmap.md)
-- Phase plans: [Phase 2](docs/superpowers/plans/2026-10-09-phase-2-agent-core.md) (Task 10 on hold), [Phase 3](docs/superpowers/plans/2026-10-09-phase-3-engine.md) (Task 12 on hold), [Phase 4](docs/superpowers/plans/2026-10-09-phase-4-widget.md)
+- Phase plans: [Phase 2](docs/superpowers/plans/2026-10-09-phase-2-agent-core.md) (Task 10 on hold), [Phase 3](docs/superpowers/plans/2026-10-09-phase-3-engine.md) (Task 12 on hold), [Phase 4](docs/superpowers/plans/2026-10-09-phase-4-widget.md), [Phase 5](docs/superpowers/plans/2026-10-09-phase-5-reference-store.md) (Task 11 staging on hold)
 - Architecture decisions: `docs/adr/`
 
 ## Current status
 
-**Phases 1 and 2 are built; Phase 3 (engine) is built except staging; Phase 4 (widget) is built.** On hold by the owner: live evals and D3 (Phase 2 Task 10, no paid API keys yet) and the VPS staging deploy (Phase 3 Task 12). E1 and E2 are built provisionally (ADR-004; `model-prices.json` with null prices). Without API keys, `scripts/dev-stack.sh start` runs the whole product locally with the keyless demo model. **Next:** whatever the owner unblocks first, or the Phase 5 plan (reference store + first real adapter; needs D1 and D4). Do not scaffold later phases early.
+**Phases 1–5 are built, except what waits on the owner.** On hold:
+- live evals and D3 (Phase 2 Task 10; no paid API keys yet)
+- the VPS staging deploy (Phase 3 Task 12) and the Phase 5 staging exit, which also needs PayHere sandbox credentials
+
+Decided: D1 = Medusa v2 and D4 = no pilot client yet, so the store is generic (ADR-006). COD is confirmed by a UI action (ADR-007, provisional). E1 and E2 are built provisionally (ADR-004; `model-prices.json` with null prices). Without API keys, `scripts/dev-stack.sh start` (memory store) and `scripts/store-stack.sh start` (Medusa reference store + storefront) run the product locally with the keyless demo model. **Next:** whatever the owner unblocks first, or the Phase 6 plan (search, sync, knowledge). Do not scaffold later phases early.
 
 ## Architecture rules (non-negotiable)
 
@@ -65,7 +69,7 @@ apps/
   engine/            HTTP API: chat (SSE), UI actions, webhooks, admin        (Phase 3)
   worker/            pg-boss jobs: sync, enrichment, embeddings, retention    (Phase 6)
   dashboard/         merchant inbox, settings, analytics                      (Phase 7)
-  reference-store/   Medusa backend + Next.js storefront (first client)       (Phase 5)
+  reference-store/   Medusa backend + Next.js storefront, own npm toolchain   (Phase 5, ADR-006)
 packages/
   contracts/         commerce contract + conformance suite                    (Phase 1)
   adapter-memory/    in-memory clothing store for tests/evals/dev             (Phase 1)
@@ -103,6 +107,8 @@ pnpm seed               # two demo tenants + widget keys (needs DATABASE_URL; ke
 scripts/dev-stack.sh start   # local Postgres + engine (demo model) + demo store page on http://localhost:5173; `stop` to end
 scripts/reference-store.sh start   # Medusa reference store on :9000 (ADR-006); keys + fixtures in ${TMPDIR:-/tmp}/ace-store/seed-output.json
 ACE_MEDUSA_SEED_OUTPUT=/tmp/ace-store/seed-output.json pnpm --filter @ace/adapter-medusa test   # Medusa conformance
+scripts/store-stack.sh start   # Medusa :9000 + engine :8080 (demo model, Medusa adapter) + storefront :8000 with the widget; `stop` to end
+(cd apps/reference-store/storefront && npm run e2e)   # Playwright: reference store end to end (starts and stops store-stack)
 pnpm --filter @ace/widget e2e   # Playwright: widget in Chromium against the dev stack (CHROME_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome in the cloud container)
 ```
 

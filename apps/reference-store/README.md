@@ -15,4 +15,10 @@ The seed writes the publishable key, the secret key and the conformance fixture 
 `${TMPDIR:-/tmp}/ace-store/seed-output.json` (mode 600). Never commit it.
 
 - `backend/` — Medusa config, seed (`src/scripts/seed.ts`, catalog in `catalog.ts`), PayHere provider, order webhooks
-- `storefront/` — Next.js storefront (Phase 5 Task 8)
+- `storefront/` — Next.js storefront: catalog, product, cart, checkout (cash on delivery or PayHere), `/cart/adopt`
+  for the assistant's checkout handoff, and the assistant widget sharing the site's cart
+
+```bash
+scripts/store-stack.sh start                           # Medusa + engine (demo model) + storefront on http://localhost:8000
+(cd apps/reference-store/storefront && npm run e2e)    # end to end in Chromium (CHROME_PATH for a local Chromium)
+```

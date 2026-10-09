@@ -140,3 +140,51 @@ jobs:
       - name: Logs on failure
         if: failure()
         run: tail -n 200 /tmp/ace-store/*.log
+
+  store-e2e:
+    # The reference store end to end in Chromium: chat card → shared cart → storefront checkout → cash on delivery,
+    # with the order carrying ace_conversation_id (scripts/store-stack.sh).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ACE_STORE_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-reference-store-${{ hashFiles('apps/reference-store/*/package-lock.json') }}
+      - run: pnpm install --frozen-lockfile
+      - name: Install the reference store
+        run: |
+          (cd apps/reference-store/backend && npm ci --no-audit --no-fund)
+          (cd apps/reference-store/storefront && npm ci --no-audit --no-fund && npx tsc --noEmit)
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/reference-store/storefront
+      - run: npm run e2e
+        working-directory: apps/reference-store/storefront
+      - name: Logs and traces on failure
+        if: failure()
+        run: tail -n 100 /tmp/ace-store/*.log /tmp/ace-store-stack/*.log
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: store-e2e-results
+          path: apps/reference-store/storefront/test-results
+          retention-days: 7
