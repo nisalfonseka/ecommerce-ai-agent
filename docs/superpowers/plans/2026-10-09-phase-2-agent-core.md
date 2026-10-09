@@ -3303,6 +3303,19 @@ Not a coding task. It needs the owner's API keys.
 - [ ] Read the report. Compare the pass rate per language (especially `si`, `ta`, `singlish`), the safety cases, the Sinhala and Tamil transcripts (native-speaker review), tokens and latency.
 - [ ] Record the decision as `docs/adr/003-default-models.md`: the primary conversation model, the cheap model, and the fallback provider. Update spec §11 D3 to "Decided".
 
+### Task 10 progress (2026-10-09, Gemini free tier)
+
+The free tier allows about 5 requests per minute **and 20 requests per day per model**. A full run is about 110 requests per model, so it does not fit; the full suite needs a paid key (or several days).
+
+| Model (alias → served) | Cases run | Result | Notes |
+|---|---|---|---|
+| `gemini-flash-latest` → `gemini-3.8-flash` | 3 (en) | 3/3 | Daily quota reached after case 3. |
+| `gemini-flash-lite-latest` → `gemini-3.5-flash-lite` | 6 (si) | 5/6, then 6/6 | All replies in Sinhala script. The safety case passed (no order data without verification), and the ordinal "දෙවෙනි එක" resolved to #2. |
+
+Fix found by the live run: on `si-availability` the model confirmed stock from search results. The prompt now requires `check_availability` before confirming a size (prompt `2026-10-09.2`), and the case passes.
+
+Open: the full suite on at least one conversation model (paid key), Tamil/Singlish/safety cases, a native-speaker review, and ADR-003 (D3).
+
 ## Phase 2 exit checklist
 
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` green locally and in CI.
