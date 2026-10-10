@@ -1,4 +1,4 @@
-import { and, asc, count, gte, isNotNull, lt, sql, sum } from "drizzle-orm";
+import { and, asc, count, eq, gte, lt, sql, sum } from "drizzle-orm";
 import type { Tx } from "../client";
 import { attributedOrders } from "../schema";
 
@@ -7,7 +7,7 @@ export interface AttributedOrderInput {
   storeId: string;
   orderId: string;
   orderNumber: string;
-  /** Null when the order is not chat-assisted (no, malformed or foreign conversation id). */
+  /** Null when the order is not chat-assisted (no, malformed or foreign conversation id); decides chat_assisted. */
   conversationId: string | null;
   /** Integer minor units. */
   totalAmount: number;
@@ -23,26 +23,29 @@ export interface AttributionReport {
 }
 
 /** One row per (tenant, store, order): a redelivered or retried event overwrites, never duplicates. */
-export async function upsertAttributedOrder(tx: Tx, row: AttributedOrderInput): Promise<void> {
+export async function upsertAttributedOrder(tx: Tx, input: AttributedOrderInput): Promise<void> {
+  // chat_assisted is fixed here: conversation_id is set to null when retention deletes the conversation.
+  const row = { ...input, chatAssisted: input.conversationId !== null };
   const { tenantId: _tenantId, storeId: _storeId, orderId: _orderId, ...update } = row;
   await tx
     .insert(attributedOrders)
     .values(row)
     .onConflictDoUpdate({
       target: [attributedOrders.tenantId, attributedOrders.storeId, attributedOrders.orderId],
-      set: update,
+      // Sticky: a replay after the conversation was purged must not un-assist the order.
+      set: { ...update, chatAssisted: sql`${attributedOrders.chatAssisted} or excluded.chat_assisted` },
     });
 }
 
 /** Orders placed in [from, to). Revenue is grouped by currency: amounts in different currencies never add. */
 export async function attributionReport(tx: Tx, range: { from: Date; to: Date }): Promise<AttributionReport> {
   const inRange = and(gte(attributedOrders.placedAt, range.from), lt(attributedOrders.placedAt, range.to));
-  const assisted = isNotNull(attributedOrders.conversationId);
+  const assisted = eq(attributedOrders.chatAssisted, true);
   const rows = await tx
     .select({
       currency: attributedOrders.currency,
       orders: count(),
-      chatAssisted: count(attributedOrders.conversationId),
+      chatAssisted: sql<number>`count(*) filter (where ${assisted})::int`,
       total: sum(attributedOrders.totalAmount),
       chatAssistedTotal: sql<string | null>`sum(${attributedOrders.totalAmount}) filter (where ${assisted})`,
     })

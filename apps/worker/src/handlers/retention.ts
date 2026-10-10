@@ -45,22 +45,47 @@ export async function purgeTenant(
   return counts;
 }
 
-/** Each tenant is purged inside its own RLS context; a tenant's rows are never visible to another's pass. */
+/**
+ * Each tenant is purged inside its own RLS context; a tenant's rows are never visible to another's pass. A
+ * failing tenant is logged (id and error name only) and skipped so the others are still purged; the job then
+ * fails with one aggregate error, and pg-boss retries it (purging is idempotent). `purge` is injectable for tests.
+ */
 export async function handleRetentionPurge(
   deps: WorkerDeps,
   job: WorkerJob,
+  purge: typeof purgeTenant = purgeTenant,
 ): Promise<Record<string, Record<string, number>> | undefined> {
   if (!parsePayload(JOBS.retentionPurge, job, deps.logger)) return undefined;
   const now = deps.now();
   const result: Record<string, Record<string, number>> = {};
+  const failed: string[] = [];
   for (const tenantId of await listTenantIds(deps.db)) {
-    const counts = await purgeTenant(deps.db, tenantId, now);
+    let counts: Record<string, number>;
+    try {
+      counts = await purge(deps.db, tenantId, now);
+    } catch (error) {
+      failed.push(tenantId);
+      // The name only: a failed statement's message can quote row values.
+      deps.logger.error(
+        {
+          job: JOBS.retentionPurge,
+          jobId: job.id,
+          tenantId,
+          error: error instanceof Error ? error.name : "unknown",
+        },
+        "retention purge failed for tenant",
+      );
+      continue;
+    }
     result[tenantId] = counts;
     for (const [table, deleted] of Object.entries(counts)) {
       // Counts only, never content.
       if (deleted > 0)
         deps.logger.info({ job: JOBS.retentionPurge, tenantId, table, deleted }, "retention purged");
     }
+  }
+  if (failed.length > 0) {
+    throw new Error(`retention purge failed for ${failed.length} tenant(s): ${failed.join(", ")}`);
   }
   return result;
 }

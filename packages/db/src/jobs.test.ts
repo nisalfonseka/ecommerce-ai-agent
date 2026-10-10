@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
+import { PgBoss } from "pg-boss";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { installJobSchema, JOB_SCHEMA, JOBS, openJobQueue } from "./jobs";
 import { createTestDatabase, type TestDatabase } from "./testing";
@@ -23,6 +24,31 @@ describe.skipIf(testDb === null)("job queue (as ace_app)", () => {
   it("installJobSchema is idempotent", async () => {
     await installJobSchema(database.ownerUrl);
     await installJobSchema(database.ownerUrl);
+  });
+
+  it("gives the long jobs a one-hour expiry, also on queues created before", async () => {
+    const owner = new PgBoss({
+      connectionString: database.ownerUrl,
+      schema: JOB_SCHEMA,
+      supervise: false,
+      schedule: false,
+      migrate: false,
+    });
+    owner.on("error", () => undefined);
+    await owner.start();
+    try {
+      // A database installed before the change: the old five-minute expiry.
+      await owner.updateQueue(JOBS.syncReconcile, { expireInSeconds: 300 });
+      await owner.updateQueue(JOBS.retentionPurge, { expireInSeconds: 300 });
+    } finally {
+      await owner.stop({ graceful: false, close: true });
+    }
+    await installJobSchema(database.ownerUrl);
+    const expiry = async (name: string) => (await handle.boss.getQueue(name))?.expireInSeconds;
+    expect(await expiry(JOBS.syncReconcile)).toBe(3600);
+    expect(await expiry(JOBS.retentionPurge)).toBe(3600);
+    expect(await expiry(JOBS.syncProduct)).toBe(300);
+    expect(await expiry(JOBS.knowledgeIngest)).toBe(900);
   });
 
   it("send then fetch returns the same data", async () => {

@@ -5,7 +5,7 @@ import { createTestDatabase } from "@ace/db/testing";
 import { createDemoEmbedder } from "@ace/knowledge";
 import { createDemoEnricher, parseStoreSearchConfig } from "@ace/search";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { DEMO_SEARCH, fakeJob, newStore, testDeps } from "../testing";
+import { capturingLogger, DEMO_SEARCH, fakeJob, newStore, testDeps } from "../testing";
 import { handleEmbedProduct } from "./embed";
 import { handleEnrichProduct } from "./enrich";
 import { handleSyncProduct, handleSyncReconcile, handleSyncReconcileAll } from "./sync";
@@ -79,5 +79,38 @@ describe.skipIf(testDb === null)("sync, enrich and embed handlers", () => {
     const row = await withTenant(app.db, store.tenantId, (tx) => getCatalogProduct(tx, store.storeId, SHIRT));
     expect(row?.enrichmentModel).toBe("demo:rules-v1");
     expect(row?.embeddingModel).toBe("demo:hash-v1");
+  });
+  it("skips sync, enrich and embed jobs of a live-mode store without touching the store or a model", async () => {
+    const store = await newStore(app.db, { mode: "live" });
+    const providerFor = vi.fn(async () => new MemoryCommerceProvider());
+    const enricherFor = vi.fn(() => createDemoEnricher());
+    const embedderFor = vi.fn(() => createDemoEmbedder());
+    const { logger, lines } = capturingLogger();
+    const deps = testDeps(app.db, {
+      providerFor,
+      enricherFor,
+      embedderFor,
+      logger,
+      storeSearchConfig: async () => parseStoreSearchConfig({ search: { mode: "live" } }),
+    });
+    const job = { ...store, productId: SHIRT };
+    await handleSyncProduct(deps, fakeJob(JOBS.syncProduct, job));
+    await handleEnrichProduct(deps, fakeJob(JOBS.enrichProduct, job));
+    await handleEmbedProduct(deps, fakeJob(JOBS.embedProduct, job));
+
+    expect(providerFor).not.toHaveBeenCalled();
+    expect(enricherFor).not.toHaveBeenCalled();
+    expect(embedderFor).not.toHaveBeenCalled();
+    expect(deps.jobs.sent).toEqual([]);
+    expect(
+      await withTenant(app.db, store.tenantId, (tx) => getCatalogProduct(tx, store.storeId, SHIRT)),
+    ).toBeNull();
+    const skipped = lines.filter((line) => line.msg === "job skipped: store not in index mode");
+    expect(skipped.map((line) => line.job)).toEqual([
+      JOBS.syncProduct,
+      JOBS.enrichProduct,
+      JOBS.embedProduct,
+    ]);
+    expect(skipped[0]).toMatchObject({ storeId: store.storeId });
   });
 });

@@ -68,7 +68,9 @@ Rules:
   is repaired within 15 minutes, and in full nightly (`FULL_RECONCILE_CRON`, 02:30). An admin can trigger either
   with `POST /admin/tenants/:tenantId/stores/:storeId/sync` and read progress with `GET` on the same path.
 - A job whose payload fails validation is logged (`job.invalid_payload`, name and id only) and completed, not
-  retried.
+  retried. `sync.product`, `enrich.product` and `embed.product` for a store that is not in index mode are logged
+  and completed without calling the store or a model (`sync.reconcile` still runs, to build the index first).
+- A reconcile or purge attempt may run for an hour (`expireInSeconds` 3600); other jobs for five minutes.
 - Enrichment uses the cheap model to extract `{category, color[], pattern, fabric[], occasion[], fit, gender, season}`.
   Merchant overrides always win over model output.
 - The index never decides a final price or stock answer (see C6).
@@ -179,6 +181,7 @@ sequenceDiagram
 - Attribution: an order is **chat-assisted** if its cart had `ace_conversation_id` naming a conversation of that
   tenant and store. That is the merchant-facing ROI metric. The `order.placed` job upserts `attributed_orders`
   (one row per order; foreign or malformed ids are stored as not chat-assisted) and marks the webhook processed.
+  `chat_assisted` is fixed when the order is attributed, so it survives the conversation's retention purge.
   `GET /admin/tenants/:tenantId/attribution?from=&to=` reports orders, chat-assisted orders and revenue per
   currency (never summed across currencies); the default range is month to date.
 
@@ -240,7 +243,8 @@ never come from RAG.
 - Retention: messages 180 days, traces 30 days, OTP records 24 hours (defaults, configurable per tenant).
 - A daily `retention.purge` job (`RETENTION_CRON`, 03:00) deletes expired data per tenant, inside that tenant's RLS
   context, in batches of 1,000 for each table in `SHOPPER_DATA_TABLES` (conversations by last message, webhook
-  events by receipt, others by creation). It logs counts per table, never content. `usage_ledger` and
+  events by receipt, others by creation). It logs counts per table, never content. A tenant whose pass fails is
+  logged and skipped; the job then fails and is retried. `usage_ledger` and
   `attributed_orders` hold billing facts only and are kept.
 - Shopper requests (via the merchant): export and deletion by email or phone, handled by the admin API.
 - Breach runbook: detect → contain → notify merchants (controllers) promptly so they can meet their notification duty.

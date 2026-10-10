@@ -29,6 +29,13 @@
       "when": 1791551789542,
       "tag": "0003_phase6_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791603582166,
+      "tag": "0004_attribution_chat_assisted",
+      "breakpoints": true
     }
   ]
 }

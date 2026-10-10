@@ -62,14 +62,19 @@ export function reconcileDebounceKey(storeId: string, full: boolean): string {
 
 const JOB_NAMES = Object.values(JOBS);
 
+/**
+ * How long one attempt may run before pg-boss expires (and retries) it. A full reconcile pages a whole
+ * catalogue and the purge walks every tenant, so they get an hour; ingestion fetches and embeds a document.
+ */
+function expireInSeconds(name: JobName): number {
+  if (name === JOBS.syncReconcile || name === JOBS.retentionPurge) return 3600;
+  if (name === JOBS.knowledgeIngest) return 900;
+  return 300;
+}
+
 /** Jobs are idempotent (upsert by natural key), so generous retries with backoff are safe. */
 function queueOptions(name: JobName) {
-  return {
-    retryLimit: 5,
-    retryBackoff: true,
-    retryDelay: 5,
-    expireInSeconds: name === JOBS.knowledgeIngest ? 900 : 300,
-  };
+  return { retryLimit: 5, retryBackoff: true, retryDelay: 5, expireInSeconds: expireInSeconds(name) };
 }
 
 /**
@@ -90,7 +95,9 @@ export async function installJobSchema(ownerUrl: string): Promise<void> {
   try {
     await boss.start();
     for (const name of JOB_NAMES) {
+      // createQueue leaves an existing queue as it is; updateQueue brings deployed databases up to date.
       await boss.createQueue(name, queueOptions(name));
+      await boss.updateQueue(name, queueOptions(name));
     }
     // Run in one statement batch through pg-boss's own pool so no extra connection is opened.
     const s = JOB_SCHEMA;

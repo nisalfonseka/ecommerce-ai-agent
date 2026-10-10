@@ -89,6 +89,26 @@ describe.skipIf(testDb === null)("order.placed attribution", () => {
     expect(event?.processedAt).toBeInstanceOf(Date);
   });
 
+  it("still counts an order as chat-assisted after its conversation is purged", async () => {
+    const s = await shop();
+    const job = await placeOrder(s, { amount: 4_000, conversationId: s.conversationId });
+    await handleOrderPlaced(testDeps(app.db), job);
+    expect((await rows(s.tenantId))[0]?.chatAssisted).toBe(true);
+    await withTenant(app.db, s.tenantId, (tx) =>
+      tx.delete(schema.conversations).where(eq(schema.conversations.id, s.conversationId)),
+    );
+    // A replay after the purge no longer finds the conversation; the order stays chat-assisted.
+    await handleOrderPlaced(testDeps(app.db), job);
+    const [row] = await rows(s.tenantId);
+    expect(row?.conversationId).toBeNull();
+    expect(row?.chatAssisted).toBe(true);
+    expect(await report(s.tenantId)).toEqual({
+      orders: 1,
+      chatAssisted: 1,
+      revenue: [{ currency: "LKR", total: 4_000, chatAssisted: 4_000 }],
+    });
+  });
+
   it("stores another tenant's conversation id as null", async () => {
     const a = await shop();
     const b = await shop();
@@ -99,6 +119,7 @@ describe.skipIf(testDb === null)("order.placed attribution", () => {
     const stored = await rows(a.tenantId);
     expect(stored).toHaveLength(1);
     expect(stored[0]?.conversationId).toBeNull();
+    expect(stored[0]?.chatAssisted).toBe(false);
     expect((await report(a.tenantId)).chatAssisted).toBe(0);
   });
 

@@ -375,6 +375,8 @@ export const attributedOrders = pgTable(
     orderId: text("order_id").notNull(),
     orderNumber: text("order_number").notNull(),
     conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    /** Fixed when the order is attributed, so the metric survives the conversation's retention purge. */
+    chatAssisted: boolean("chat_assisted").notNull().default(false),
     totalAmount: integer("total_amount").notNull(),
     currency: text("currency").notNull(),
     placedAt: timestamp("placed_at", { withTimezone: true }).notNull(),

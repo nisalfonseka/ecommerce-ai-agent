@@ -190,4 +190,27 @@ describe.skipIf(testDb === null)("retention.purge", () => {
     expect(counts.webhook_events).toBe(5);
     expect((await withTenant(app.db, tenantId, tableCounts)).webhook_events).toBe(1);
   });
+  it("keeps purging the other tenants when one tenant's pass fails, then fails the job", async () => {
+    const { tenantId: a } = await seedTenant();
+    const { tenantId: b } = await seedTenant();
+    const { logger, lines } = capturingLogger();
+    const failingForA: typeof purgeTenant = async (db, tenantId, now) => {
+      if (tenantId === a) throw new TypeError("boom with private detail");
+      return purgeTenant(db, tenantId, now);
+    };
+    await expect(
+      handleRetentionPurge(
+        testDeps(app.db, { logger, now: () => NOW }),
+        fakeJob(JOBS.retentionPurge, {}),
+        failingForA,
+      ),
+    ).rejects.toThrow(/1 tenant/);
+
+    // B was purged after A failed; A kept its expired rows.
+    expect((await withTenant(app.db, b, tableCounts)).webhook_events).toBe(1);
+    expect((await withTenant(app.db, a, tableCounts)).webhook_events).toBe(2);
+    const failure = lines.find((line) => line.msg === "retention purge failed for tenant");
+    expect(failure).toMatchObject({ tenantId: a, error: "TypeError" });
+    expect(JSON.stringify(lines)).not.toContain("private detail");
+  });
 });

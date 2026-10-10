@@ -2,13 +2,15 @@ import { JOBS } from "@ace/db/jobs";
 import { enrichStoredProduct } from "@ace/search";
 import type { WorkerDeps, WorkerJob } from "../deps";
 import { parsePayload } from "../job";
+import { indexModeConfig } from "./index-mode";
 
 /** Enriches with the store's configured enrichment model; usage is billed to `job:<pg-boss job id>`. */
 export async function handleEnrichProduct(deps: WorkerDeps, job: WorkerJob): Promise<void> {
   const payload = parsePayload(JOBS.enrichProduct, job, deps.logger);
   if (!payload) return;
   const { tenantId, storeId, productId } = payload;
-  const search = await deps.storeSearchConfig(tenantId, storeId);
+  const search = await indexModeConfig(deps, JOBS.enrichProduct, job, payload);
+  if (!search) return;
   const outcome = await enrichStoredProduct(
     {
       db: deps.db,

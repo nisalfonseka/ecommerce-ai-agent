@@ -1,0 +1,1 @@
+ALTER TABLE "attributed_orders" ADD COLUMN "chat_assisted" boolean DEFAULT false NOT NULL;
