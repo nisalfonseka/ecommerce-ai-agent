@@ -48,6 +48,23 @@ describe.skipIf(testDb === null)("job queue (as ace_app)", () => {
     expect(stats?.queuedCount).toBe(2);
   });
 
+  it("a graceful worker stop lets the in-flight job finish", async () => {
+    const worker = await openJobQueue(database.appUrl, "worker");
+    let started = false;
+    let finished = false;
+    await worker.boss.work(JOBS.retentionPurge, { pollingIntervalSeconds: 0.5 }, async () => {
+      started = true;
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      finished = true;
+    });
+    await worker.queue.send(JOBS.retentionPurge, {});
+    const deadline = Date.now() + 10_000;
+    while (!started && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(started).toBe(true);
+    await worker.stop({ graceful: true, timeoutMs: 10_000 });
+    expect(finished).toBe(true);
+  });
+
   it("ace_app has only grants on the job schema", async () => {
     const client = new pg.Client({ connectionString: database.appUrl });
     await client.connect();

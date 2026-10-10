@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { MemoryCommerceProvider } from "@ace/adapter-memory";
-import { createDb, schema, withTenant } from "@ace/db";
+import { createDb, schema, upsertAttributedOrder, withTenant } from "@ace/db";
 import type { JobName, JobPayload, JobQueue } from "@ace/db/jobs";
 import { createTestDatabase } from "@ace/db/testing";
 import { createDemoEnricher, enrichStoredProduct, syncProduct } from "@ace/search";
@@ -16,8 +16,14 @@ const ADMIN_KEY = "admin-test-key-0123456789";
 
 class RecordingQueue implements JobQueue {
   sent: JobName[] = [];
-  async send<N extends JobName>(name: N, _data: JobPayload<N>): Promise<void> {
+  sends: { name: JobName; data: unknown; debounceKey?: string }[] = [];
+  async send<N extends JobName>(
+    name: N,
+    data: JobPayload<N>,
+    options?: { debounceKey?: string; debounceSeconds?: number },
+  ): Promise<void> {
     this.sent.push(name);
+    this.sends.push({ name, data, debounceKey: options?.debounceKey });
   }
 }
 
@@ -301,6 +307,115 @@ describe.skipIf(testDb === null)("admin API", () => {
       ).toBe(404);
       const own = await call("GET", `/admin/tenants/${a.tenantId}/stores/${a.storeId}/enrichment`);
       expect(((await own.json()) as { items: { hidden: boolean }[] }).items[0]?.hidden).toBe(false);
+    });
+  });
+  describe("sync and attribution", () => {
+    async function store(name: string, config?: unknown) {
+      const { tenantId } = await json(await call("POST", "/admin/tenants", { name }));
+      const { storeId } = await json(
+        await call("POST", `/admin/tenants/${tenantId}/stores`, {
+          platform: "memory",
+          currency: "LKR",
+          config,
+        }),
+      );
+      return { tenantId: tenantId ?? "", storeId: storeId ?? "" };
+    }
+    const syncPath = (s: { tenantId: string; storeId: string }) =>
+      `/admin/tenants/${s.tenantId}/stores/${s.storeId}/sync`;
+
+    it("enqueues a reconcile (incremental by default) and answers 202", async () => {
+      const s = await store("Sync A");
+      jobs.sends = [];
+      expect((await call("POST", syncPath(s), { full: true })).status).toBe(202);
+      expect((await call("POST", syncPath(s))).status).toBe(202);
+      expect(jobs.sends).toEqual([
+        { name: "sync.reconcile", data: { ...s, full: true }, debounceKey: `${s.storeId}:full` },
+        { name: "sync.reconcile", data: { ...s, full: false }, debounceKey: `${s.storeId}:incremental` },
+      ]);
+      expect((await call("POST", syncPath(s), { full: "yes" })).status).toBe(400);
+    });
+
+    it("reports sync state and catalog counts", async () => {
+      const s = await store("Sync B", { search: { mode: "index", embeddingModel: "demo:hash-v1" } });
+      const before = await call("GET", syncPath(s));
+      expect(before.status).toBe(200);
+      expect(await before.json()).toEqual({
+        state: { status: "never", lastFullSyncAt: null, lastIncrementalSyncAt: null, lastError: null },
+        counts: { active: 0, deleted: 0, enriched: 0, embedded: 0, staleEmbeddings: 0 },
+      });
+      await syncProduct(
+        {
+          db: pool.db,
+          ...s,
+          provider: new MemoryCommerceProvider(),
+          jobs: new RecordingQueue(),
+          embeddingModel: "demo:hash-v1",
+        },
+        "p_linen_shirt_black",
+      );
+      const after = (await (await call("GET", syncPath(s))).json()) as { counts: { active: number } };
+      expect(after.counts.active).toBe(1);
+    });
+
+    it("answers 404 for another tenant's or an unknown store", async () => {
+      const a = await store("Sync Owner");
+      const b = await store("Sync Intruder");
+      jobs.sends = [];
+      const crossed = { tenantId: b.tenantId, storeId: a.storeId };
+      expect((await call("POST", syncPath(crossed), {})).status).toBe(404);
+      expect((await call("GET", syncPath(crossed))).status).toBe(404);
+      expect((await call("GET", syncPath({ tenantId: a.tenantId, storeId: "nope" }))).status).toBe(404);
+      expect(jobs.sends).toEqual([]);
+    });
+
+    it("reports attribution for a date range, per currency, and validates dates", async () => {
+      const s = await store("Attribution");
+      await withTenant(pool.db, s.tenantId, async (tx) => {
+        for (const [orderId, amount, currency, placedAt] of [
+          ["o1", 1_000, "LKR", "2026-09-10T00:00:00Z"],
+          ["o2", 2_000, "LKR", "2026-09-20T00:00:00Z"],
+          ["o3", 50, "USD", "2026-09-21T00:00:00Z"],
+          ["o4", 9_999, "LKR", "2026-10-02T00:00:00Z"],
+        ] as const) {
+          await upsertAttributedOrder(tx, {
+            tenantId: s.tenantId,
+            storeId: s.storeId,
+            orderId,
+            orderNumber: orderId,
+            conversationId: null,
+            totalAmount: amount,
+            currency,
+            placedAt: new Date(placedAt),
+          });
+        }
+      });
+      const res = await call(
+        "GET",
+        `/admin/tenants/${s.tenantId}/attribution?from=2026-09-01T00:00:00Z&to=2026-10-01T00:00:00Z`,
+      );
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        from: "2026-09-01T00:00:00.000Z",
+        to: "2026-10-01T00:00:00.000Z",
+        orders: 3,
+        chatAssisted: 0,
+        revenue: [
+          { currency: "LKR", total: 3_000, chatAssisted: 0 },
+          { currency: "USD", total: 50, chatAssisted: 0 },
+        ],
+      });
+      const monthToDate = (await (await call("GET", `/admin/tenants/${s.tenantId}/attribution`)).json()) as {
+        from: string;
+      };
+      const now = new Date();
+      expect(monthToDate.from).toBe(
+        new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString(),
+      );
+      expect((await call("GET", `/admin/tenants/${s.tenantId}/attribution?from=yesterday`)).status).toBe(400);
+      expect(
+        (await call("GET", `/admin/tenants/${s.tenantId}/attribution?from=2026-10-02&to=2026-10-01`)).status,
+      ).toBe(400);
     });
   });
 });

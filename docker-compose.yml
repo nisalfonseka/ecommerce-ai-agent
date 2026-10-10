@@ -48,6 +48,28 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Same image, different entry point: pg-boss jobs (sync, enrichment, embeddings, attribution, retention).
+  worker:
+    image: ${ACE_ENGINE_IMAGE:-ace-engine:local}
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    # SIGTERM lets in-flight jobs finish for up to 25 s (GRACEFUL_STOP_MS) before Docker kills the process.
+    stop_grace_period: 30s
+    # The image's HEALTHCHECK probes the engine's /healthz; the worker serves no HTTP.
+    healthcheck:
+      disable: true
+    environment:
+      DATABASE_URL: postgres://ace_app:${ACE_APP_DB_PASSWORD}@postgres:5432/ace
+      ACE_MASTER_KEY: ${ACE_MASTER_KEY:?set ACE_MASTER_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   caddy:
     image: caddy:2
     restart: unless-stopped

@@ -3,6 +3,7 @@ export { openSecret, sealSecret } from "./crypto";
 export { MIGRATIONS_FOLDER, runMigrations } from "./migrate";
 export { redactDeep, redactPii } from "./redact";
 export * from "./repos/admin";
+export * from "./repos/attribution";
 export * from "./repos/catalog";
 export * from "./repos/conversations";
 export * from "./repos/idempotency";

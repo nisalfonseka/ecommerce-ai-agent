@@ -1,11 +1,14 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
+  attributionReport,
   type CatalogProductRow,
+  countCatalog,
   createBot,
   createStore,
   createTenant,
   type Db,
   enrichmentReport,
+  getSyncState,
   issueWidgetKey,
   revokeWidgetKey,
   schema,
@@ -14,9 +17,14 @@ import {
   usageReport,
   withTenant,
 } from "@ace/db";
-import type { JobQueue } from "@ace/db/jobs";
+import { JOBS, type JobQueue, reconcileDebounceKey } from "@ace/db/jobs";
 import { MedusaCredentialsSchema } from "@ace/providers";
-import { applyMerchantOverrides, MerchantOverridesSchema, StoreSearchConfigSchema } from "@ace/search";
+import {
+  applyMerchantOverrides,
+  MerchantOverridesSchema,
+  parseStoreSearchConfig,
+  StoreSearchConfigSchema,
+} from "@ace/search";
 import { eq } from "drizzle-orm";
 import type { Hono, MiddlewareHandler } from "hono";
 import { z } from "zod";
@@ -80,6 +88,11 @@ function botBody(prices: ModelPrices) {
       "soft budget must not exceed hard budget",
     );
 }
+
+const SyncBody = z.object({ full: z.boolean().default(false) });
+
+/** An ISO date ("2026-10-01", midnight UTC) or date-time with offset. */
+const IsoInstant = z.union([z.iso.datetime({ offset: true }), z.iso.date()]).transform((v) => new Date(v));
 
 const WidgetKeyBody = z.object({
   allowedOrigins: z
@@ -279,5 +292,79 @@ export function registerAdminRoutes(app: Hono<WidgetEnv>, deps: AdminDeps): void
     const row = await applyMerchantOverrides({ ...deps, tenantId, storeId }, productId, body.data);
     if (!row) return errorResponse(c, 404, "not_found", "Unknown product.");
     return c.json(reviewItem(row));
+  });
+  const storeSearchConfigOf = (tenantId: string, storeId: string) =>
+    withTenant(deps.db, tenantId, async (tx) => {
+      const [store] = await tx
+        .select({ config: schema.stores.config })
+        .from(schema.stores)
+        .where(eq(schema.stores.id, storeId));
+      return store ? parseStoreSearchConfig(store.config) : null;
+    });
+
+  // Manual (re)sync, e.g. onboarding step A4. The worker runs it; collapses with the scheduled run.
+  admin.post("/tenants/:tenantId/stores/:storeId/sync", async (c) => {
+    const tenantId = tenantParam(c.req.param("tenantId"));
+    const storeId = c.req.param("storeId");
+    if (!tenantId || !UUID.safeParse(storeId).success)
+      return errorResponse(c, 404, "not_found", "Unknown store.");
+    const raw = await c.req.text();
+    let body: unknown = {};
+    try {
+      body = raw.trim() === "" ? {} : JSON.parse(raw);
+    } catch {
+      return errorResponse(c, 400, "invalid_input", "Body must be JSON.");
+    }
+    const parsed = SyncBody.safeParse(body);
+    if (!parsed.success) return errorResponse(c, 400, "invalid_input", "full must be a boolean.");
+    if (!(await storeExists(tenantId, storeId))) return errorResponse(c, 404, "not_found", "Unknown store.");
+    const { full } = parsed.data;
+    await deps.jobs.send(
+      JOBS.syncReconcile,
+      { tenantId, storeId, full },
+      { debounceKey: reconcileDebounceKey(storeId, full) },
+    );
+    return c.json({ queued: true, full }, 202);
+  });
+
+  admin.get("/tenants/:tenantId/stores/:storeId/sync", async (c) => {
+    const tenantId = tenantParam(c.req.param("tenantId"));
+    const storeId = c.req.param("storeId");
+    if (!tenantId || !UUID.safeParse(storeId).success)
+      return errorResponse(c, 404, "not_found", "Unknown store.");
+    const search = await storeSearchConfigOf(tenantId, storeId);
+    if (!search) return errorResponse(c, 404, "not_found", "Unknown store.");
+    const report = await withTenant(deps.db, tenantId, async (tx) => {
+      const state = await getSyncState(tx, storeId);
+      return {
+        state: {
+          status: state?.status ?? "never",
+          lastFullSyncAt: state?.lastFullSyncAt ?? null,
+          lastIncrementalSyncAt: state?.lastIncrementalSyncAt ?? null,
+          lastError: state?.lastError ?? null,
+        },
+        // Stale embeddings are counted against the store's configured model (J9).
+        counts: await countCatalog(tx, storeId, search.embeddingModel),
+      };
+    });
+    return c.json(report);
+  });
+
+  // Chat-assisted orders and revenue per currency (workflow F). Default range: month to date (UTC).
+  admin.get("/tenants/:tenantId/attribution", async (c) => {
+    const tenantId = tenantParam(c.req.param("tenantId"));
+    if (!tenantId) return errorResponse(c, 404, "not_found", "Unknown tenant.");
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const query = z
+      .object({ from: IsoInstant.optional(), to: IsoInstant.optional() })
+      .transform((q) => ({ from: q.from ?? monthStart, to: q.to ?? now }))
+      .refine((range) => range.from < range.to, "from must be before to")
+      .safeParse({ from: c.req.query("from"), to: c.req.query("to") });
+    if (!query.success)
+      return errorResponse(c, 400, "invalid_input", "from and to must be ISO dates, from before to.");
+    const range = query.data;
+    const report = await withTenant(deps.db, tenantId, (tx) => attributionReport(tx, range));
+    return c.json({ from: range.from.toISOString(), to: range.to.toISOString(), ...report });
   });
 }

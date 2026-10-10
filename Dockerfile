@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.7
-# Engine image: build the bundle in the monorepo, then ship only dist/, production npm packages,
+# Engine image: build the bundles in the monorepo, then ship only dist/, production npm packages,
 # the migrations and the price table. Workspace packages (@ace/*) are bundled into dist/.
+# The worker (dist/worker.js) ships in the same image and runs on the engine's node_modules; its build
+# fails if it imports a package the engine does not declare.
 
 FROM node:24-slim AS build
 WORKDIR /repo
@@ -8,7 +10,9 @@ RUN npm install -g pnpm@12.10.1
 COPY . .
 RUN pnpm install --frozen-lockfile \
  && pnpm --filter @ace/engine build \
+ && pnpm --filter @ace/worker build \
  && pnpm --filter @ace/engine deploy --prod /out \
+ && cp apps/worker/dist/worker.js apps/worker/dist/worker.js.map /out/dist/ \
  && cp -r packages/db/migrations /out/migrations
 
 FROM node:24-slim

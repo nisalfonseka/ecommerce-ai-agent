@@ -51,6 +51,15 @@ export interface JobQueue {
   ): Promise<void>;
 }
 
+/**
+ * Debounce key for sync.reconcile, shared by the scheduled fan-out (worker) and the admin endpoint (engine) so
+ * a manual and a scheduled run collapse together. It carries the mode as well as the store: a trailing job
+ * keeps only one payload, so an incremental send must never swallow a full one.
+ */
+export function reconcileDebounceKey(storeId: string, full: boolean): string {
+  return `${storeId}:${full ? "full" : "incremental"}`;
+}
+
 const JOB_NAMES = Object.values(JOBS);
 
 /** Jobs are idempotent (upsert by natural key), so generous retries with backoff are safe. */
@@ -100,6 +109,16 @@ export async function installJobSchema(ownerUrl: string): Promise<void> {
   }
 }
 
+export interface StopJobQueueOptions {
+  /**
+   * Default false: stop at once (a producer has nothing in flight). A worker passes true on SIGTERM so
+   * in-flight jobs finish; jobs still running after `timeoutMs` are abandoned and retried after expiry.
+   */
+  graceful?: boolean;
+  /** Upper bound on the graceful wait. Default 30,000 ms (pg-boss's own default). */
+  timeoutMs?: number;
+}
+
 /**
  * App connection (ace_app). A producer (engine) only enqueues; a worker keeps supervision and cron on.
  * Schema changes are never attempted here (`migrate: false`).
@@ -107,7 +126,7 @@ export async function installJobSchema(ownerUrl: string): Promise<void> {
 export async function openJobQueue(
   appUrl: string,
   role: "producer" | "worker",
-): Promise<{ queue: JobQueue; boss: PgBoss; stop(): Promise<void> }> {
+): Promise<{ queue: JobQueue; boss: PgBoss; stop(options?: StopJobQueueOptions): Promise<void> }> {
   const worker = role === "worker";
   const boss = new PgBoss({
     connectionString: appUrl,
@@ -138,5 +157,10 @@ export async function openJobQueue(
       }
     },
   };
-  return { queue, boss, stop: () => boss.stop({ graceful: false, close: true }) };
+  return {
+    queue,
+    boss,
+    stop: (options) =>
+      boss.stop({ graceful: options?.graceful ?? false, timeout: options?.timeoutMs ?? 30_000, close: true }),
+  };
 }

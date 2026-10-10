@@ -56,13 +56,19 @@ sequenceDiagram
   alt text or images changed
     W->>Q: enqueue enrich.product + embed.product
   end
-  Note over W,DB: Nightly reconciliation: listProducts(updatedSince=last_success)<br/>catches missed webhooks; weekly full resync marks deleted products
+  Note over W,DB: Every 15 min: incremental reconcile listProducts(updatedSince=watermark − 5 min)<br/>repairs missed webhooks; nightly full reconcile marks deleted products
 ```
 
 Rules:
 
 - The webhook handler only verifies, dedupes and enqueues. It does no heavy work, so it can answer the platform quickly.
 - Jobs are idempotent (upsert by `(tenant_id, product_id)`); retries are safe.
+- The worker (`apps/worker`, same image as the engine) runs the jobs. `sync.reconcile-all` fans out one
+  `sync.reconcile` per index-mode store: incrementally every 15 minutes (`RECONCILE_CRON`), so a dropped webhook
+  is repaired within 15 minutes, and in full nightly (`FULL_RECONCILE_CRON`, 02:30). An admin can trigger either
+  with `POST /admin/tenants/:tenantId/stores/:storeId/sync` and read progress with `GET` on the same path.
+- A job whose payload fails validation is logged (`job.invalid_payload`, name and id only) and completed, not
+  retried.
 - Enrichment uses the cheap model to extract `{category, color[], pattern, fabric[], occasion[], fit, gender, season}`.
   Merchant overrides always win over model output.
 - The index never decides a final price or stock answer (see C6).
@@ -170,8 +176,11 @@ sequenceDiagram
 ```
 
 - Payment verification lives in the store backend (the PayHere provider in Medusa), never in the agent.
-- Attribution: an order is **chat-assisted** if its cart had `ace_conversation_id`. That is the merchant-facing ROI
-  metric.
+- Attribution: an order is **chat-assisted** if its cart had `ace_conversation_id` naming a conversation of that
+  tenant and store. That is the merchant-facing ROI metric. The `order.placed` job upserts `attributed_orders`
+  (one row per order; foreign or malformed ids are stored as not chat-assisted) and marks the webhook processed.
+  `GET /admin/tenants/:tenantId/attribution?from=&to=` reports orders, chat-assisted orders and revenue per
+  currency (never summed across currencies); the default range is month to date.
 
 ---
 
@@ -229,7 +238,10 @@ never come from RAG.
 
 - Consent recorded on the first message; the privacy notice links to the merchant's policy.
 - Retention: messages 180 days, traces 30 days, OTP records 24 hours (defaults, configurable per tenant).
-- A daily `retention.purge` job deletes expired data.
+- A daily `retention.purge` job (`RETENTION_CRON`, 03:00) deletes expired data per tenant, inside that tenant's RLS
+  context, in batches of 1,000 for each table in `SHOPPER_DATA_TABLES` (conversations by last message, webhook
+  events by receipt, others by creation). It logs counts per table, never content. `usage_ledger` and
+  `attributed_orders` hold billing facts only and are kept.
 - Shopper requests (via the merchant): export and deletion by email or phone, handled by the admin API.
 - Breach runbook: detect → contain → notify merchants (controllers) promptly so they can meet their notification duty.
 

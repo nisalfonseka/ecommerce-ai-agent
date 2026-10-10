@@ -100,6 +100,7 @@ pnpm typecheck          # tsc --noEmit in every package
 pnpm lint               # Biome check
 pnpm lint:fix           # Biome check --write (format + safe fixes)
 pnpm --filter @ace/contracts test     # one package
+pnpm --filter @ace/worker dev         # job worker (sync, enrichment, embeddings, attribution, retention)
 pnpm evals              # live agent evals (needs API keys in .env; costs money)
 pnpm evals --models google:gemini-flash-latest --only si   # one model, Sinhala cases only
 pnpm evals --models google:gemini-flash-latest --rpm 5    # free tier: max 5 model requests/minute

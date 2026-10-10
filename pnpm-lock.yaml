@@ -258,6 +258,70 @@ importers:
         specifier: ^5.0.3
         version: 5.0.3(@types/node@22.20.5)(happy-dom@20.14.5)(vite@8.3.3(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15))
 
+  apps/worker:
+    dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.76
+        version: 4.0.76(zod@4.6.5)
+      '@ai-sdk/google':
+        specifier: ^4.0.92
+        version: 4.0.92(zod@4.6.5)
+      '@ai-sdk/openai':
+        specifier: ^4.0.89
+        version: 4.0.89(zod@4.6.5)
+      ai:
+        specifier: ^7.0.133
+        version: 7.0.133(zod@4.6.5)
+      drizzle-orm:
+        specifier: ^0.45.3
+        version: 0.45.3(@types/pg@8.23.1)(pg@8.23.1)
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+      pg-boss:
+        specifier: 12.34.0
+        version: 12.34.0
+      pino:
+        specifier: ^9.14.0
+        version: 9.14.0
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@ace/adapter-memory':
+        specifier: workspace:*
+        version: link:../../packages/adapter-memory
+      '@ace/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@ace/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@ace/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@ace/knowledge':
+        specifier: workspace:*
+        version: link:../../packages/knowledge
+      '@ace/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+      '@ace/search':
+        specifier: workspace:*
+        version: link:../../packages/search
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^5.0.3
+        version: 5.0.3(@types/node@22.20.5)(happy-dom@20.14.5)(vite@8.3.3(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15))
+
   packages/adapter-medusa:
     dependencies:
       '@ace/contracts':
