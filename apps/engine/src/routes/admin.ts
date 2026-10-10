@@ -4,12 +4,16 @@ import {
   type CatalogProductRow,
   countCatalog,
   createBot,
+  createDocument,
   createStore,
   createTenant,
   type Db,
+  deleteDocument,
   enrichmentReport,
+  getDocument,
   getSyncState,
   issueWidgetKey,
+  listDocuments,
   revokeWidgetKey,
   schema,
   sealSecret,
@@ -18,6 +22,12 @@ import {
   withTenant,
 } from "@ace/db";
 import { JOBS, type JobQueue, reconcileDebounceKey } from "@ace/db/jobs";
+import {
+  extractText,
+  type fetchPublicUrl,
+  KnowledgeSourceError,
+  KnowledgeSourceSchema,
+} from "@ace/knowledge";
 import { MedusaCredentialsSchema } from "@ace/providers";
 import {
   applyMerchantOverrides,
@@ -27,6 +37,7 @@ import {
 } from "@ace/search";
 import { eq } from "drizzle-orm";
 import type { Hono, MiddlewareHandler } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { WidgetEnv } from "../auth/widget";
 import { PersonaSchema, StoreFactsSchema } from "../bot-config";
@@ -39,6 +50,8 @@ export interface AdminDeps {
   masterKey: Buffer;
   prices: ModelPrices;
   jobs: JobQueue;
+  /** Test seam for URL sources; defaults to the SSRF-checked fetchPublicUrl. */
+  fetchUrl?: typeof fetchPublicUrl;
 }
 
 const UUID = z.uuid();
@@ -90,6 +103,11 @@ function botBody(prices: ModelPrices) {
 }
 
 const SyncBody = z.object({ full: z.boolean().default(false) });
+
+const KnowledgeBody = z.object({ title: z.string().trim().min(1).max(200), source: KnowledgeSourceSchema });
+/** A base64 PDF of up to 10 MB is ~13.4 MB of JSON; other admin routes are not raised. */
+const KNOWLEDGE_BODY_LIMIT = 15 * 1024 * 1024;
+const CONTENT_PREVIEW_CHARS = 2000;
 
 /** An ISO date ("2026-10-01", midnight UTC) or date-time with offset. */
 const IsoInstant = z.union([z.iso.datetime({ offset: true }), z.iso.date()]).transform((v) => new Date(v));
@@ -366,5 +384,106 @@ export function registerAdminRoutes(app: Hono<WidgetEnv>, deps: AdminDeps): void
     const range = query.data;
     const report = await withTenant(deps.db, tenantId, (tx) => attributionReport(tx, range));
     return c.json({ from: range.from.toISOString(), to: range.to.toISOString(), ...report });
+  });
+
+  const knowledgeSummary = (row: {
+    id: string;
+    title: string;
+    sourceType: string;
+    status: string;
+    chunkCount: number;
+    version: number;
+    updatedAt: Date;
+  }) => ({
+    id: row.id,
+    title: row.title,
+    sourceType: row.sourceType,
+    status: row.status,
+    chunkCount: row.chunkCount,
+    version: row.version,
+    updatedAt: row.updatedAt,
+  });
+  const storeIds = (c: { req: { param(name: string): string | undefined } }) => {
+    const tenantId = tenantParam(c.req.param("tenantId"));
+    const storeId = c.req.param("storeId");
+    return tenantId && storeId && UUID.safeParse(storeId).success ? { tenantId, storeId } : null;
+  };
+
+  // Knowledge upload (workflow A6). Extraction runs here (markdown and PDF are quick; a URL is bounded by the
+  // fetch limits), then the worker chunks and embeds. Re-uploading a title replaces it and bumps its version.
+  admin.post(
+    "/tenants/:tenantId/stores/:storeId/knowledge",
+    bodyLimit({
+      maxSize: KNOWLEDGE_BODY_LIMIT,
+      onError: (c) => errorResponse(c, 413, "too_large", "The upload is larger than 15 MB."),
+    }),
+    async (c) => {
+      const ids = storeIds(c);
+      if (!ids) return errorResponse(c, 404, "not_found", "Unknown store.");
+      const body = KnowledgeBody.safeParse(await c.req.json().catch(() => null));
+      if (!body.success) {
+        return errorResponse(
+          c,
+          400,
+          "invalid_input",
+          "A document needs a title and a markdown, pdf or url source.",
+        );
+      }
+      if (!(await storeExists(ids.tenantId, ids.storeId)))
+        return errorResponse(c, 404, "not_found", "Unknown store.");
+      let extracted: { text: string; sourceUrl: string | null };
+      try {
+        extracted = await extractText(body.data.source, deps.fetchUrl);
+      } catch (error) {
+        if (error instanceof KnowledgeSourceError) {
+          return errorResponse(c, 400, error.code, "The document could not be read.");
+        }
+        throw error;
+      }
+      const doc = await withTenant(deps.db, ids.tenantId, (tx) =>
+        createDocument(tx, ids.tenantId, {
+          storeId: ids.storeId,
+          title: body.data.title,
+          sourceType: body.data.source.type,
+          sourceUrl: extracted.sourceUrl,
+          content: extracted.text,
+          contentHash: createHash("sha256").update(extracted.text).digest("hex"),
+        }),
+      );
+      // Not debounced: each send names the document, and a re-upload must re-ingest the new version.
+      await deps.jobs.send(JOBS.knowledgeIngest, { ...ids, documentId: doc.id });
+      return c.json({ id: doc.id, status: doc.status }, 202);
+    },
+  );
+
+  admin.get("/tenants/:tenantId/stores/:storeId/knowledge", async (c) => {
+    const ids = storeIds(c);
+    if (!ids || !(await storeExists(ids.tenantId, ids.storeId)))
+      return errorResponse(c, 404, "not_found", "Unknown store.");
+    const rows = await withTenant(deps.db, ids.tenantId, (tx) => listDocuments(tx, ids.storeId));
+    return c.json({ items: rows.map(knowledgeSummary) });
+  });
+
+  admin.get("/tenants/:tenantId/stores/:storeId/knowledge/:docId", async (c) => {
+    const ids = storeIds(c);
+    const docId = c.req.param("docId");
+    if (!ids || !UUID.safeParse(docId).success)
+      return errorResponse(c, 404, "not_found", "Unknown document.");
+    const doc = await withTenant(deps.db, ids.tenantId, (tx) => getDocument(tx, ids.storeId, docId));
+    if (!doc) return errorResponse(c, 404, "not_found", "Unknown document.");
+    return c.json({
+      ...knowledgeSummary(doc),
+      error: doc.error,
+      content: doc.content.slice(0, CONTENT_PREVIEW_CHARS),
+    });
+  });
+
+  admin.delete("/tenants/:tenantId/stores/:storeId/knowledge/:docId", async (c) => {
+    const ids = storeIds(c);
+    const docId = c.req.param("docId");
+    if (!ids || !UUID.safeParse(docId).success)
+      return errorResponse(c, 404, "not_found", "Unknown document.");
+    const deleted = await withTenant(deps.db, ids.tenantId, (tx) => deleteDocument(tx, ids.storeId, docId));
+    return deleted ? c.body(null, 204) : errorResponse(c, 404, "not_found", "Unknown document.");
   });
 }

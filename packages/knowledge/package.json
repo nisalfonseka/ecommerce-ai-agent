@@ -11,7 +11,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "ai": "^7.0.133"
+    "@ace/db": "workspace:*",
+    "ai": "^7.0.133",
+    "unpdf": "1.8.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

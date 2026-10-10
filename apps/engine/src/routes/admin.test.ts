@@ -1,10 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { MemoryCommerceProvider } from "@ace/adapter-memory";
 import { createDb, schema, upsertAttributedOrder, withTenant } from "@ace/db";
 import type { JobName, JobPayload, JobQueue } from "@ace/db/jobs";
 import { createTestDatabase } from "@ace/db/testing";
+import { createDemoEmbedder, ingestDocument } from "@ace/knowledge";
 import { createDemoEnricher, enrichStoredProduct, syncProduct } from "@ace/search";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { loadModelPrices } from "../budget";
@@ -416,6 +418,153 @@ describe.skipIf(testDb === null)("admin API", () => {
       expect(
         (await call("GET", `/admin/tenants/${s.tenantId}/attribution?from=2026-10-02&to=2026-10-01`)).status,
       ).toBe(400);
+    });
+  });
+  describe("knowledge", () => {
+    async function store(name: string) {
+      const { tenantId } = await json(await call("POST", "/admin/tenants", { name }));
+      const { storeId } = await json(
+        await call("POST", `/admin/tenants/${tenantId}/stores`, { platform: "memory", currency: "LKR" }),
+      );
+      return { tenantId: tenantId ?? "", storeId: storeId ?? "" };
+    }
+    const base = (s: { tenantId: string; storeId: string }) =>
+      `/admin/tenants/${s.tenantId}/stores/${s.storeId}/knowledge`;
+    const markdown = (title: string, text: string) => ({ title, source: { type: "markdown", text } });
+    const POLICY = `# Returns\n\nExchanges within 7 days.\n\n${"Unworn items with tags. ".repeat(120)}`;
+    const chunkCount = (tenantId: string, documentId: string) =>
+      withTenant(pool.db, tenantId, async (tx) => {
+        const result = await tx.execute(
+          sql`select count(*)::int as n from knowledge_chunks where document_id = ${documentId}`,
+        );
+        return Number((result.rows[0] as { n: number } | undefined)?.n ?? -1);
+      });
+
+    it("uploads markdown, answers 202 and enqueues knowledge.ingest", async () => {
+      const s = await store("Knowledge Upload");
+      jobs.sends = [];
+      const res = await call("POST", base(s), markdown("Returns policy", POLICY));
+      expect(res.status).toBe(202);
+      const { id, status } = await json(res);
+      expect(status).toBe("pending");
+      expect(jobs.sends).toEqual([
+        { name: "knowledge.ingest", data: { ...s, documentId: id }, debounceKey: undefined },
+      ]);
+
+      const list = await call("GET", base(s));
+      expect(list.status).toBe(200);
+      const { items } = (await list.json()) as { items: Record<string, unknown>[] };
+      expect(items).toHaveLength(1);
+      expect(Object.keys(items[0] ?? {}).sort()).toEqual(
+        ["chunkCount", "id", "sourceType", "status", "title", "updatedAt", "version"].sort(),
+      );
+      expect(items[0]).toMatchObject({ id, title: "Returns policy", sourceType: "markdown", version: 1 });
+
+      const one = await call("GET", `${base(s)}/${id}`);
+      expect(one.status).toBe(200);
+      const doc = (await one.json()) as { content: string; status: string };
+      expect(doc).toMatchObject({ id, title: "Returns policy", status: "pending", chunkCount: 0 });
+      expect(doc.content).toBe(POLICY.trim().slice(0, 2000));
+      expect(doc.content).toHaveLength(2000);
+    });
+
+    it("replaces the content and bumps the version on re-upload with the same title", async () => {
+      const s = await store("Knowledge Reupload");
+      const first = await json(await call("POST", base(s), markdown("FAQ", "# FAQ\n\nOld answer.")));
+      jobs.sends = [];
+      const second = await call("POST", base(s), markdown("FAQ", "# FAQ\n\nNew answer."));
+      expect(second.status).toBe(202);
+      expect((await json(second)).id).toBe(first.id);
+      expect(jobs.sends.map((j) => j.name)).toEqual(["knowledge.ingest"]);
+      const doc = (await (await call("GET", `${base(s)}/${first.id}`)).json()) as Record<string, unknown>;
+      expect(doc).toMatchObject({ version: 2, content: "# FAQ\n\nNew answer." });
+      const { items } = (await (await call("GET", base(s))).json()) as { items: unknown[] };
+      expect(items).toHaveLength(1);
+    });
+
+    it("accepts a PDF", async () => {
+      const s = await store("Knowledge PDF");
+      const base64 = readFileSync(
+        new URL("../../../../packages/knowledge/src/__fixtures__/policy.pdf", import.meta.url),
+      ).toString("base64");
+      const res = await call("POST", base(s), { title: "Policy PDF", source: { type: "pdf", base64 } });
+      expect(res.status).toBe(202);
+      const doc = (await (await call("GET", `${base(s)}/${(await json(res)).id}`)).json()) as Record<
+        string,
+        unknown
+      >;
+      expect(doc).toMatchObject({
+        sourceType: "pdf",
+        content: expect.stringContaining("Exchanges within 7 days"),
+      });
+    });
+
+    it("answers 400 with the extraction error code, and for invalid bodies", async () => {
+      const s = await store("Knowledge Errors");
+      jobs.sends = [];
+      const blocked = await call("POST", base(s), {
+        title: "Internal",
+        source: { type: "url", url: "http://169.254.169.254/latest/meta-data" },
+      });
+      expect(blocked.status).toBe(400);
+      expect(await blocked.json()).toMatchObject({ error: { code: "blocked_address" } });
+      const ftp = await call("POST", base(s), { title: "FTP", source: { type: "url", url: "ftp://x.lk/a" } });
+      expect(await ftp.json()).toMatchObject({ error: { code: "bad_url" } });
+      const empty = await call("POST", base(s), markdown("Empty", "   "));
+      expect(await empty.json()).toMatchObject({ error: { code: "empty" } });
+      for (const body of [
+        markdown("", "text"),
+        markdown("x".repeat(201), "text"),
+        { title: "No source" },
+        { title: "Bad", source: { type: "docx" } },
+      ]) {
+        const res = await call("POST", base(s), body);
+        expect(res.status).toBe(400);
+        expect(await res.json()).toMatchObject({ error: { code: "invalid_input" } });
+      }
+      expect(jobs.sends).toEqual([]);
+    });
+
+    it("limits the upload body to 15 MB", async () => {
+      const s = await store("Knowledge Limit");
+      const res = await app.request(base(s), {
+        method: "POST",
+        headers: { authorization: `Bearer ${ADMIN_KEY}`, "content-type": "application/json" },
+        body: JSON.stringify(markdown("Huge", "a".repeat(16 * 1024 * 1024))),
+      });
+      expect(res.status).toBe(413);
+    });
+
+    it("keeps tenants and stores apart: 404 for another tenant's document", async () => {
+      const a = await store("Knowledge Owner");
+      const b = await store("Knowledge Intruder");
+      const { id } = await json(await call("POST", base(a), markdown("Private", "# Private\n\nOwner only.")));
+      const crossed = [
+        `${base({ tenantId: b.tenantId, storeId: a.storeId })}/${id}`,
+        `${base(b)}/${id}`,
+        `${base({ tenantId: a.tenantId, storeId: b.storeId })}/${id}`,
+      ];
+      for (const path of crossed) {
+        expect((await call("GET", path)).status, path).toBe(404);
+        expect((await call("DELETE", path)).status, path).toBe(404);
+      }
+      expect(
+        (await call("POST", base({ tenantId: b.tenantId, storeId: a.storeId }), markdown("X", "y"))).status,
+      ).toBe(404);
+      expect((await call("GET", base({ tenantId: b.tenantId, storeId: a.storeId }))).status).toBe(404);
+      expect((await call("GET", `${base(a)}/not-a-uuid`)).status).toBe(404);
+      expect((await call("GET", `${base(a)}/${id}`)).status).toBe(200);
+    });
+
+    it("deletes a document with its chunks", async () => {
+      const s = await store("Knowledge Delete");
+      const { id = "" } = await json(await call("POST", base(s), markdown("Care", POLICY)));
+      expect(await ingestDocument({ db: pool.db, ...s, embedder: createDemoEmbedder() }, id)).toBe("ready");
+      expect(await chunkCount(s.tenantId, id)).toBeGreaterThan(0);
+      expect((await call("DELETE", `${base(s)}/${id}`)).status).toBe(204);
+      expect(await chunkCount(s.tenantId, id)).toBe(0);
+      expect((await call("GET", `${base(s)}/${id}`)).status).toBe(404);
+      expect((await call("DELETE", `${base(s)}/${id}`)).status).toBe(404);
     });
   });
 });

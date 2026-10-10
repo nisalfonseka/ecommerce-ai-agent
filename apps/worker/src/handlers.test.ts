@@ -22,7 +22,7 @@ const SHIRT = "p_linen_shirt_black";
 const SHIRT_L = "p_linen_shirt_black_l";
 
 describe("worker handlers", () => {
-  it("registers every job but knowledge.ingest (Task 10)", async () => {
+  it("registers a handler for every job", async () => {
     const names: string[] = [];
     const boss = {
       work: async (name: string) => {
@@ -31,8 +31,7 @@ describe("worker handlers", () => {
       },
     };
     await registerHandlers(boss, testDeps({} as Db), { concurrency: 2 });
-    const expected = Object.values(JOBS).filter((name) => name !== JOBS.knowledgeIngest);
-    expect(names.sort()).toEqual([...expected].sort());
+    expect(names.sort()).toEqual([...Object.values(JOBS)].sort());
   });
 
   it.each(Object.entries(HANDLERS))(

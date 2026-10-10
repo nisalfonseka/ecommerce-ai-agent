@@ -3,17 +3,18 @@ import type { PgBoss } from "pg-boss";
 import type { JobHandler, WorkerDeps } from "./deps";
 import { handleEmbedProduct } from "./handlers/embed";
 import { handleEnrichProduct } from "./handlers/enrich";
+import { handleKnowledgeIngest } from "./handlers/knowledge";
 import { handleOrderPlaced } from "./handlers/order-placed";
 import { handleRetentionPurge } from "./handlers/retention";
 import { handleSyncProduct, handleSyncReconcile, handleSyncReconcileAll } from "./handlers/sync";
 
-/** knowledge.ingest joins with ingestDocument (Task 10); until then its jobs wait in the queue. */
-export const HANDLERS: Partial<Record<JobName, JobHandler>> = {
+export const HANDLERS: Record<JobName, JobHandler> = {
   [JOBS.syncProduct]: handleSyncProduct,
   [JOBS.syncReconcile]: handleSyncReconcile,
   [JOBS.syncReconcileAll]: handleSyncReconcileAll,
   [JOBS.enrichProduct]: handleEnrichProduct,
   [JOBS.embedProduct]: handleEmbedProduct,
+  [JOBS.knowledgeIngest]: handleKnowledgeIngest,
   [JOBS.orderPlaced]: handleOrderPlaced,
   [JOBS.retentionPurge]: handleRetentionPurge,
 };

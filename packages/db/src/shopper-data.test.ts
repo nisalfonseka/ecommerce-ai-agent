@@ -2,7 +2,7 @@ import { getTableColumns, getTableName } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import * as schema from "./schema";
-import { SHOPPER_DATA_TABLES } from "./shopper-data";
+import { MERCHANT_CONTENT_TABLES, SHOPPER_DATA_TABLES } from "./shopper-data";
 
 /** Billing-like facts (ids, totals); the conversation link is ON DELETE SET NULL, so a purge needs no entry. */
 const BILLING_ONLY = new Set(["attributed_orders"]);
@@ -23,5 +23,15 @@ describe("SHOPPER_DATA_TABLES", () => {
 
   it("gives every entry a positive retention", () => {
     for (const entry of SHOPPER_DATA_TABLES) expect(entry.retentionDays, entry.table).toBeGreaterThan(0);
+  });
+});
+
+describe("MERCHANT_CONTENT_TABLES", () => {
+  it("registers the knowledge tables as merchant content, outside the shopper purge", () => {
+    const shopper = SHOPPER_DATA_TABLES.map((entry) => entry.table);
+    for (const table of ["knowledge_documents", "knowledge_chunks"]) {
+      expect(MERCHANT_CONTENT_TABLES).toContain(table);
+      expect(shopper).not.toContain(table);
+    }
   });
 });

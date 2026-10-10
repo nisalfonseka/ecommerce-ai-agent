@@ -1,3 +1,4 @@
+import type { KnowledgeSourceErrorCode } from "@ace/knowledge";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
@@ -10,7 +11,9 @@ export type ErrorCode =
   | "invalid_signature"
   | "unavailable"
   | "turn_in_progress"
-  | "internal";
+  | "internal"
+  /** Knowledge upload: why the source could not be extracted (too_large also for an oversized body). */
+  | KnowledgeSourceErrorCode;
 
 /** The one error shape every route returns. */
 export function errorResponse(c: Context, status: ContentfulStatusCode, code: ErrorCode, message: string) {
