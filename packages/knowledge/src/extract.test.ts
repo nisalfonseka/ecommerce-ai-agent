@@ -131,6 +131,17 @@ describe("htmlToText", () => {
     );
   });
 
+  it("normalises whitespace in linear time on a page at the 2 MB fetch cap", () => {
+    // Empty cells each add a space separator: a long run of spaces with no line break on either side.
+    // ~70 ms alone and ~1 s with the whole monorepo suite running in parallel; the quadratic regex took ~25 s.
+    const html = `Kept${"<td></td>".repeat(230_000)}text`;
+    const started = performance.now();
+    const text = htmlToText(html);
+    expect(performance.now() - started).toBeLessThan(3000);
+    expect(text).toBe("Kept text");
+    expect(htmlToText("<p>a</p> \n <p> b </p><td>c</td> <td>d</td>")).toBe("a\n\nb\n\nc d");
+  });
+
   it("handles nested dropped elements and unclosed tags", () => {
     expect(htmlToText("<nav><nav>a</nav>b</nav><p>kept")).toBe("kept");
     expect(htmlToText("<p>text <script>never closed")).toBe("text");

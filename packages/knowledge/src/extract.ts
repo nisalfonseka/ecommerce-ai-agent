@@ -171,12 +171,25 @@ export function htmlToText(html: string): string {
     }
   }
   flush();
+  // Spaces around line breaks are trimmed line by line: the regex / *\n */ backtracked quadratically on a long
+  // run of spaces with no line break (e.g. thousands of empty table cells, each adding a space).
   return out
     .join("")
-    .replace(/ *\n */g, "\n")
+    .split("\n")
+    .map(trimSpaces)
+    .join("\n")
     .replace(/ {2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/** Removes leading and trailing U+0020 spaces only (flush() has already turned other whitespace into them). */
+function trimSpaces(line: string): string {
+  let start = 0;
+  let end = line.length;
+  while (start < end && line[start] === " ") start++;
+  while (end > start && line[end - 1] === " ") end--;
+  return line.slice(start, end);
 }
 
 /**

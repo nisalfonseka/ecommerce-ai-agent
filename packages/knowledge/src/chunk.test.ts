@@ -105,4 +105,85 @@ describe("chunkText", () => {
     expect(chunkText("")).toEqual([]);
     expect(chunkText("   \n\n# Only a heading\n")).toEqual([]);
   });
+
+  it("strips only a closing run of #s that follows whitespace, as CommonMark does", () => {
+    const doc = [
+      "# Returns ##",
+      "Body one.",
+      "## Learn C#",
+      "Body two.",
+      "### foo#",
+      "Body three.",
+      "#### Care ###   ",
+      "Body four.",
+      "# \t Spaced title\t",
+      "Body five.",
+    ].join("\n\n");
+    expect(chunkText(doc).map((chunk) => chunk.heading)).toEqual([
+      "Returns",
+      "Returns > Learn C#",
+      "Returns > Learn C# > foo#",
+      "Returns > Learn C# > foo# > Care",
+      "Spaced title",
+    ]);
+  });
+
+  it("recognises a heading only with 1–6 #s, a space or tab, and some title text", () => {
+    for (const line of ["#hashtag", "####### Seven", "#   ", "# ###"]) {
+      expect(chunkText(`${line}\n\nBody.`)[0]?.heading, line).toBeNull();
+    }
+    expect(chunkText("###### Six\n\nBody.")[0]?.heading).toBe("Six");
+    expect(chunkText("#\tTabbed\n\nBody.")[0]?.heading).toBe("Tabbed");
+  });
+
+  it("splits a long paragraph at sentence ends and line breaks, not at other whitespace", () => {
+    const filler = Array.from({ length: 60 }, (_, i) => `Filler sentence number ${i} is here.`).join(" ");
+    const paragraph = `Exchanges within 7 days.   Refunds   take five days!\tCall us?  Keep tags  \n  on items। සිංහල වාක්‍යය. ${filler}`;
+    expect(paragraph.length).toBeGreaterThan(2000);
+    const [first] = chunkText(paragraph);
+    expect(first?.text).toMatch(
+      /^Exchanges within 7 days\. Refunds {3}take five days! Call us\? Keep tags on items। සිංහල වාක්‍යය\. Filler sentence number 0 is here\. Filler/,
+    );
+  });
+});
+
+// Uploads run chunkText on the engine's request thread, so hostile text must not make it superlinear.
+describe("chunkText on hostile input (200,000 chars)", () => {
+  const BUDGET_MS = 1000;
+  const timed = (text: string) => {
+    const started = performance.now();
+    const chunks = chunkText(text);
+    return { chunks, ms: performance.now() - started };
+  };
+
+  it("a run of spaces between two letters", () => {
+    const { chunks, ms } = timed(`a${" ".repeat(199_998)}b`);
+    expect(ms).toBeLessThan(BUDGET_MS);
+    expect(chunks.map((chunk) => chunk.text)).toEqual(["a b"]);
+  });
+
+  it('a heading line "# a", spaces, "#x" (no closing sequence)', () => {
+    const line = `# a${" ".repeat(199_995)}#x`;
+    const { chunks, ms } = timed(`${line}\n\nBody.`);
+    expect(ms).toBeLessThan(BUDGET_MS);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.heading).toBe(line.slice(2));
+  });
+
+  it("a heading line with a line separator in it", () => {
+    const { ms } = timed(`# ${" ".repeat(199_990)}a b\n\nBody.`);
+    expect(ms).toBeLessThan(BUDGET_MS);
+  });
+
+  it('repeated "\\n \\n \\n"', () => {
+    const { chunks, ms } = timed("\n \n \n".repeat(40_000));
+    expect(ms).toBeLessThan(BUDGET_MS);
+    expect(chunks).toEqual([]);
+  });
+
+  it("a paragraph of whitespace runs that hold no line break", () => {
+    const { chunks, ms } = timed(`a${" \t ".repeat(66_000)}b. c`);
+    expect(ms).toBeLessThan(BUDGET_MS);
+    expect(chunks.map((chunk) => chunk.text)).toEqual(["a b. c"]);
+  });
 });
