@@ -5,6 +5,7 @@ import { createDb, schema, upsertAttributedOrder, withTenant } from "@ace/db";
 import type { JobName, JobPayload, JobQueue } from "@ace/db/jobs";
 import { createTestDatabase } from "@ace/db/testing";
 import { createDemoEmbedder, ingestDocument } from "@ace/knowledge";
+import { makePdf, textPage } from "@ace/knowledge/testing";
 import { createDemoEnricher, enrichStoredProduct, syncProduct } from "@ace/search";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -523,6 +524,24 @@ describe.skipIf(testDb === null)("admin API", () => {
         expect(await res.json()).toMatchObject({ error: { code: "invalid_input" } });
       }
       expect(jobs.sends).toEqual([]);
+    });
+
+    it("answers 400 empty for heading-only text and pdf_too_long for a PDF over 300 pages", async () => {
+      const s = await store("Knowledge Limits");
+      jobs.sends = [];
+      const headings = await call("POST", base(s), markdown("Headings", "# Returns\n\n## Exchanges"));
+      expect(headings.status).toBe(400);
+      expect(await headings.json()).toMatchObject({ error: { code: "empty" } });
+      const pages = new Array<string>(301).fill(textPage(["Exchanges within 7 days"]));
+      const long = await call("POST", base(s), {
+        title: "Long PDF",
+        source: { type: "pdf", base64: makePdf({ pages }).toString("base64") },
+      });
+      expect(long.status).toBe(400);
+      expect(await long.json()).toMatchObject({ error: { code: "pdf_too_long" } });
+      expect(jobs.sends).toEqual([]);
+      const { items } = (await (await call("GET", base(s))).json()) as { items: unknown[] };
+      expect(items).toEqual([]);
     });
 
     it("limits the upload body to 15 MB", async () => {

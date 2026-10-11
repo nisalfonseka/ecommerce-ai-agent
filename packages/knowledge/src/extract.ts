@@ -1,10 +1,10 @@
-import { getDocumentProxy, extractText as pdfExtractText } from "unpdf";
 import { z } from "zod";
+import { chunkText } from "./chunk";
 import { KnowledgeSourceError } from "./errors";
 import { fetchPublicUrl } from "./fetch-url";
+import { MAX_PDF_BYTES, pdfToText } from "./pdf-text";
 
 const MAX_TEXT_CHARS = 200_000;
-const MAX_PDF_BYTES = 10 * 1024 * 1024;
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
 /** What the admin API accepts. Limits are checked again in extractText. */
@@ -179,38 +179,23 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
-async function pdfToText(base64: string): Promise<string> {
-  const bytes = Buffer.from(base64, "base64");
-  if (bytes.length > MAX_PDF_BYTES) throw new KnowledgeSourceError("too_large");
-  let pdf: Awaited<ReturnType<typeof getDocumentProxy>>;
-  try {
-    // The bundled pdf.js no longer compiles font programs with eval (the CVE-2024-4367 path is gone).
-    pdf = await getDocumentProxy(new Uint8Array(bytes));
-  } catch {
-    throw new KnowledgeSourceError("bad_pdf");
-  }
-  try {
-    const { text } = await pdfExtractText(pdf, { mergePages: false });
-    return text.join("\n\n");
-  } catch {
-    throw new KnowledgeSourceError("bad_pdf");
-  } finally {
-    await pdf.loadingTask.destroy().catch(() => undefined);
-  }
-}
-
-/** Line endings normalised, NUL removed (Postgres text rejects it), trimmed; refuses empty or oversized text. */
+/**
+ * Line endings normalised, NUL removed (Postgres text rejects it), trimmed. Refuses oversized text, and text
+ * with nothing to retrieve: empty, or headings only (it would chunk to nothing and be "ready" with no chunks).
+ */
 function finish(text: string): string {
   const clean = text.replace(/\r\n?/g, "\n").replaceAll("\u0000", "").trim();
   if (clean === "") throw new KnowledgeSourceError("empty");
   if (clean.length > MAX_TEXT_CHARS) throw new KnowledgeSourceError("too_large");
+  if (chunkText(clean).length === 0) throw new KnowledgeSourceError("empty");
   return clean;
 }
 
 /**
  * Turns an uploaded source into the text that is stored and chunked. Markdown passes through, PDFs are read
- * page by page with unpdf (pages joined by blank lines), and URLs are fetched with `fetchUrl` (SSRF-checked)
- * and converted from HTML when needed. Expected failures are KnowledgeSourceError.
+ * page by page with bounded work (pdfToText: page cap, text cap, deadline; pages joined by blank lines), and
+ * URLs are fetched with `fetchUrl` (SSRF-checked) and converted from HTML when needed. Expected failures are
+ * KnowledgeSourceError.
  */
 export async function extractText(
   source: KnowledgeSource,
@@ -221,7 +206,7 @@ export async function extractText(
       if (source.text.length > MAX_TEXT_CHARS) throw new KnowledgeSourceError("too_large");
       return { text: finish(source.text), sourceUrl: null };
     case "pdf":
-      return { text: finish(await pdfToText(source.base64)), sourceUrl: null };
+      return { text: finish(await pdfToText(source.base64, MAX_TEXT_CHARS)), sourceUrl: null };
     case "url": {
       const page = await fetchUrl(source.url);
       const text = page.contentType === "text/html" ? htmlToText(page.body) : page.body;

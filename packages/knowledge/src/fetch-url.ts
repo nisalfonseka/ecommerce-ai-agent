@@ -244,6 +244,12 @@ async function readCapped(response: Response, maxBytes: number, signal: AbortSig
   }
 }
 
+/** Connection failures after the address passed the check (refused, reset, TLS) become `unreachable`. */
+function asUnreachable(error: unknown): never {
+  if (error instanceof KnowledgeSourceError) throw error;
+  throw new KnowledgeSourceError("unreachable");
+}
+
 function discard(response: Response): void {
   void response.body?.cancel().catch(() => undefined);
 }
@@ -269,13 +275,7 @@ export async function fetchPublicUrl(url: string, opts: FetchPublicUrlOptions = 
       const request = injected
         ? injected(current.href, { redirect: "manual", signal, headers: REQUEST_HEADERS })
         : requestPinned(current, address, signal);
-      let response: Response;
-      try {
-        response = await untilAborted(request, signal);
-      } catch (error) {
-        if (error instanceof KnowledgeSourceError) throw error;
-        throw new KnowledgeSourceError("unreachable");
-      }
+      const response = await untilAborted(request, signal).catch(asUnreachable);
       if (REDIRECT_STATUSES.has(response.status)) {
         discard(response);
         const location = response.headers.get("location");
@@ -304,7 +304,8 @@ export async function fetchPublicUrl(url: string, opts: FetchPublicUrlOptions = 
         discard(response);
         throw new KnowledgeSourceError("too_large");
       }
-      const body = await untilAborted(readCapped(response, maxBytes, signal), signal);
+      // A connection that drops mid-body (reset, truncated TLS) fails the read with a raw stream error.
+      const body = await untilAborted(readCapped(response, maxBytes, signal), signal).catch(asUnreachable);
       return { body, contentType, finalUrl: current.href };
     }
   } finally {

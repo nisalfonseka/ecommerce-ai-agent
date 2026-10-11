@@ -409,8 +409,9 @@ export function registerAdminRoutes(app: Hono<WidgetEnv>, deps: AdminDeps): void
     return tenantId && storeId && UUID.safeParse(storeId).success ? { tenantId, storeId } : null;
   };
 
-  // Knowledge upload (workflow A6). Extraction runs here (markdown and PDF are quick; a URL is bounded by the
-  // fetch limits), then the worker chunks and embeds. Re-uploading a title replaces it and bumps its version.
+  // Knowledge upload (workflow A6). Extraction runs here (markdown is quick; a PDF is bounded by 300 pages, the
+  // text cap and a 20 s deadline checked between pages; a URL by the fetch limits), then the worker chunks and
+  // embeds. Re-uploading a title replaces it and bumps its version. Every KnowledgeSourceError is a 400.
   admin.post(
     "/tenants/:tenantId/stores/:storeId/knowledge",
     bodyLimit({

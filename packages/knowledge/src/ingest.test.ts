@@ -9,7 +9,7 @@ import {
   withTenant,
 } from "@ace/db";
 import { createTestDatabase } from "@ace/db/testing";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDemoEmbedder, type Embedder } from "./embedding";
 import { ingestDocument } from "./ingest";
 
@@ -117,6 +117,18 @@ describe.skipIf(testDb === null)("ingestDocument", () => {
     );
     const { doc, chunks } = await read(id);
     expect(doc).toMatchObject({ status: "pending", version: 2 });
+    expect(chunks).toEqual([]);
+  });
+
+  it("marks a document with nothing to chunk failed (empty) without calling the embedder", async () => {
+    const { id } = await upload("Heading only", "# Title\n\n## Subtitle");
+    const embed = vi.fn(createDemoEmbedder().embed);
+    expect(
+      await ingestDocument({ db: app.db, tenantId, storeId, embedder: { model: "demo:hash-v1", embed } }, id),
+    ).toBe("empty");
+    expect(embed).not.toHaveBeenCalled();
+    const { doc, chunks } = await read(id);
+    expect(doc).toMatchObject({ status: "error", error: "empty", chunkCount: 0, version: 1 });
     expect(chunks).toEqual([]);
   });
 

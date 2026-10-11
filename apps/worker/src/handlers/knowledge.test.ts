@@ -22,7 +22,7 @@ describe.skipIf(testDb === null)("knowledge.ingest", () => {
     await testDb?.drop();
   });
 
-  async function storeWithDocument(search: Record<string, unknown>) {
+  async function storeWithDocument(search: Record<string, unknown>, content = CONTENT) {
     const store = await newStore(app.db, search);
     const { id } = await withTenant(app.db, store.tenantId, (tx) =>
       createDocument(tx, store.tenantId, {
@@ -30,8 +30,8 @@ describe.skipIf(testDb === null)("knowledge.ingest", () => {
         title: "Returns",
         sourceType: "markdown",
         sourceUrl: null,
-        content: CONTENT,
-        contentHash: createHash("sha256").update(CONTENT).digest("hex"),
+        content,
+        contentHash: createHash("sha256").update(content).digest("hex"),
       }),
     );
     return { ...store, documentId: id };
@@ -92,6 +92,20 @@ describe.skipIf(testDb === null)("knowledge.ingest", () => {
       /embedding failed/,
     );
     expect((await read(s)).doc).toMatchObject({ status: "error", error: "embedding_failed" });
+  });
+
+  it("marks a document with nothing to chunk empty and completes, since a retry cannot help", async () => {
+    const s = await storeWithDocument({ mode: "index", embeddingModel: "demo:x" }, "# Returns");
+    const embedderFor = vi.fn(() => createDemoEmbedder());
+    const { logger, lines } = capturingLogger();
+    const deps = testDeps(app.db, { embedderFor, logger });
+    await expect(handleKnowledgeIngest(deps, fakeJob(JOBS.knowledgeIngest, s))).resolves.toBeUndefined();
+    expect(embedderFor).not.toHaveBeenCalled();
+    expect(await read(s)).toMatchObject({
+      doc: { status: "error", error: "empty", chunkCount: 0 },
+      chunks: [],
+    });
+    expect(lines.at(-1)).toMatchObject({ msg: "knowledge document empty", outcome: "empty" });
   });
 
   it("completes quietly for a deleted document", async () => {

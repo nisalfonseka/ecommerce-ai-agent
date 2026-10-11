@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { KnowledgeSourceError } from "./errors";
 import { extractText, htmlToText, KnowledgeSourceSchema } from "./extract";
+import { makePdf, textPage } from "./testing";
 
 const PDF_BASE64 = readFileSync(new URL("./__fixtures__/policy.pdf", import.meta.url)).toString("base64");
 
@@ -32,6 +33,25 @@ describe("extractText", () => {
     const notPdf = Buffer.from("hello, not a pdf").toString("base64");
     expect(await codeOf(extractText({ type: "pdf", base64: notPdf }))).toBe("bad_pdf");
     expect(await codeOf(extractText({ type: "markdown", text: "  \n\n " }))).toBe("empty");
+  });
+
+  it("refuses text that has headings only, because it chunks to nothing", async () => {
+    for (const text of ["# Title", "# Returns\n\n## Exchanges\n", "### Care ###"]) {
+      expect(await codeOf(extractText({ type: "markdown", text })), text).toBe("empty");
+    }
+    const fetchUrl = async () => ({
+      body: "<h1>Returns</h1><nav>Home</nav>",
+      contentType: "text/html",
+      finalUrl: "x",
+    });
+    expect(await codeOf(extractText({ type: "url", url: "https://shop.example.lk/r" }, fetchUrl))).toBe(
+      "empty",
+    );
+  });
+
+  it("refuses a PDF with more than 300 pages", async () => {
+    const pdf = makePdf({ pages: new Array<string>(301).fill(textPage(["Exchanges within 7 days"])) });
+    expect(await codeOf(extractText({ type: "pdf", base64: pdf.toString("base64") }))).toBe("pdf_too_long");
   });
 
   it("fetches a URL with the given fetcher and converts HTML to text", async () => {

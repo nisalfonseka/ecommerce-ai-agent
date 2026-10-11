@@ -8,7 +8,11 @@ export type KnowledgeSourceErrorCode =
   | "unreachable"
   /** The PDF could not be parsed. */
   | "bad_pdf"
-  /** Extraction produced no text (e.g. a scanned PDF or an empty page). */
+  /** Reading the PDF's text passed the extraction deadline (20 s). */
+  | "pdf_timeout"
+  /** The PDF has more pages than are read (300). */
+  | "pdf_too_long"
+  /** Extraction produced nothing to retrieve: no text (e.g. a scanned PDF), or headings only. */
   | "empty"
   | `http_${number}`;
 

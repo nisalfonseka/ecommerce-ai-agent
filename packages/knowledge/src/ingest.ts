@@ -11,11 +11,15 @@ export interface IngestDeps {
 
 /** Stored on the document when embedding fails; the cause is not stored (it may echo content). */
 export const EMBEDDING_FAILED = "embedding_failed";
+/** Stored on the document when its text chunks to nothing (e.g. headings only). */
+export const DOCUMENT_EMPTY = "empty";
 
 /**
  * The knowledge.ingest job body. Loads the document (its text was extracted at upload), chunks it, embeds
  * the chunks (purpose "document", heading path included) and swaps them in atomically, marking it ready.
  * - "error": embedding failed; status error + "embedding_failed", the previous version's chunks stay.
+ * - "empty": the text chunks to nothing; status error + "empty" without calling the embedder, the previous
+ *   version's chunks stay. Retrying cannot help. Uploads refuse such text, so this guards older rows.
  * - "missing": the document is gone, is not in this store, or was re-uploaded meanwhile (that upload's own
  *   job ingests the new version).
  * Safe to retry: chunks are replaced, never appended.
@@ -23,11 +27,17 @@ export const EMBEDDING_FAILED = "embedding_failed";
 export async function ingestDocument(
   deps: IngestDeps,
   documentId: string,
-): Promise<"ready" | "error" | "missing"> {
+): Promise<"ready" | "error" | "empty" | "missing"> {
   const { db, tenantId, storeId, embedder } = deps;
   const doc = await withTenant(db, tenantId, (tx) => getDocument(tx, storeId, documentId));
   if (!doc) return "missing";
   const chunks = chunkText(doc.content);
+  if (chunks.length === 0) {
+    const marked = await withTenant(db, tenantId, (tx) =>
+      setDocumentStatus(tx, storeId, documentId, doc.version, { status: "error", error: DOCUMENT_EMPTY }),
+    );
+    return marked ? "empty" : "missing";
+  }
   let vectors: number[][];
   try {
     vectors = await embedder.embed(
