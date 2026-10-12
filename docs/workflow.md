@@ -35,6 +35,18 @@ and how the system improves afterwards. Architecture details are in the
 | A9 | Us | Issue a widget key, set allowed origins, give the install snippet `<script src=".../ace.js" data-key="pk_…" async></script>`. Storefront passes the cart ID and, if logged in, a signed identity token. | Widget visible on staging |
 | A10 | Merchant | Soft launch (staff only) → public launch. Set up handoff notifications (email/WhatsApp to staff). | Live; dashboard shows conversations |
 
+Phase 6 admin sequence (all calls use the admin bearer key):
+
+- **A4:** `POST /admin/tenants/:tenantId/stores/:storeId/sync` with `{ "full": true }`; poll `GET` on the same
+  path until `state.status` is `ready`, `counts.active` matches the live catalog, and stale enrichment/embedding
+  counts reach zero.
+- **A5:** `GET /admin/tenants/:tenantId/stores/:storeId/enrichment`; apply reviewed corrections with
+  `PUT /admin/tenants/:tenantId/stores/:storeId/products/:productId/overrides`.
+- **A6:** `POST /admin/tenants/:tenantId/stores/:storeId/knowledge` with a title and a `markdown`, `pdf` or `url`
+  source; poll `GET .../knowledge` until every document is `ready`.
+- **A7:** `POST /admin/tenants/:tenantId/stores/:storeId/webhook-secret`; configure the returned secret and
+  `/webhooks/:storeId` path on the platform, then send a signed test event.
+
 ---
 
 ## B. Catalog sync and enrichment (continuous)
@@ -222,6 +234,14 @@ request; a policy question with low retrieval confidence; a tool failure that bl
 `search_knowledge` → top-k chunks above the score threshold → answer **with citations** (document title). Below the
 threshold: "I'm not sure, let me get someone from the team" → flow H. Product facts (price, stock, sizes available)
 never come from RAG.
+
+Retrieval is scoped to the turn's tenant and store and searches only `ready` documents. It fuses the best eight
+pgvector and full-text matches with reciprocal-rank fusion. A passage qualifies when its cosine score meets the
+store's `search.knowledgeThreshold` or it ranks in both legs' top three. Query-embedding failure degrades to qualified
+full-text matches (`ts_rank_cd ≥ 0.1`) instead of failing the turn. The default real-model threshold is 0.6 until it is
+calibrated with `pnpm search-evals --knowledge --embedding <model>`; the deterministic demo threshold is 0.15. The
+tool returns at most three 1,200-character passages, wrapped as untrusted store data. The answer must name the source;
+no confident passage means the assistant says it is not sure and directs the shopper to the store.
 
 ---
 

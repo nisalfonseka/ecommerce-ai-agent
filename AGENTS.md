@@ -18,11 +18,14 @@ adapter**. The agent only knows the universal commerce contract, never Shopify, 
 
 ## Current status
 
-**Phases 1–5 are built, except what waits on the owner.** On hold:
+**Phases 1–5 are built, except what waits on the owner. Phase 6 is implemented on
+`phase-6-search-sync-knowledge`; its non-database checks are green.** The PostgreSQL/pgvector exit test and local
+stack smoke are pending on a machine with PostgreSQL or Docker; the current Mac has neither server. On hold:
 - live evals and D3 (Phase 2 Task 10; no paid API keys yet)
 - the VPS staging deploy (Phase 3 Task 12) and the Phase 5 staging exit, which also needs PayHere sandbox credentials
+- Phase 6 live search/knowledge calibration and staging propagation check (paid embedding key + VPS)
 
-Decided: D1 = Medusa v2 and D4 = no pilot client yet, so the store is generic (ADR-006). COD is confirmed by a UI action (ADR-007, provisional). E1 and E2 are built provisionally (ADR-004; `model-prices.json` with null prices). Without API keys, `scripts/dev-stack.sh start` (memory store) and `scripts/store-stack.sh start` (Medusa reference store + storefront) run the product locally with the keyless demo model. **Next:** whatever the owner unblocks first, or the Phase 6 plan (search, sync, knowledge). Do not scaffold later phases early.
+Decided: D1 = Medusa v2 and D4 = no pilot client yet, so the store is generic (ADR-006). COD is confirmed by a UI action (ADR-007, provisional). E1 and E2 are built provisionally (ADR-004; `model-prices.json` with null prices). Without API keys, `scripts/dev-stack.sh start` (memory store) and `scripts/store-stack.sh start` (Medusa reference store + storefront) run the engine, worker, indexed search and cited knowledge with deterministic demo models. **Next:** finish the Phase 6 environment/owner-gated exits, or whatever earlier owner gate is unblocked first. Do not scaffold later phases early.
 
 ## Architecture rules (non-negotiable)
 
@@ -67,7 +70,7 @@ Decided: D1 = Medusa v2 and D4 = no pilot client yet, so the store is generic (A
 ```text
 apps/
   engine/            HTTP API: chat (SSE), UI actions, webhooks, admin        (Phase 3)
-  worker/            pg-boss jobs: sync, enrichment, embeddings, retention    (Phase 6)
+  worker/            pg-boss jobs: sync, enrichment, embeddings, attribution, retention
   dashboard/         merchant inbox, settings, analytics                      (Phase 7)
   reference-store/   Medusa backend + Next.js storefront, own npm toolchain   (Phase 5, ADR-006)
 packages/
@@ -75,13 +78,13 @@ packages/
   adapter-memory/    in-memory clothing store for tests/evals/dev             (Phase 1)
   adapter-medusa/    reference store adapter                                  (Phase 5)
   adapter-shopify/   Shopify via UCP / Storefront MCP                         (Phase 9)
-  providers/         store → adapter + idempotency (+ search index) factory   (Phase 6)
+  providers/         store → adapter + idempotency + search-index factory
   agent/             tools, ToolContext, prompts, guardrails, agent loop      (Phase 2)
   evals/             golden conversations + scorers + runner                  (Phase 2)
   db/                Drizzle schema, migrations, RLS, encryption              (Phase 3)
   widget/            embeddable chat widget                                   (Phase 4)
-  search/            read model, enrichment, hybrid search                    (Phase 6)
-  knowledge/         document ingestion and retrieval                         (Phase 6)
+  search/            read model, sync, enrichment, hybrid search
+  knowledge/         document ingestion, embeddings, thresholded retrieval
 docs/
   adr/  superpowers/specs/  superpowers/plans/  workflow.md
 ```
@@ -106,12 +109,14 @@ pnpm evals --models google:gemini-flash-latest --only si   # one model, Sinhala 
 pnpm evals --models google:gemini-flash-latest --rpm 5    # free tier: max 5 model requests/minute
 pnpm search-evals --embedding google:gemini-embedding-001 --enrichment google:gemini-flash-lite-latest
                         # live search relevance (nDCG@5, 50 queries); needs keys + ACE_TEST_DATABASE_URL; costs money
+pnpm search-evals --knowledge --embedding google:gemini-embedding-001
+                        # calibrate knowledgeThreshold for a real embedder; needs its API key; costs money
 scripts/test-postgres.sh start   # throwaway Postgres for @ace/db / @ace/engine integration tests (prints ACE_TEST_DATABASE_URL)
-pnpm seed               # two demo tenants + widget keys (needs DATABASE_URL; keyless demo model by default)
-scripts/dev-stack.sh start   # local Postgres + engine (demo model) + demo store page on http://localhost:5173; `stop` to end
+pnpm seed               # two indexed demo tenants + two ready knowledge docs + widget keys (needs DATABASE_URL)
+scripts/dev-stack.sh start   # Postgres + engine + worker + indexed demo store on http://localhost:5173; `stop` to end
 scripts/reference-store.sh start   # Medusa reference store on :9000 (ADR-006); keys + fixtures in ${TMPDIR:-/tmp}/ace-store/seed-output.json
 ACE_MEDUSA_SEED_OUTPUT=/tmp/ace-store/seed-output.json pnpm --filter @ace/adapter-medusa test   # Medusa conformance
-scripts/store-stack.sh start   # Medusa :9000 + engine :8080 (demo model, Medusa adapter) + storefront :8000 with the widget; `stop` to end
+scripts/store-stack.sh start   # Medusa :9000 + engine/worker :8080 + indexed/cited storefront :8000; `stop` to end
 (cd apps/reference-store/storefront && npm run e2e)   # Playwright: reference store end to end (starts and stops store-stack)
 pnpm --filter @ace/widget e2e   # Playwright: widget in Chromium against the dev stack (CHROME_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome in the cloud container)
 ```
