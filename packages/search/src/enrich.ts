@@ -252,7 +252,7 @@ export async function enrichStoredProduct(
 ): Promise<"enriched" | "skipped" | "missing"> {
   const loaded = await withTenant(deps.db, deps.tenantId, async (tx) => {
     const row = await getCatalogProduct(tx, deps.storeId, productId);
-    if (!row || row.status !== "active") return null;
+    if (row?.status !== "active") return null;
     return { row, variants: await getCatalogVariants(tx, deps.storeId, productId) };
   });
   if (!loaded) return "missing";

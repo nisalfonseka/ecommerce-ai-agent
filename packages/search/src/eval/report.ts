@@ -15,7 +15,7 @@ export function renderRelevanceReport(
     "",
     ...options.models.map((model) => `- ${model}`),
     "",
-    "| Overall | " + Object.keys(report.byLang).join(" | ") + " |",
+    `| Overall | ${Object.keys(report.byLang).join(" | ")} |`,
     `|---|${Object.keys(report.byLang)
       .map(() => "---")
       .join("|")}|`,
