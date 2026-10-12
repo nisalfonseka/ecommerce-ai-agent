@@ -5,7 +5,7 @@ import { ListProductsResultSchema, ProductSchema, SearchProductsResultSchema } f
 import { CheckoutHandoffSchema } from "../checkout";
 import { CodQuoteSchema } from "../cod";
 import { CommerceError, type CommerceErrorCode } from "../errors";
-import type { VerifiedIdentity } from "../identity";
+import { type VerifiedIdentity, VerifiedIdentitySchema } from "../identity";
 import { InventoryLevelSchema } from "../inventory";
 import { OrderSchema } from "../orders";
 import type { CommerceProvider } from "../provider";
@@ -35,6 +35,8 @@ const COD_DETAILS = {
   address: { line1: "1 Test Road", city: "Colombo", countryCode: "LK" },
 } as const;
 const COD_PHONE = "+94770000001";
+/** Another number that belongs to no order, e.g. the same shopper's second SIM. */
+const OTHER_PHONE = "+94770000002";
 
 const UTC_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
@@ -127,6 +129,12 @@ export function describeProviderConformance(
     });
 
     // fixtures ------------------------------------------------------------
+
+    it("fixture identities follow the identity rules for their verification method", () => {
+      for (const identity of [f.orderOwner, f.stranger]) {
+        expect(() => VerifiedIdentitySchema.parse(identity)).not.toThrow();
+      }
+    });
 
     it("fixtures describe the store correctly", async (ctx) => {
       needs(ctx, "inventory.read");
@@ -534,6 +542,24 @@ export function describeProviderConformance(
       );
     });
 
+    it("lookupOrder and listOrders reject an identity whose fields do not fit its method", async (ctx) => {
+      needs(ctx, "orders.lookup");
+      const verifiedAt = new Date().toISOString();
+      // Built by hand: the type allows mixed fields, the schema must not.
+      const mixed = [
+        { method: "email_otp", email: "mixed@example.com", phone: COD_PHONE, verifiedAt },
+        { method: "phone_otp", phone: COD_PHONE, email: "mixed@example.com", verifiedAt },
+        { method: "host_session", email: "mixed@example.com", verifiedAt },
+      ] as VerifiedIdentity[];
+      for (const identity of mixed) {
+        await expectCommerceError(
+          provider.lookupOrder({ orderNumber: f.orderNumber, identity }),
+          "INVALID_INPUT",
+        );
+        await expectCommerceError(provider.listOrders({ identity }), "INVALID_INPUT");
+      }
+    });
+
     it("listOrders only returns orders owned by the identity", async (ctx) => {
       needs(ctx, "orders.lookup");
       const mine = await provider.listOrders({ identity: f.orderOwner });
@@ -595,6 +621,30 @@ export function describeProviderConformance(
         expect(await provider.lookupOrder({ orderNumber: order.number, identity: f.stranger })).toBeNull();
         await expectCommerceError(provider.placeCodOrder(cart.id, COD_DETAILS, writeKey()), "CONFLICT");
         await expectCommerceError(addOne(cart), "CONFLICT");
+      });
+    });
+
+    it("finds a COD order by the phone or the email it was placed with, each only through its own method", async (ctx) => {
+      needs(ctx, "cart.write", "orders.place_cod", "orders.lookup");
+      await withCodOrder(async (cart) => {
+        const order = await provider.placeCodOrder(cart.id, COD_DETAILS, writeKey());
+        const verifiedAt = new Date().toISOString();
+        const byPhone = (phone: string): VerifiedIdentity => ({ method: "phone_otp", phone, verifiedAt });
+        const byEmail = (email: string): VerifiedIdentity => ({ method: "email_otp", email, verifiedAt });
+        const lookup = (identity: VerifiedIdentity) =>
+          provider.lookupOrder({ orderNumber: order.number, identity });
+
+        expect((await lookup(byPhone(COD_PHONE)))?.id).toBe(order.id);
+        expect((await lookup(byEmail(COD_DETAILS.email)))?.id).toBe(order.id);
+        expect((await lookup(byEmail(COD_DETAILS.email.toUpperCase())))?.id).toBe(order.id);
+
+        // The shopper's other number is a different phone identity, even though the order's email is theirs.
+        expect(await lookup(byPhone(OTHER_PHONE))).toBeNull();
+        expect(await lookup(byEmail("not-the-owner@example.com"))).toBeNull();
+        for (const identity of [byPhone(OTHER_PHONE), byEmail("not-the-owner@example.com")]) {
+          const listed = await provider.listOrders({ identity });
+          expect(listed.map((entry) => entry.number)).not.toContain(order.number);
+        }
       });
     });
 

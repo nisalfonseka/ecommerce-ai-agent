@@ -29,3 +29,11 @@ The agent depends only on `CommerceProvider` from `@ace/contracts`:
 
 - **v1.1 (2026-10-09):** added `updateCartAttributes` (under `cart.write`) so ACE can tag the host site's existing cart
   with `ace_conversation_id` for attribution (spec G2 + G14). Additive; no existing method changed.
+- **v1.2 (2026-10-12):** identity rules (Phase 7, spec G1). A `VerifiedIdentity` carries only what its method proves:
+  `email_otp` an email, `phone_otp` an E.164 phone, `host_session` an `externalCustomerId` (plus an email or phone only
+  when the signed host token asserts it as verified); the schema rejects any other combination.
+  `identityMatches` compares only the identifier the method verified, so an email proved by OTP never authorises an
+  order through its phone field, and the reverse. Phones are normalised to E.164 on both sides
+  (`normalizePhone`: `0771234567`, `94771234567` and `+94 77 123 4567` are one number). Emails are trimmed and
+  ASCII case-folded (`normalizeEmail`); plus tags and gmail dots are not folded, because they are not equivalent
+  on every mail provider. Tightens validation only; no method or type changed.

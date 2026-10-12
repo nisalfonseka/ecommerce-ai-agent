@@ -1,20 +1,9 @@
 import { z } from "zod";
+import { normalizePhone } from "./identity";
 import { MoneySchema } from "./money";
 
-const E164 = /^\+[1-9]\d{6,14}$/;
-
-/**
- * Normalises a shopper-typed phone number to E.164, or null. Numbers without a country code are read as Sri
- * Lankan (the primary market, spec A1): "077 123 4567" → "+94771234567".
- */
-export function normalizePhone(value: string): string | null {
-  const compact = value.replace(/[\s\-().]/g, "");
-  let candidate = compact;
-  if (/^0\d{9}$/.test(compact)) candidate = `+94${compact.slice(1)}`;
-  else if (/^94\d{9}$/.test(compact)) candidate = `+${compact}`;
-  return E164.test(candidate) ? candidate : null;
-}
-
+// Numbers without a country code are read as Sri Lankan (the primary market, spec A1):
+// "077 123 4567" → "+94771234567".
 const PhoneSchema = z.string().transform((value, ctx) => {
   const phone = normalizePhone(value);
   if (phone === null) {

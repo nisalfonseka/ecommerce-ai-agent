@@ -15,8 +15,9 @@ export interface ConformanceFixtures {
   outOfStockVariantId: string;
   /** An existing order owned by `orderOwner`. */
   orderNumber: string;
+  /** The order's owner. Must follow the identity rules: an `email_otp` identity carries only an email. */
   orderOwner: VerifiedIdentity;
-  /** An identity that owns no orders. */
+  /** An identity that owns no orders. Same shape rules as `orderOwner`. */
   stranger: VerifiedIdentity;
   /**
    * Optional test hooks into the store. Tests that need stock to change between calls are skipped without them.

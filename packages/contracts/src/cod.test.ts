@@ -1,27 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CodDetailsSchema, CodQuoteSchema, normalizePhone } from "./cod";
+import { CodDetailsSchema, CodQuoteSchema } from "./cod";
 
 const details = {
   name: "  Nimali Perera ",
   phone: "077 123 4567",
   address: { line1: "12 Galle Road", city: "Colombo 03", countryCode: "LK" },
 };
-
-describe("normalizePhone", () => {
-  it("reads local numbers as Sri Lankan and returns E.164", () => {
-    expect(normalizePhone("0771234567")).toBe("+94771234567");
-    expect(normalizePhone("077-123 4567")).toBe("+94771234567");
-    expect(normalizePhone("94771234567")).toBe("+94771234567");
-    expect(normalizePhone("+94 77 123 4567")).toBe("+94771234567");
-    expect(normalizePhone("+447700900123")).toBe("+447700900123");
-  });
-
-  it("returns null for anything that is not a phone number", () => {
-    for (const value of ["", "12345", "07712345678901234", "call me", "+0771234567"]) {
-      expect(normalizePhone(value)).toBeNull();
-    }
-  });
-});
 
 describe("CodDetailsSchema", () => {
   it("trims text and normalises the phone", () => {
