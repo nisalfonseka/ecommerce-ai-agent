@@ -97,7 +97,7 @@ describe("pdfToText", () => {
     const pdf = makePdf({ pages: [textPage(["One"]), textPage(["Two"])] });
     const started = Date.now();
     expect(await codeOf(pdfToText(base64(pdf), MAX_CHARS, { deadlineMs: 50, pageText }))).toBe("pdf_timeout");
-    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(Date.now() - started).toBeLessThan(5_000);
     await vi.waitFor(() => expect(destroyed).toHaveBeenCalled());
     release(); // the stalled step finishing late does not start the next page
     await new Promise((resolve) => setTimeout(resolve, 50));

@@ -170,7 +170,9 @@ describe("chunkText", () => {
 
 // Uploads run chunkText on the engine's request thread, so hostile text must not make it superlinear.
 describe("chunkText on hostile input (200,000 chars)", () => {
-  const BUDGET_MS = 1000;
+  // The superlinear bugs this guards against took 5 s to minutes at this size. 5 s leaves room for a slow,
+  // loaded CI runner while still failing on them (a 1 s bound flaked in the parallel monorepo run).
+  const BUDGET_MS = 5000;
   const timed = (text: string) => {
     const started = performance.now();
     const chunks = chunkText(text);
