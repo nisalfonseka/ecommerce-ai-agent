@@ -44,14 +44,16 @@ start() {
   stop >/dev/null
   local base url
   base="$(postgres_url)"
+  local psql
+  psql="$("$ROOT/scripts/test-postgres.sh" bin psql)"
   url="${base%/postgres}/$DB"
   [ -d "$BACKEND/node_modules" ] || (cd "$BACKEND" && npm ci --no-audit --no-fund --loglevel=error)
 
   export DATABASE_URL="$url" PORT STOREFRONT_URL BACKEND_URL="http://localhost:$PORT"
   export STORE_CORS="${STORE_CORS:-$STOREFRONT_URL,http://localhost:5173}"
   cd "$BACKEND"
-  if ! psql "$base" -qtAc "SELECT 1 FROM pg_database WHERE datname = '$DB'" | grep -q 1; then
-    psql "$base" -qc "CREATE DATABASE $DB"
+  if ! "$psql" "$base" -qtAc "SELECT 1 FROM pg_database WHERE datname = '$DB'" | grep -q 1; then
+    "$psql" "$base" -qc "CREATE DATABASE $DB"
     npx medusa db:migrate > "$STATE/migrate.log" 2>&1
     SEED_OUTPUT="$STATE/seed-output.json" npx medusa exec ./src/scripts/seed.ts > "$STATE/seed.log" 2>&1 || {
       echo "seed failed (log: $STATE/seed.log)" >&2
@@ -71,7 +73,9 @@ reset() {
   stop >/dev/null
   local base
   base="$(postgres_url)"
-  psql "$base" -qc "DROP DATABASE IF EXISTS $DB WITH (FORCE)"
+  local psql
+  psql="$("$ROOT/scripts/test-postgres.sh" bin psql)"
+  "$psql" "$base" -qc "DROP DATABASE IF EXISTS $DB WITH (FORCE)"
   rm -f "$STATE/seed-output.json"
   start
 }

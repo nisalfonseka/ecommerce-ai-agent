@@ -61,10 +61,13 @@ start() {
   stop >/dev/null
   local base
   base="$("$ROOT/scripts/test-postgres.sh" start | sed 's/^ACE_TEST_DATABASE_URL=//')"
+  local psql
+  psql="$("$ROOT/scripts/test-postgres.sh" bin psql)"
   local owner="${base%/postgres}/$DB"
   local app_url="postgres://ace_app:$APP_PASSWORD@${base#postgres://postgres@}"
   app_url="${app_url%/postgres}/$DB"
-  psql "$base" -qtAc "SELECT 1 FROM pg_database WHERE datname = '$DB'" | grep -q 1 || psql "$base" -qc "CREATE DATABASE $DB"
+  "$psql" "$base" -qtAc "SELECT 1 FROM pg_database WHERE datname = '$DB'" | grep -q 1 \
+    || "$psql" "$base" -qc "CREATE DATABASE $DB"
 
   cd "$ROOT/apps/engine"
   MIGRATION_DATABASE_URL="$owner" ACE_APP_DB_PASSWORD="$APP_PASSWORD" npx tsx src/migrate-cli.ts >/dev/null

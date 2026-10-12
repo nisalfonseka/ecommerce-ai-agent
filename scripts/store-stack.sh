@@ -77,7 +77,9 @@ start() {
   # Engine on a fresh database, so each start registers exactly one reference-store tenant.
   local base owner app_url
   base="$(postgres_url)"
-  psql "$base" -qc "DROP DATABASE IF EXISTS $DB WITH (FORCE)" -c "CREATE DATABASE $DB"
+  local psql
+  psql="$("$ROOT/scripts/test-postgres.sh" bin psql)"
+  "$psql" "$base" -qc "DROP DATABASE IF EXISTS $DB WITH (FORCE)" -c "CREATE DATABASE $DB"
   owner="${base%/postgres}/$DB"
   app_url="postgres://ace_app:$APP_PASSWORD@${base#*://*@}"
   app_url="${app_url%/postgres}/$DB"
