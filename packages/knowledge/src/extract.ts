@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { chunkText } from "./chunk";
+import { chunkText, MAX_CHUNKS_PER_DOCUMENT } from "./chunk";
 import { KnowledgeSourceError } from "./errors";
 import { fetchPublicUrl } from "./fetch-url";
 import { MAX_PDF_BYTES, pdfToText } from "./pdf-text";
@@ -112,7 +112,7 @@ export function htmlToText(html: string): string {
   const out: string[] = [];
   let text = "";
   const flush = () => {
-    if (text !== "") out.push(decodeEntities(text).replace(/[\s ]+/g, " "));
+    if (text !== "") out.push(decodeEntities(text).replace(/[\s\u00a0]+/g, " "));
     text = "";
   };
   /** Set while inside a dropped (non-raw) element; nested elements of the same name are counted. */
@@ -193,14 +193,17 @@ function trimSpaces(line: string): string {
 }
 
 /**
- * Line endings normalised, NUL removed (Postgres text rejects it), trimmed. Refuses oversized text, and text
- * with nothing to retrieve: empty, or headings only (it would chunk to nothing and be "ready" with no chunks).
+ * Line endings normalised, NUL removed (Postgres text rejects it), trimmed. Refuses oversized text (too many
+ * characters, or more than MAX_CHUNKS_PER_DOCUMENT chunks), and text with nothing to retrieve: empty, or
+ * headings only (it would chunk to nothing and be "ready" with no chunks).
  */
 function finish(text: string): string {
   const clean = text.replace(/\r\n?/g, "\n").replaceAll("\u0000", "").trim();
   if (clean === "") throw new KnowledgeSourceError("empty");
   if (clean.length > MAX_TEXT_CHARS) throw new KnowledgeSourceError("too_large");
-  if (chunkText(clean).length === 0) throw new KnowledgeSourceError("empty");
+  const chunks = chunkText(clean).length;
+  if (chunks === 0) throw new KnowledgeSourceError("empty");
+  if (chunks > MAX_CHUNKS_PER_DOCUMENT) throw new KnowledgeSourceError("too_large");
   return clean;
 }
 

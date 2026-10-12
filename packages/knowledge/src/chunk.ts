@@ -7,6 +7,12 @@ export interface Chunk {
   tokenEstimate: number;
 }
 
+/**
+ * More chunks than this and the document is refused (too_large): it bounds embedding cost and the rows a
+ * pathological upload (thousands of tiny sections) can create. A 200,000-char document of normal prose is ~110.
+ */
+export const MAX_CHUNKS_PER_DOCUMENT = 1_000;
+
 const CHARS_PER_TOKEN = 4;
 const TARGET_TOKENS = 500;
 const OVERLAP_TOKENS = 60;
@@ -33,13 +39,22 @@ interface Unit {
   sep: string;
 }
 
+// Heading sizes are capped because every section keeps its own joined path: uncapped, one 100,000-char title
+// over thousands of "## a" sections built over a billion characters of headings and ran V8 out of memory.
+/** A title longer than this keeps its first MAX_TITLE_CHARS − 1 characters plus "…". */
+const MAX_TITLE_CHARS = 200;
+/** A longer path drops its outermost titles first (see headingPath). */
+const MAX_HEADING_PATH_CHARS = 400;
+const PATH_SEPARATOR = " > ";
+
 const estimate = (text: string) => Math.ceil(text.length / CHARS_PER_TOKEN);
 const isBlank = (ch: string | undefined) => ch === " " || ch === "\t";
 
 /**
  * An ATX heading: 1–6 #s, a space or tab, then the title. Surrounding spaces and tabs are trimmed, and a
  * closing run of #s is removed only when it stands alone or follows a space or tab (CommonMark), so "C#" keeps
- * its #. A heading with no title text is not treated as one.
+ * its #. A heading with no title text is not treated as one. Titles over MAX_TITLE_CHARS are cut on a code
+ * point boundary and end with "…".
  */
 function parseHeading(line: string): { level: number; title: string } | null {
   const open = HEADING_OPEN.exec(line);
@@ -55,7 +70,31 @@ function parseHeading(line: string): { level: number; title: string } | null {
     end = hashes;
     while (end > start && isBlank(line[end - 1])) end--;
   }
-  return end > start ? { level, title: line.slice(start, end) } : null;
+  if (end <= start) return null;
+  if (end - start <= MAX_TITLE_CHARS) return { level, title: line.slice(start, end) };
+  let cut = start + MAX_TITLE_CHARS - 1;
+  const last = line.charCodeAt(cut - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut--; // never leave half of a surrogate pair
+  return { level, title: `${line.slice(start, cut)}…` };
+}
+
+/**
+ * The titles joined with " > ". When that is longer than MAX_HEADING_PATH_CHARS, the outermost titles are
+ * dropped first, so the nearest ancestors (the most specific context) stay. Titles are at most
+ * MAX_TITLE_CHARS, so the innermost one always fits.
+ */
+function headingPath(path: { title: string }[]): string {
+  let first = 0;
+  let length =
+    path.reduce((sum, entry) => sum + entry.title.length, 0) + PATH_SEPARATOR.length * (path.length - 1);
+  while (length > MAX_HEADING_PATH_CHARS && first < path.length - 1) {
+    length -= (path[first]?.title.length ?? 0) + PATH_SEPARATOR.length;
+    first++;
+  }
+  return path
+    .slice(first)
+    .map((entry) => entry.title)
+    .join(PATH_SEPARATOR);
 }
 
 /**
@@ -97,7 +136,7 @@ function splitSections(text: string): Section[] {
     const { level, title } = match;
     while (path.length > 0 && (path[path.length - 1]?.level ?? 0) >= level) path.pop();
     path.push({ level, title });
-    heading = path.map((entry) => entry.title).join(" > ");
+    heading = headingPath(path);
   }
   flush();
   return sections;

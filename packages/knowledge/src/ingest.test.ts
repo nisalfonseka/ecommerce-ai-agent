@@ -132,6 +132,19 @@ describe.skipIf(testDb === null)("ingestDocument", () => {
     expect(chunks).toEqual([]);
   });
 
+  it("marks a document over 1,000 chunks failed (too_large) without calling the embedder", async () => {
+    const faq = Array.from({ length: 1001 }, (_, i) => `## Q${i}\nA${i}.`).join("\n");
+    const { id } = await upload("Huge FAQ", faq);
+    const embed = vi.fn(createDemoEmbedder().embed);
+    expect(
+      await ingestDocument({ db: app.db, tenantId, storeId, embedder: { model: "demo:hash-v1", embed } }, id),
+    ).toBe("too_large");
+    expect(embed).not.toHaveBeenCalled();
+    const { doc, chunks } = await read(id);
+    expect(doc).toMatchObject({ status: "error", error: "too_large", chunkCount: 0 });
+    expect(chunks).toEqual([]);
+  });
+
   it("reports a document that is gone or belongs to another store as missing", async () => {
     const { id } = await upload("Care", POLICY_V1);
     const embedder = createDemoEmbedder();

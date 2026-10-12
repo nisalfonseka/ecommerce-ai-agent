@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { chunkText } from "./chunk";
 import { KnowledgeSourceError } from "./errors";
 import { extractText, htmlToText, KnowledgeSourceSchema } from "./extract";
 import { makePdf, textPage } from "./testing";
@@ -47,6 +48,13 @@ describe("extractText", () => {
     expect(await codeOf(extractText({ type: "url", url: "https://shop.example.lk/r" }, fetchUrl))).toBe(
       "empty",
     );
+  });
+
+  it("refuses text that chunks to more than 1,000 chunks", async () => {
+    const faq = (count: number) => Array.from({ length: count }, (_, i) => `## Q${i}\nA${i}.`).join("\n");
+    expect(chunkText(faq(1001))).toHaveLength(1001);
+    expect(await codeOf(extractText({ type: "markdown", text: faq(1001) }))).toBe("too_large");
+    expect((await extractText({ type: "markdown", text: faq(1000) })).text).toContain("A999.");
   });
 
   it("refuses a PDF with more than 300 pages", async () => {
@@ -133,11 +141,12 @@ describe("htmlToText", () => {
 
   it("normalises whitespace in linear time on a page at the 2 MB fetch cap", () => {
     // Empty cells each add a space separator: a long run of spaces with no line break on either side.
-    // ~70 ms alone and ~1 s with the whole monorepo suite running in parallel; the quadratic regex took ~25 s.
+    // ~70 ms alone and up to ~1 s with the whole monorepo suite running in parallel; the quadratic regex took
+    // ~25 s here, so a loose 5 s bound still tells them apart without flaking under load.
     const html = `Kept${"<td></td>".repeat(230_000)}text`;
     const started = performance.now();
     const text = htmlToText(html);
-    expect(performance.now() - started).toBeLessThan(3000);
+    expect(performance.now() - started).toBeLessThan(5000);
     expect(text).toBe("Kept text");
     expect(htmlToText("<p>a</p> \n <p> b </p><td>c</td> <td>d</td>")).toBe("a\n\nb\n\nc d");
   });

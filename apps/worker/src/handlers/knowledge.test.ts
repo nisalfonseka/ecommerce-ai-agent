@@ -105,7 +105,19 @@ describe.skipIf(testDb === null)("knowledge.ingest", () => {
       doc: { status: "error", error: "empty", chunkCount: 0 },
       chunks: [],
     });
-    expect(lines.at(-1)).toMatchObject({ msg: "knowledge document empty", outcome: "empty" });
+    expect(lines.at(-1)).toMatchObject({ msg: "knowledge document rejected", outcome: "empty" });
+  });
+
+  it("marks a document over the chunk cap too_large and completes without a retry", async () => {
+    const faq = Array.from({ length: 1001 }, (_, i) => `## Q${i}\nA${i}.`).join("\n");
+    const s = await storeWithDocument({ mode: "index", embeddingModel: "demo:x" }, faq);
+    const embedderFor = vi.fn(() => createDemoEmbedder());
+    const { logger, lines } = capturingLogger();
+    const deps = testDeps(app.db, { embedderFor, logger });
+    await expect(handleKnowledgeIngest(deps, fakeJob(JOBS.knowledgeIngest, s))).resolves.toBeUndefined();
+    expect(embedderFor).not.toHaveBeenCalled();
+    expect((await read(s)).doc).toMatchObject({ status: "error", error: "too_large", chunkCount: 0 });
+    expect(lines.at(-1)).toMatchObject({ msg: "knowledge document rejected", outcome: "too_large" });
   });
 
   it("completes quietly for a deleted document", async () => {

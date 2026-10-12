@@ -526,12 +526,16 @@ describe.skipIf(testDb === null)("admin API", () => {
       expect(jobs.sends).toEqual([]);
     });
 
-    it("answers 400 empty for heading-only text and pdf_too_long for a PDF over 300 pages", async () => {
+    it("answers 400 for heading-only text, over 1,000 chunks, and a PDF over 300 pages", async () => {
       const s = await store("Knowledge Limits");
       jobs.sends = [];
       const headings = await call("POST", base(s), markdown("Headings", "# Returns\n\n## Exchanges"));
       expect(headings.status).toBe(400);
       expect(await headings.json()).toMatchObject({ error: { code: "empty" } });
+      const faq = Array.from({ length: 1001 }, (_, i) => `## Q${i}\nA${i}.`).join("\n");
+      const many = await call("POST", base(s), markdown("Huge FAQ", faq));
+      expect(many.status).toBe(400);
+      expect(await many.json()).toMatchObject({ error: { code: "too_large" } });
       const pages = new Array<string>(301).fill(textPage(["Exchanges within 7 days"]));
       const long = await call("POST", base(s), {
         title: "Long PDF",

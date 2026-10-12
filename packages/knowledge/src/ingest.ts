@@ -1,5 +1,5 @@
 import { type Db, getDocument, replaceChunks, setDocumentStatus, withTenant } from "@ace/db";
-import { chunkText } from "./chunk";
+import { chunkText, MAX_CHUNKS_PER_DOCUMENT } from "./chunk";
 import type { Embedder } from "./embedding";
 
 export interface IngestDeps {
@@ -13,13 +13,16 @@ export interface IngestDeps {
 export const EMBEDDING_FAILED = "embedding_failed";
 /** Stored on the document when its text chunks to nothing (e.g. headings only). */
 export const DOCUMENT_EMPTY = "empty";
+/** Stored on the document when its text chunks to more than MAX_CHUNKS_PER_DOCUMENT chunks. */
+export const DOCUMENT_TOO_LARGE = "too_large";
 
 /**
  * The knowledge.ingest job body. Loads the document (its text was extracted at upload), chunks it, embeds
  * the chunks (purpose "document", heading path included) and swaps them in atomically, marking it ready.
  * - "error": embedding failed; status error + "embedding_failed", the previous version's chunks stay.
- * - "empty": the text chunks to nothing; status error + "empty" without calling the embedder, the previous
- *   version's chunks stay. Retrying cannot help. Uploads refuse such text, so this guards older rows.
+ * - "empty" / "too_large": the text chunks to nothing, or to more than MAX_CHUNKS_PER_DOCUMENT chunks;
+ *   status error + that code without calling the embedder, the previous version's chunks stay. Retrying
+ *   cannot help. Uploads refuse such text, so this guards rows stored before the checks (or by other paths).
  * - "missing": the document is gone, is not in this store, or was re-uploaded meanwhile (that upload's own
  *   job ingests the new version).
  * Safe to retry: chunks are replaced, never appended.
@@ -27,16 +30,22 @@ export const DOCUMENT_EMPTY = "empty";
 export async function ingestDocument(
   deps: IngestDeps,
   documentId: string,
-): Promise<"ready" | "error" | "empty" | "missing"> {
+): Promise<"ready" | "error" | "empty" | "too_large" | "missing"> {
   const { db, tenantId, storeId, embedder } = deps;
   const doc = await withTenant(db, tenantId, (tx) => getDocument(tx, storeId, documentId));
   if (!doc) return "missing";
   const chunks = chunkText(doc.content);
-  if (chunks.length === 0) {
+  const refused =
+    chunks.length === 0
+      ? DOCUMENT_EMPTY
+      : chunks.length > MAX_CHUNKS_PER_DOCUMENT
+        ? DOCUMENT_TOO_LARGE
+        : null;
+  if (refused) {
     const marked = await withTenant(db, tenantId, (tx) =>
-      setDocumentStatus(tx, storeId, documentId, doc.version, { status: "error", error: DOCUMENT_EMPTY }),
+      setDocumentStatus(tx, storeId, documentId, doc.version, { status: "error", error: refused }),
     );
-    return marked ? "empty" : "missing";
+    return marked ? refused : "missing";
   }
   let vectors: number[][];
   try {

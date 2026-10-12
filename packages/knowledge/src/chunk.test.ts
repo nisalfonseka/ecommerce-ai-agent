@@ -128,6 +128,27 @@ describe("chunkText", () => {
     ]);
   });
 
+  it("keeps a 150-character heading whole", () => {
+    const title = `Returns ${"x".repeat(142)}`;
+    expect(title).toHaveLength(150);
+    expect(chunkText(`# ${title}\n\nBody.`)[0]?.heading).toBe(title);
+  });
+
+  it("caps a heading title at 200 characters, cutting on a code-point boundary", () => {
+    const heading = (title: string) => chunkText(`# ${title}\n\nBody.`)[0]?.heading;
+    expect(heading("a".repeat(200))).toBe("a".repeat(200));
+    expect(heading("a".repeat(201))).toBe(`${"a".repeat(199)}…`);
+    // An emoji (two UTF-16 units) across the cut is dropped whole, never split into a lone surrogate.
+    expect(heading(`${"a".repeat(198)}😀${"b".repeat(10)}`)).toBe(`${"a".repeat(198)}…`);
+    expect(heading(`${"a".repeat(197)}😀${"b".repeat(10)}`)).toBe(`${"a".repeat(197)}😀…`);
+  });
+
+  it("drops the outermost levels first when the heading path passes 400 characters", () => {
+    const [a, b, c] = ["A", "B", "C"].map((letter) => letter.repeat(150));
+    const doc = `# ${a}\n\n## ${b}\n\n### ${c}\n\nBody.\n\n## Short\n\nMore.`;
+    expect(chunkText(doc).map((chunk) => chunk.heading)).toEqual([`${b} > ${c}`, `${a} > Short`]);
+  });
+
   it("recognises a heading only with 1–6 #s, a space or tab, and some title text", () => {
     for (const line of ["#hashtag", "####### Seven", "#   ", "# ###"]) {
       expect(chunkText(`${line}\n\nBody.`)[0]?.heading, line).toBeNull();
@@ -167,11 +188,23 @@ describe("chunkText on hostile input (200,000 chars)", () => {
     const { chunks, ms } = timed(`${line}\n\nBody.`);
     expect(ms).toBeLessThan(BUDGET_MS);
     expect(chunks).toHaveLength(1);
-    expect(chunks[0]?.heading).toBe(line.slice(2));
+    expect(chunks[0]?.heading).toBe(`${line.slice(2, 201)}…`);
+  });
+
+  it("a 100,000-char top heading over thousands of small sections (no heading-path amplification)", () => {
+    const top = `# ${"t".repeat(100_000)}\n`;
+    const text = top + "## a\nb\n".repeat(Math.floor((200_000 - top.length) / 7));
+    const { chunks, ms } = timed(text);
+    expect(ms).toBeLessThan(BUDGET_MS);
+    expect(chunks.length).toBeGreaterThan(14_000);
+    expect(chunks[0]?.heading).toBe(`${"t".repeat(199)}… > a`);
+    expect(chunks.every((chunk) => (chunk.heading?.length ?? 0) <= 400)).toBe(true);
+    // Uncapped, this was ~14,000 × 100,004 = 1.4 billion characters of headings (V8 ran out of memory).
+    expect(chunks.reduce((sum, chunk) => sum + (chunk.heading?.length ?? 0), 0)).toBeLessThan(5_000_000);
   });
 
   it("a heading line with a line separator in it", () => {
-    const { ms } = timed(`# ${" ".repeat(199_990)}a b\n\nBody.`);
+    const { ms } = timed(`# ${" ".repeat(199_990)}a\u2028b\n\nBody.`);
     expect(ms).toBeLessThan(BUDGET_MS);
   });
 
@@ -182,7 +215,7 @@ describe("chunkText on hostile input (200,000 chars)", () => {
   });
 
   it("a paragraph of whitespace runs that hold no line break", () => {
-    const { chunks, ms } = timed(`a${" \t ".repeat(66_000)}b. c`);
+    const { chunks, ms } = timed(`a${" \t\u00a0".repeat(66_000)}b. c`);
     expect(ms).toBeLessThan(BUDGET_MS);
     expect(chunks.map((chunk) => chunk.text)).toEqual(["a b. c"]);
   });

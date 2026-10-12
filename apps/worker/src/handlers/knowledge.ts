@@ -25,7 +25,8 @@ function lazyEmbedder(deps: WorkerDeps, spec: string): Embedder {
  * Chunks and embeds an uploaded document with the store's configured embedding model. Not gated on search
  * mode: knowledge retrieval serves live-mode stores too. When embedding fails the document is marked failed
  * (its previous chunks stay) and the job throws, so pg-boss retries it; a success flips it back to ready.
- * A document that chunks to nothing is marked failed ("empty") and the job completes: a retry cannot help.
+ * A document that chunks to nothing or to too many chunks is marked failed ("empty" / "too_large") and the
+ * job completes: a retry cannot help.
  * Logs ids and the outcome only, never document content.
  */
 export async function handleKnowledgeIngest(deps: WorkerDeps, job: WorkerJob): Promise<void> {
@@ -42,8 +43,8 @@ export async function handleKnowledgeIngest(deps: WorkerDeps, job: WorkerJob): P
     deps.logger.warn(fields, "knowledge ingest failed");
     throw new Error(`knowledge.ingest: embedding failed for document ${documentId}`);
   }
-  if (outcome === "empty") {
-    deps.logger.warn(fields, "knowledge document empty");
+  if (outcome === "empty" || outcome === "too_large") {
+    deps.logger.warn(fields, "knowledge document rejected");
     return;
   }
   deps.logger.info(fields, "knowledge ingested");
