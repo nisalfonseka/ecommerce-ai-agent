@@ -233,12 +233,15 @@ export async function runPreparedTurn(
     if (readyKnowledge && deps.knowledge) {
       const search = parseStoreSearchConfig(prepared.store.config);
       try {
+        const embedder = deps.knowledge.embedderFor(search.embeddingModel);
         knowledge = createKnowledgeSearch({
           db: deps.db,
           tenantId,
           storeId: prepared.store.id,
-          embedder: deps.knowledge.embedderFor(search.embeddingModel),
-          threshold: search.embeddingModel.startsWith("demo:") ? undefined : search.knowledgeThreshold,
+          embedder,
+          // The threshold belongs to the embedder that scores the passages, not to the configured name: a demo
+          // embedder's cosine scores are not comparable with the configured model's calibrated threshold.
+          threshold: embedder.model.startsWith("demo:") ? undefined : search.knowledgeThreshold,
           onError: (error) =>
             deps.logger.warn(
               { err: error, tenantId, storeId: prepared.store.id },
