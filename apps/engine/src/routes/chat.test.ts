@@ -86,7 +86,18 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
   ): Promise<{ tenantId: string; key: string; storeId: string }> {
     const { tenantId } = await createTenant(pool.db, { name });
     const created = await withTenant(pool.db, tenantId, async (tx) => {
-      const store = await createStore(tx, tenantId, { platform: "memory", currency: "LKR" });
+      const store = await createStore(tx, tenantId, {
+        platform: "memory",
+        currency: "LKR",
+        config: {
+          search: {
+            mode: "live",
+            embeddingModel: "demo:hash-v1",
+            enrichmentModel: "demo:rules-v1",
+            knowledgeThreshold: 0.15,
+          },
+        },
+      });
       const bot = await createBot(tx, tenantId, {
         storeId: store.id,
         persona: { assistantName: "Nila", storeName: name, languages: ["English"] },
@@ -231,12 +242,19 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
     const reply = second.find((e) => e.event === "reply")?.data as { cartId: string | null };
     expect(reply.cartId).toEqual(expect.any(String));
     // The factory caches one provider per (tenant, store), so this is the same store the turn wrote to.
-    const storeId = await withTenant(
+    const store = await withTenant(
       pool.db,
       tenantA,
-      async (tx) => (await tx.execute<{ id: string }>(sql`select id from stores limit 1`)).rows[0]?.id ?? "",
+      async (tx) =>
+        (await tx.execute<{ id: string; config: unknown }>(sql`select id, config from stores limit 1`))
+          .rows[0],
     );
-    const cart = await providers()(tenantA, { id: storeId, platform: "memory" }).getCart(reply.cartId ?? "");
+    if (!store) throw new Error("seeded store is missing");
+    const cart = await providers()(tenantA, {
+      id: store.id,
+      platform: "memory",
+      config: store.config,
+    }).getCart(reply.cartId ?? "");
     expect(cart?.lines.map((line) => line.variantId)).toEqual(["p_maxi_dress_floral_m"]);
     expect(cart?.attributes.ace_conversation_id).toBe(conversationId);
   });
