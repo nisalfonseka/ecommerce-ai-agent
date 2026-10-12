@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Local end-to-end stack without API keys: throwaway Postgres → migrate → seed (demo model) → engine on :8080
-# (NODE_ENV=development) → widget build → demo store on :5173.
+# Local end-to-end stack without API keys: throwaway Postgres → migrate → seed (indexed catalog + knowledge) →
+# engine + worker → widget build → demo store on :5173.
 # Usage: scripts/dev-stack.sh [start|stop]
 set -euo pipefail
 
@@ -12,7 +12,7 @@ DB="${ACE_DEV_DB:-ace_dev}"
 APP_PASSWORD="ace_dev_app_password"
 
 stop() {
-  for name in engine demo; do
+  for name in worker engine demo; do
     # Each service is a single node process (no npx wrapper), so its pid is the process to stop.
     if [ -f "$STATE/$name.pid" ]; then
       local pid
@@ -23,7 +23,31 @@ stop() {
       rm -f "$STATE/$name.pid"
     fi
   done
-  echo "stopped engine and demo (Postgres keeps running: scripts/test-postgres.sh stop)"
+  echo "stopped engine, worker and demo (Postgres keeps running: scripts/test-postgres.sh stop)"
+}
+
+wait_log() {
+  local file="$1" text="$2"
+  for _ in $(seq 1 60); do grep -q "$text" "$file" 2>/dev/null && return 0; sleep 0.5; done
+  echo "timed out waiting for $text (log: $file)" >&2
+  return 1
+}
+
+wait_store_ready() {
+  local tenant="$1" store="$2" admin_key="$3"
+  for _ in $(seq 1 120); do
+    local sync docs
+    sync="$(curl -fsS "http://localhost:$ENGINE_PORT/admin/tenants/$tenant/stores/$store/sync" \
+      -H "authorization: Bearer $admin_key")"
+    docs="$(curl -fsS "http://localhost:$ENGINE_PORT/admin/tenants/$tenant/stores/$store/knowledge" \
+      -H "authorization: Bearer $admin_key")"
+    if node -e 'const s=JSON.parse(process.argv[1]),d=JSON.parse(process.argv[2]),c=s.counts;process.exit(s.state?.status==="ready"&&c?.active>0&&c.enriched===c.active&&c.embedded===c.active&&c.staleEmbeddings===0&&d.items?.length>0&&d.items.every(x=>x.status==="ready")?0:1)' "$sync" "$docs"; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "timed out waiting for indexed catalog and knowledge for $store" >&2
+  return 1
 }
 
 wait_for() {
@@ -44,9 +68,10 @@ start() {
 
   cd "$ROOT/apps/engine"
   MIGRATION_DATABASE_URL="$owner" ACE_APP_DB_PASSWORD="$APP_PASSWORD" npx tsx src/migrate-cli.ts >/dev/null
+  DATABASE_URL="$app_url" ACE_SEED_ORIGINS="http://localhost:$DEMO_PORT" npx tsx src/seed-cli.ts --json \
+    > "$STATE/seed.json"
   local key
-  key="$(DATABASE_URL="$app_url" ACE_SEED_ORIGINS="http://localhost:$DEMO_PORT" npx tsx src/seed-cli.ts --json \
-    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s)[0].key))')"
+  key="$(node -e 'console.log(require(process.argv[1])[0].key)' "$STATE/seed.json")"
 
   [ -f "$STATE/secrets" ] || {
     echo "ACE_MASTER_KEY=$(head -c32 /dev/urandom | base64)"
@@ -62,6 +87,20 @@ start() {
   echo $! > "$STATE/engine.pid"
   wait_for "http://localhost:$ENGINE_PORT/healthz"
 
+  cd "$ROOT/apps/worker"
+  NODE_ENV=development DATABASE_URL="$app_url" ACE_MASTER_KEY="$ACE_MASTER_KEY" \
+    nohup node --import tsx src/main.ts > "$STATE/worker.log" 2>&1 &
+  echo $! > "$STATE/worker.pid"
+  wait_log "$STATE/worker.log" "worker started"
+
+  node -e 'for (const t of require(process.argv[1])) console.log(t.tenantId, t.storeId)' "$STATE/seed.json" \
+    | while read -r tenant store; do
+        curl -fsS -X POST "http://localhost:$ENGINE_PORT/admin/tenants/$tenant/stores/$store/sync" \
+          -H "authorization: Bearer $ADMIN_KEY" -H "content-type: application/json" \
+          --data '{"full":true}' >/dev/null
+        wait_store_ready "$tenant" "$store" "$ADMIN_KEY"
+      done
+
   cd "$ROOT/packages/widget"
   node build.mjs
   ACE_DEMO_KEY="$key" ACE_DEMO_API="http://localhost:$ENGINE_PORT" ACE_DEMO_PORT="$DEMO_PORT" \
@@ -71,6 +110,7 @@ start() {
 
   echo "demo store:   http://localhost:$DEMO_PORT"
   echo "engine:       http://localhost:$ENGINE_PORT  (logs: $STATE/engine.log)"
+  echo "worker:       running (logs: $STATE/worker.log)"
   echo "admin key:    $ADMIN_KEY"
 }
 

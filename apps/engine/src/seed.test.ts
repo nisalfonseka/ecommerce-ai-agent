@@ -1,5 +1,6 @@
-import { createDb, resolveWidgetKey } from "@ace/db";
+import { createDb, listDocuments, resolveWidgetKey, schema, withTenant } from "@ace/db";
 import { createTestDatabase } from "@ace/db/testing";
+import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { seedDemoTenants, seedTenantId } from "./seed";
 
@@ -24,9 +25,23 @@ describe.skipIf(testDb === null)("seedDemoTenants", () => {
         botId: tenant.botId,
         allowedOrigins: ["http://localhost:5173"],
       });
+      const seeded = await withTenant(pool.db, tenant.tenantId, async (tx) => ({
+        store: (await tx.select().from(schema.stores).where(eq(schema.stores.id, tenant.storeId)))[0],
+        documents: await listDocuments(tx, tenant.storeId),
+      }));
+      expect(seeded.store?.config).toMatchObject({
+        search: {
+          mode: "index",
+          embeddingModel: "demo:hash-v1",
+          enrichmentModel: "demo:rules-v1",
+        },
+      });
+      expect(seeded.documents).toHaveLength(2);
+      expect(seeded.documents.every((document) => document.status === "ready")).toBe(true);
     }
     const second = await seedDemoTenants(pool.db, options);
     expect(second.map((t) => [t.tenantId, t.botId])).toEqual(first.map((t) => [t.tenantId, t.botId]));
+    expect(second.map((t) => t.storeId)).toEqual(first.map((t) => t.storeId));
     expect(second[0]?.key).not.toBe(first[0]?.key);
   });
 });

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The reference store end to end, no API keys needed:
 #   Medusa backend :9000 (scripts/reference-store.sh) → engine :8080 on the Medusa adapter with the keyless demo
-#   model and COD on → storefront :8000 with the assistant widget installed.
+#   model and COD on → worker (index, knowledge, webhooks) → storefront :8000 with the assistant widget installed.
 # Usage: scripts/store-stack.sh [start|stop]
 set -euo pipefail
 
@@ -27,9 +27,35 @@ stop_pid() {
 
 stop() {
   stop_pid storefront
+  stop_pid worker
   stop_pid engine
   "$ROOT/scripts/reference-store.sh" stop >/dev/null
-  echo "stopped storefront, engine and reference store (Postgres keeps running)"
+  rm -f "$STATE/connection.json"
+  echo "stopped storefront, worker, engine and reference store (Postgres keeps running)"
+}
+
+wait_log() {
+  local file="$1" text="$2"
+  for _ in $(seq 1 120); do grep -q "$text" "$file" 2>/dev/null && return 0; sleep 0.5; done
+  echo "timed out waiting for $text (log: $file)" >&2
+  return 1
+}
+
+wait_store_ready() {
+  local tenant="$1" store="$2" admin_key="$3"
+  for _ in $(seq 1 240); do
+    local sync docs
+    sync="$(curl -fsS "http://localhost:$ENGINE_PORT/admin/tenants/$tenant/stores/$store/sync" \
+      -H "authorization: Bearer $admin_key")"
+    docs="$(curl -fsS "http://localhost:$ENGINE_PORT/admin/tenants/$tenant/stores/$store/knowledge" \
+      -H "authorization: Bearer $admin_key")"
+    if node -e 'const s=JSON.parse(process.argv[1]),d=JSON.parse(process.argv[2]),c=s.counts;process.exit(s.state?.status==="ready"&&c?.active>0&&c.enriched===c.active&&c.embedded===c.active&&c.staleEmbeddings===0&&d.items?.length>0&&d.items.every(x=>x.status==="ready")?0:1)' "$sync" "$docs"; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "timed out waiting for indexed catalog and knowledge for $store" >&2
+  return 1
 }
 
 wait_for() {
@@ -66,9 +92,26 @@ start() {
     setsid nohup node --import tsx src/main.ts > "$STATE/engine.log" 2>&1 &
   echo $! > "$STATE/engine.pid"
   wait_for "http://localhost:$ENGINE_PORT/healthz"
-  local key
-  key="$(node "$ROOT/scripts/connect-reference-store.mjs" "$SEED_OUTPUT" "http://localhost:$ENGINE_PORT" "$admin_key" \
-    "http://localhost:$SF_PORT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).widgetKey))')"
+  node "$ROOT/scripts/connect-reference-store.mjs" "$SEED_OUTPUT" "http://localhost:$ENGINE_PORT" "$admin_key" \
+    "http://localhost:$SF_PORT" > "$STATE/connection.json"
+  chmod 600 "$STATE/connection.json"
+  local key webhook_url webhook_secret
+  key="$(node -e 'console.log(require(process.argv[1]).widgetKey)' "$STATE/connection.json")"
+  webhook_url="$(node -e 'console.log(require(process.argv[1]).webhookUrl)' "$STATE/connection.json")"
+  webhook_secret="$(node -e 'console.log(require(process.argv[1]).webhookSecret)' "$STATE/connection.json")"
+
+  ACE_WEBHOOK_URL="$webhook_url" ACE_WEBHOOK_SECRET="$webhook_secret" \
+    STOREFRONT_URL="http://localhost:$SF_PORT" "$ROOT/scripts/reference-store.sh" start >/dev/null
+
+  cd "$ROOT/apps/worker"
+  NODE_ENV=development DATABASE_URL="$app_url" ACE_MASTER_KEY="$master" \
+    setsid nohup node --import tsx src/main.ts > "$STATE/worker.log" 2>&1 &
+  echo $! > "$STATE/worker.pid"
+  wait_log "$STATE/worker.log" "worker started"
+  local tenant store
+  tenant="$(node -e 'console.log(require(process.argv[1]).tenantId)' "$STATE/connection.json")"
+  store="$(node -e 'console.log(require(process.argv[1]).storeId)' "$STATE/connection.json")"
+  wait_store_ready "$tenant" "$store" "$admin_key"
 
   cd "$ROOT/packages/widget"
   node build.mjs >/dev/null
@@ -90,6 +133,7 @@ start() {
   wait_for "http://localhost:$SF_PORT/"
   echo "storefront:  http://localhost:$SF_PORT"
   echo "engine:      http://localhost:$ENGINE_PORT  (logs: $STATE/engine.log)"
+  echo "worker:      running (logs: $STATE/worker.log)"
   echo "medusa:      http://localhost:9000"
 }
 

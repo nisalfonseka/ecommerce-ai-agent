@@ -28,6 +28,14 @@ const { tenantId } = await admin("/tenants", { name: "Reference Store" });
 const { storeId } = await admin(`/tenants/${tenantId}/stores`, {
   platform: "medusa",
   currency: "LKR",
+  config: {
+    search: {
+      mode: "index",
+      embeddingModel: "demo:hash-v1",
+      enrichmentModel: "demo:rules-v1",
+      knowledgeThreshold: 0.15,
+    },
+  },
   credentials: JSON.stringify({
     baseUrl: seed.backendUrl,
     publishableKey: seed.publishableKey,
@@ -36,6 +44,7 @@ const { storeId } = await admin(`/tenants/${tenantId}/stores`, {
     storefrontUrl: origin,
   }),
 });
+const webhook = await admin(`/tenants/${tenantId}/stores/${storeId}/webhook-secret`, {});
 const { botId } = await admin(`/tenants/${tenantId}/bots`, {
   storeId,
   persona: {
@@ -50,4 +59,31 @@ const { botId } = await admin(`/tenants/${tenantId}/bots`, {
   budgetHardUsdMicros: 2_000_000,
 });
 const { key } = await admin(`/tenants/${tenantId}/bots/${botId}/widget-keys`, { allowedOrigins: [origin] });
-console.log(JSON.stringify({ widgetKey: key, tenantId }));
+for (const document of [
+  {
+    title: "Returns policy",
+    source: {
+      type: "markdown",
+      text: "# Exchanges\n\nItems can be exchanged within 7 days with the original receipt.",
+    },
+  },
+  {
+    title: "Store guide",
+    source: {
+      type: "markdown",
+      text: "# Delivery\n\nIsland-wide delivery takes 2-4 working days and costs LKR 400.\n\n# Linen care\n\nHand wash linen in cold water and air dry in the shade.",
+    },
+  },
+]) {
+  await admin(`/tenants/${tenantId}/stores/${storeId}/knowledge`, document);
+}
+await admin(`/tenants/${tenantId}/stores/${storeId}/sync`, { full: true });
+console.log(
+  JSON.stringify({
+    widgetKey: key,
+    tenantId,
+    storeId,
+    webhookUrl: `${engine}${webhook.path}`,
+    webhookSecret: webhook.secret,
+  }),
+);
