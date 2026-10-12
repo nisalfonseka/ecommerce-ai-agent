@@ -14,14 +14,28 @@ APP_PASSWORD="ace_store_app_password"
 STOREFRONT="$ROOT/apps/reference-store/storefront"
 SEED_OUTPUT="${TMPDIR:-/tmp}/ace-store/seed-output.json"
 
+start_detached() {
+  if command -v setsid >/dev/null 2>&1; then
+    exec setsid nohup "$@"
+  fi
+  exec nohup "$@"
+}
+
+process_tree() {
+  local pid="$1" child
+  echo "$pid"
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do process_tree "$child"; done
+}
+
 stop_pid() {
   local file="$STATE/$1.pid"
   [ -f "$file" ] || return 0
-  local pid
+  local pid pids
   pid="$(cat "$file")"
-  kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+  pids="$(process_tree "$pid")"
+  kill -- "-$pid" 2>/dev/null || kill $pids 2>/dev/null || true
   for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
-  kill -9 -- "-$pid" 2>/dev/null || true
+  kill -9 -- "-$pid" 2>/dev/null || kill -9 $pids 2>/dev/null || true
   rm -f "$file"
 }
 
@@ -91,7 +105,7 @@ start() {
   NODE_ENV=development PORT="$ENGINE_PORT" DATABASE_URL="$app_url" ACE_MASTER_KEY="$master" \
     CONVERSATION_TOKEN_SECRET="$(head -c40 /dev/urandom | base64)" TRUST_PROXY_HOPS=0 \
     ADMIN_API_KEY_SHA256="$(printf %s "$admin_key" | sha256sum | cut -d' ' -f1)" \
-    setsid nohup node --import tsx src/main.ts > "$STATE/engine.log" 2>&1 &
+    start_detached node --import tsx src/main.ts > "$STATE/engine.log" 2>&1 &
   echo $! > "$STATE/engine.pid"
   wait_for "http://localhost:$ENGINE_PORT/healthz"
   node "$ROOT/scripts/connect-reference-store.mjs" "$SEED_OUTPUT" "http://localhost:$ENGINE_PORT" "$admin_key" \
@@ -107,7 +121,7 @@ start() {
 
   cd "$ROOT/apps/worker"
   NODE_ENV=development DATABASE_URL="$app_url" ACE_MASTER_KEY="$master" \
-    setsid nohup node --import tsx src/main.ts > "$STATE/worker.log" 2>&1 &
+    start_detached node --import tsx src/main.ts > "$STATE/worker.log" 2>&1 &
   echo $! > "$STATE/worker.pid"
   wait_log "$STATE/worker.log" "worker started"
   local tenant store
@@ -130,7 +144,7 @@ start() {
     tail -30 "$STATE/storefront-build.log" >&2
     exit 1
   }
-  setsid nohup node node_modules/next/dist/bin/next start -p "$SF_PORT" > "$STATE/storefront.log" 2>&1 &
+  start_detached node node_modules/next/dist/bin/next start -p "$SF_PORT" > "$STATE/storefront.log" 2>&1 &
   echo $! > "$STATE/storefront.pid"
   wait_for "http://localhost:$SF_PORT/"
   echo "storefront:  http://localhost:$SF_PORT"

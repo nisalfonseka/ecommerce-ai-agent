@@ -15,14 +15,28 @@ PORT="${ACE_STORE_PORT:-9000}"
 DB="${ACE_STORE_DB:-ace_store}"
 STOREFRONT_URL="${STOREFRONT_URL:-http://localhost:8000}"
 
+start_detached() {
+  if command -v setsid >/dev/null 2>&1; then
+    exec setsid nohup "$@"
+  fi
+  exec nohup "$@"
+}
+
+process_tree() {
+  local pid="$1" child
+  echo "$pid"
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do process_tree "$child"; done
+}
+
 stop() {
   if [ -f "$STATE/backend.pid" ]; then
-    local pid
+    local pid pids
     pid="$(cat "$STATE/backend.pid")"
-    # `medusa develop` runs a watcher plus a server, so stop the whole process group.
-    kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    pids="$(process_tree "$pid")"
+    # Linux uses a new session; macOS has no built-in `setsid`, so fall back to the captured process tree.
+    kill -- "-$pid" 2>/dev/null || kill $pids 2>/dev/null || true
     for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
-    kill -9 -- "-$pid" 2>/dev/null || true
+    kill -9 -- "-$pid" 2>/dev/null || kill -9 $pids 2>/dev/null || true
     rm -f "$STATE/backend.pid"
   fi
   echo "stopped reference store backend"
@@ -62,7 +76,7 @@ start() {
     }
   fi
   # Logs live outside the project: the dev watcher restarts on any file change inside it.
-  setsid nohup npx medusa develop > "$STATE/backend.log" 2>&1 &
+  start_detached npx medusa develop > "$STATE/backend.log" 2>&1 &
   echo $! > "$STATE/backend.pid"
   wait_for "http://localhost:$PORT/health"
   echo "reference store: http://localhost:$PORT  (logs: $STATE/backend.log)"
