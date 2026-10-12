@@ -36,6 +36,20 @@
       "when": 1791603582166,
       "tag": "0004_attribution_chat_assisted",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791822504748,
+      "tag": "0005_phase7",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791822505748,
+      "tag": "0006_phase7_rls",
+      "breakpoints": true
     }
   ]
 }

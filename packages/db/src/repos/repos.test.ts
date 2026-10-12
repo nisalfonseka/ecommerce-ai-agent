@@ -13,6 +13,7 @@ import {
   resolveWidgetKey,
   revokeWidgetKey,
 } from "./admin";
+import { getLatestConsent, recordConsent } from "./consents";
 import {
   acquireTurnLease,
   appendMessages,
@@ -23,7 +24,36 @@ import {
   releaseLease,
   saveSessionAndRelease,
 } from "./conversations";
+import {
+  createHandoff,
+  getActiveHandoff,
+  getHandoff,
+  listHandoffs,
+  markHandoffNotified,
+  transitionHandoff,
+} from "./handoffs";
+import {
+  createPrivacyRequest,
+  finishPrivacyRequest,
+  getPrivacyRequest,
+  listPrivacyRequests,
+} from "./privacy";
+import { createStaffToken, findStaffToken, listStaffTokens, revokeStaffToken } from "./staff";
 import { monthToDateCostMicros, recordJobUsage, recordToolCalls, recordTurn, usageReport } from "./telemetry";
+import {
+  getHostSessionSecretSealed,
+  getRetention,
+  getTenantSettings,
+  setHostSessionSecret,
+  upsertTenantSettings,
+} from "./tenant-settings";
+import {
+  consumeVerification,
+  countRecentStarts,
+  createVerification,
+  getPendingVerification,
+  incrementAttempts,
+} from "./verifications";
 import {
   getWebhookEvent,
   markWebhookEnqueued,
@@ -286,6 +316,431 @@ describe.skipIf(testDb === null)("repositories (as ace_app)", () => {
       expect(
         await withTenant(app.db, tenantId, (tx) => setStoreWebhookSecret(tx, storeId, Buffer.from("x"))),
       ).toBe(true);
+    });
+  });
+  describe("tenant settings", () => {
+    it("returns the defaults for a tenant with no settings row", async () => {
+      const fresh = (await createTenant(app.db, { name: "No settings" })).tenantId;
+      const settings = await withTenant(app.db, fresh, (tx) => getTenantSettings(tx));
+      expect(settings).toMatchObject({
+        handoffEmails: [],
+        otp: { allowedCountryCodes: ["94"], channels: ["sms", "email"] },
+        requireConsent: true,
+        privacyNoticeUrl: null,
+        contactInfo: null,
+        hasHostSessionSecret: false,
+      });
+      expect(getRetention(settings)).toEqual({
+        messagesDays: 180,
+        tracesDays: 30,
+        handoffDays: 180,
+        otpHours: 24,
+      });
+    });
+
+    it("upserts one row per tenant, keeps fields a patch does not mention, and isolates tenants", async () => {
+      const tenant = (await createTenant(app.db, { name: "Settings tenant" })).tenantId;
+      const other = (await createTenant(app.db, { name: "Settings other" })).tenantId;
+      await withTenant(app.db, tenant, (tx) =>
+        upsertTenantSettings(tx, tenant, { retention: { messagesDays: 90 }, handoffEmails: ["a@shop.lk"] }),
+      );
+      const second = await withTenant(app.db, tenant, (tx) =>
+        upsertTenantSettings(tx, tenant, {
+          contactInfo: "Call 011 234 5678",
+          otp: { allowedCountryCodes: ["94"], channels: ["email"] },
+        }),
+      );
+      expect(second).toMatchObject({
+        retention: { messagesDays: 90 },
+        handoffEmails: ["a@shop.lk"],
+        contactInfo: "Call 011 234 5678",
+        otp: { allowedCountryCodes: ["94"], channels: ["email"] },
+      });
+      const rows = await withTenant(app.db, tenant, (tx) =>
+        tx.execute(sql`select count(*)::int as n from tenant_settings`),
+      );
+      expect(rows.rows[0]).toEqual({ n: 1 });
+      expect(await withTenant(app.db, other, (tx) => getTenantSettings(tx))).toMatchObject({
+        handoffEmails: [],
+        contactInfo: null,
+      });
+    });
+
+    it("rejects an invalid patch before it reaches the database", async () => {
+      await expect(
+        withTenant(app.db, tenantId, (tx) =>
+          upsertTenantSettings(tx, tenantId, { retention: { otpHours: 500 } }),
+        ),
+      ).rejects.toThrow();
+    });
+
+    it("stores the sealed host-session secret apart from the readable settings", async () => {
+      const tenant = (await createTenant(app.db, { name: "Host secret" })).tenantId;
+      expect(await withTenant(app.db, tenant, (tx) => getHostSessionSecretSealed(tx))).toBeNull();
+      await withTenant(app.db, tenant, (tx) => setHostSessionSecret(tx, tenant, Buffer.from("sealed-bytes")));
+      expect(
+        (await withTenant(app.db, tenant, (tx) => getHostSessionSecretSealed(tx)))?.toString("utf8"),
+      ).toBe("sealed-bytes");
+      const settings = await withTenant(app.db, tenant, (tx) => getTenantSettings(tx));
+      expect(settings.hasHostSessionSecret).toBe(true);
+      expect(JSON.stringify(settings)).not.toContain("sealed-bytes");
+      await withTenant(app.db, tenant, (tx) => setHostSessionSecret(tx, tenant, null));
+      expect(await withTenant(app.db, tenant, (tx) => getHostSessionSecretSealed(tx))).toBeNull();
+    });
+  });
+
+  describe("verifications", () => {
+    const newConversation = (visitorId: string) =>
+      withTenant(app.db, tenantId, (tx) =>
+        createConversation(tx, tenantId, { botId, visitorId, session: {} }),
+      );
+    const input = (conversationId: string, over: { destinationHash?: string; expiresAt?: Date } = {}) => ({
+      conversationId,
+      channel: "email" as const,
+      destinationHash: over.destinationHash ?? "dest_1",
+      codeHash: "code_hash",
+      salt: "salt_1",
+      expiresAt: over.expiresAt ?? new Date(Date.now() + 600_000),
+    });
+
+    it("keeps one pending code per conversation: a new code invalidates the old one", async () => {
+      const { id } = await newConversation("ver-1");
+      const first = await withTenant(app.db, tenantId, (tx) => createVerification(tx, tenantId, input(id)));
+      expect(first).toMatchObject({ attempts: 0, consumedAt: null, channel: "email" });
+      const second = await withTenant(app.db, tenantId, (tx) =>
+        createVerification(tx, tenantId, { ...input(id), codeHash: "newer", salt: "salt_2" }),
+      );
+      const pending = await withTenant(app.db, tenantId, (tx) => getPendingVerification(tx, id, new Date()));
+      expect(pending?.id).toBe(second.id);
+      expect(
+        await withTenant(app.db, tenantId, (tx) => consumeVerification(tx, first.id, new Date())),
+        "the invalidated code must not be consumable",
+      ).toBe(false);
+    });
+
+    it("does not return an expired code, and refuses to consume it", async () => {
+      const { id } = await newConversation("ver-2");
+      const row = await withTenant(app.db, tenantId, (tx) =>
+        createVerification(tx, tenantId, input(id, { expiresAt: new Date(Date.now() + 1_000) })),
+      );
+      const later = new Date(Date.now() + 5_000);
+      expect(await withTenant(app.db, tenantId, (tx) => getPendingVerification(tx, id, later))).toBeNull();
+      expect(await withTenant(app.db, tenantId, (tx) => consumeVerification(tx, row.id, later))).toBe(false);
+    });
+
+    it("counts wrong attempts atomically and lets a code be consumed exactly once", async () => {
+      const { id } = await newConversation("ver-3");
+      const row = await withTenant(app.db, tenantId, (tx) => createVerification(tx, tenantId, input(id)));
+      const attempts = await Promise.all(
+        [1, 2, 3].map(() => withTenant(app.db, tenantId, (tx) => incrementAttempts(tx, row.id))),
+      );
+      expect([...attempts].sort()).toEqual([1, 2, 3]);
+      const consumed = await Promise.all(
+        [1, 2].map(() => withTenant(app.db, tenantId, (tx) => consumeVerification(tx, row.id, new Date()))),
+      );
+      expect(consumed.filter(Boolean)).toHaveLength(1);
+      expect(
+        await withTenant(app.db, tenantId, (tx) => getPendingVerification(tx, id, new Date())),
+      ).toBeNull();
+      expect(await withTenant(app.db, tenantId, (tx) => incrementAttempts(tx, row.id))).toBeNull();
+    });
+
+    it("counts starts per conversation and per destination inside a window, for rate limits", async () => {
+      const a = await newConversation("ver-4a");
+      const b = await newConversation("ver-4b");
+      const dest = `dest_${a.id}`;
+      await withTenant(app.db, tenantId, async (tx) => {
+        await createVerification(tx, tenantId, input(a.id, { destinationHash: dest }));
+        await createVerification(tx, tenantId, input(a.id, { destinationHash: dest }));
+        await createVerification(tx, tenantId, input(b.id, { destinationHash: dest }));
+        await createVerification(tx, tenantId, input(b.id, { destinationHash: "elsewhere" }));
+      });
+      const hourAgo = new Date(Date.now() - 3_600_000);
+      const count = (filter: { conversationId?: string; destinationHash?: string }, since = hourAgo) =>
+        withTenant(app.db, tenantId, (tx) => countRecentStarts(tx, { ...filter, since }));
+      // Invalidated codes still count: a start is a start.
+      expect(await count({ conversationId: a.id })).toBe(2);
+      expect(await count({ destinationHash: dest })).toBe(3);
+      expect(await count({ conversationId: b.id, destinationHash: dest })).toBe(1);
+      expect(await count({ destinationHash: dest }, new Date(Date.now() + 60_000))).toBe(0);
+      expect(
+        await withTenant(app.db, otherTenantId, (tx) =>
+          countRecentStarts(tx, { destinationHash: dest, since: hourAgo }),
+        ),
+      ).toBe(0);
+      await expect(
+        withTenant(app.db, tenantId, (tx) => countRecentStarts(tx, { since: hourAgo })),
+      ).rejects.toThrow(/conversationId or destinationHash/);
+    });
+
+    it("is deleted with its conversation", async () => {
+      const { id } = await newConversation("ver-5");
+      await withTenant(app.db, tenantId, (tx) => createVerification(tx, tenantId, input(id)));
+      await withTenant(app.db, tenantId, (tx) =>
+        recordConsent(tx, tenantId, { conversationId: id, noticeVersion: "v1" }),
+      );
+      await withTenant(app.db, tenantId, (tx) =>
+        createHandoff(tx, tenantId, { conversationId: id, reason: "other", summary: "s" }),
+      );
+      await withTenant(app.db, tenantId, (tx) => tx.execute(sql`delete from conversations where id = ${id}`));
+      const left = await withTenant(app.db, tenantId, (tx) =>
+        tx.execute<{ n: number }>(sql`
+          select (select count(*) from verifications where conversation_id = ${id})::int
+               + (select count(*) from consents where conversation_id = ${id})::int
+               + (select count(*) from handoffs where conversation_id = ${id})::int as n`),
+      );
+      expect(left.rows[0]?.n).toBe(0);
+    });
+  });
+
+  describe("consents", () => {
+    it("records a notice version once per conversation and returns the latest consent", async () => {
+      const { id } = await withTenant(app.db, tenantId, (tx) =>
+        createConversation(tx, tenantId, { botId, visitorId: "consent-1", session: {} }),
+      );
+      expect(await withTenant(app.db, tenantId, (tx) => getLatestConsent(tx, id))).toBeNull();
+      const first = await withTenant(app.db, tenantId, (tx) =>
+        recordConsent(tx, tenantId, {
+          conversationId: id,
+          noticeVersion: "2027-01",
+          noticeUrl: "https://shop.lk/p",
+        }),
+      );
+      expect(first).toBe(true);
+      const again = await withTenant(app.db, tenantId, (tx) =>
+        recordConsent(tx, tenantId, { conversationId: id, noticeVersion: "2027-01" }),
+      );
+      expect(again).toBe(false);
+      expect(await withTenant(app.db, tenantId, (tx) => getLatestConsent(tx, id))).toMatchObject({
+        noticeVersion: "2027-01",
+        noticeUrl: "https://shop.lk/p",
+      });
+      expect(await withTenant(app.db, otherTenantId, (tx) => getLatestConsent(tx, id))).toBeNull();
+    });
+  });
+
+  describe("handoffs", () => {
+    const newHandoff = async (visitorId: string) => {
+      const conversation = await withTenant(app.db, tenantId, (tx) =>
+        createConversation(tx, tenantId, { botId, visitorId, session: {} }),
+      );
+      const { handoff } = await withTenant(app.db, tenantId, (tx) =>
+        createHandoff(tx, tenantId, {
+          conversationId: conversation.id,
+          reason: "refund_or_return",
+          summary: "Wants a refund",
+          contactSealed: Buffer.from("sealed-contact"),
+        }),
+      );
+      return { conversation, handoff };
+    };
+
+    it("creates one active handoff per conversation, and a new one after it is resolved", async () => {
+      const { conversation, handoff } = await newHandoff("ho-1");
+      expect(handoff).toMatchObject({ status: "open", claimedBy: null, notifiedAt: null, resolvedAt: null });
+      const again = await withTenant(app.db, tenantId, (tx) =>
+        createHandoff(tx, tenantId, { conversationId: conversation.id, reason: "other", summary: "second" }),
+      );
+      expect(again.created).toBe(false);
+      expect(again.handoff.id).toBe(handoff.id);
+      expect(again.handoff.summary).toBe("Wants a refund");
+
+      const resolved = await withTenant(app.db, tenantId, (tx) =>
+        transitionHandoff(tx, handoff.id, { to: "resolved" }),
+      );
+      expect(resolved.ok).toBe(true);
+      expect(await withTenant(app.db, tenantId, (tx) => getActiveHandoff(tx, conversation.id))).toBeNull();
+      const next = await withTenant(app.db, tenantId, (tx) =>
+        createHandoff(tx, tenantId, { conversationId: conversation.id, reason: "other", summary: "again" }),
+      );
+      expect(next.created).toBe(true);
+      expect(next.handoff.id).not.toBe(handoff.id);
+    });
+
+    it("moves open to claimed to resolved and rejects going backwards or repeating", async () => {
+      const { handoff } = await newHandoff("ho-2");
+      const transition = (t: Parameters<typeof transitionHandoff>[2], tenant = tenantId) =>
+        withTenant(app.db, tenant, (tx) => transitionHandoff(tx, handoff.id, t));
+
+      const claimed = await transition({ to: "claimed", claimedBy: "Nimali" });
+      expect(claimed).toMatchObject({ ok: true, handoff: { status: "claimed", claimedBy: "Nimali" } });
+      expect(await transition({ to: "claimed", claimedBy: "Kasun" })).toEqual({
+        ok: false,
+        reason: "conflict",
+        status: "claimed",
+      });
+      expect((await withTenant(app.db, tenantId, (tx) => getHandoff(tx, handoff.id)))?.claimedBy).toBe(
+        "Nimali",
+      );
+
+      const resolved = await transition({ to: "resolved" });
+      expect(resolved).toMatchObject({ ok: true, handoff: { status: "resolved", claimedBy: "Nimali" } });
+      if (resolved.ok) expect(resolved.handoff.resolvedAt).toBeInstanceOf(Date);
+
+      expect(await transition({ to: "claimed", claimedBy: "Kasun" })).toMatchObject({
+        ok: false,
+        reason: "conflict",
+      });
+      expect(await transition({ to: "resolved" })).toMatchObject({ ok: false, reason: "conflict" });
+      expect((await withTenant(app.db, tenantId, (tx) => getHandoff(tx, handoff.id)))?.status).toBe(
+        "resolved",
+      );
+    });
+
+    it("can resolve straight from open, and treats another tenant's handoff as not found", async () => {
+      const { handoff } = await newHandoff("ho-3");
+      expect(
+        await withTenant(app.db, otherTenantId, (tx) =>
+          transitionHandoff(tx, handoff.id, { to: "resolved" }),
+        ),
+      ).toEqual({ ok: false, reason: "not_found" });
+      expect(await withTenant(app.db, otherTenantId, (tx) => getHandoff(tx, handoff.id))).toBeNull();
+      const done = await withTenant(app.db, tenantId, (tx) =>
+        transitionHandoff(tx, handoff.id, { to: "resolved" }),
+      );
+      expect(done).toMatchObject({ ok: true, handoff: { status: "resolved", claimedBy: null } });
+    });
+
+    it("lets exactly one of two simultaneous claims win", async () => {
+      const { handoff } = await newHandoff("ho-4");
+      const results = await Promise.all(
+        ["Nimali", "Kasun"].map((name) =>
+          withTenant(app.db, tenantId, (tx) =>
+            transitionHandoff(tx, handoff.id, { to: "claimed", claimedBy: name }),
+          ),
+        ),
+      );
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      expect(results.filter((r) => !r.ok)).toEqual([{ ok: false, reason: "conflict", status: "claimed" }]);
+      const stored = await withTenant(app.db, tenantId, (tx) => getHandoff(tx, handoff.id));
+      const winner = results.find((r) => r.ok);
+      expect(winner?.ok && winner.handoff.claimedBy).toBe(stored?.claimedBy);
+    });
+
+    it("records the notification once, so a retried job sends one email", async () => {
+      const { handoff } = await newHandoff("ho-5");
+      expect(
+        await withTenant(app.db, tenantId, (tx) => markHandoffNotified(tx, handoff.id, new Date())),
+      ).toBe(true);
+      expect(
+        await withTenant(app.db, tenantId, (tx) => markHandoffNotified(tx, handoff.id, new Date())),
+      ).toBe(false);
+    });
+
+    it("lists a tenant's handoffs by status, newest first, and never another tenant's", async () => {
+      const tenant = (await createTenant(app.db, { name: "Handoff list" })).tenantId;
+      const listBot = await withTenant(app.db, tenant, async (tx) => {
+        const store = await createStore(tx, tenant, { platform: "memory", currency: "LKR" });
+        return (await createBot(tx, tenant, bot(store.id))).id;
+      });
+      const ids: string[] = [];
+      for (const visitorId of ["l1", "l2", "l3"]) {
+        const created = await withTenant(app.db, tenant, async (tx) => {
+          const conversation = await createConversation(tx, tenant, {
+            botId: listBot,
+            visitorId,
+            session: {},
+          });
+          return createHandoff(tx, tenant, {
+            conversationId: conversation.id,
+            reason: "other",
+            summary: visitorId,
+          });
+        });
+        ids.push(created.handoff.id);
+      }
+      await withTenant(app.db, tenant, (tx) =>
+        transitionHandoff(tx, ids[0] ?? "", { to: "claimed", claimedBy: "N" }),
+      );
+      const open = await withTenant(app.db, tenant, (tx) => listHandoffs(tx, { status: ["open"] }));
+      expect(open.map((row) => row.summary)).toEqual(["l3", "l2"]);
+      const all = await withTenant(app.db, tenant, (tx) => listHandoffs(tx, {}));
+      expect(all).toHaveLength(3);
+      expect(await withTenant(app.db, tenant, (tx) => listHandoffs(tx, { limit: 1 }))).toHaveLength(1);
+      expect(await withTenant(app.db, otherTenantId, (tx) => listHandoffs(tx, {}))).toEqual([]);
+    });
+  });
+
+  describe("staff tokens", () => {
+    it("finds a token by hash only inside its own tenant context", async () => {
+      const token = { name: "front desk", tokenHash: "hash_staff_1", tokenPrefix: "st_1234ab" };
+      const created = await withTenant(app.db, tenantId, (tx) => createStaffToken(tx, tenantId, token));
+      expect(created).toMatchObject({ name: "front desk", tokenPrefix: "st_1234ab", revokedAt: null });
+
+      expect(await withTenant(app.db, tenantId, (tx) => findStaffToken(tx, token.tokenHash))).toMatchObject({
+        id: created.id,
+        tenantId,
+      });
+      expect(await withTenant(app.db, otherTenantId, (tx) => findStaffToken(tx, token.tokenHash))).toBeNull();
+      // A transaction without withTenant sets no tenant, so row-level security hides every token.
+      expect(await app.db.transaction((tx) => findStaffToken(tx, token.tokenHash))).toBeNull();
+      expect(await withTenant(app.db, tenantId, (tx) => findStaffToken(tx, "unknown"))).toBeNull();
+    });
+
+    it("stops finding a token once it is revoked, and revokes only once", async () => {
+      const created = await withTenant(app.db, tenantId, (tx) =>
+        createStaffToken(tx, tenantId, { name: "temp", tokenHash: "hash_staff_2", tokenPrefix: "st_5678cd" }),
+      );
+      expect(await withTenant(app.db, tenantId, (tx) => revokeStaffToken(tx, created.id))).toBe(true);
+      expect(await withTenant(app.db, tenantId, (tx) => revokeStaffToken(tx, created.id))).toBe(false);
+      expect(await withTenant(app.db, otherTenantId, (tx) => revokeStaffToken(tx, created.id))).toBe(false);
+      expect(await withTenant(app.db, tenantId, (tx) => findStaffToken(tx, "hash_staff_2"))).toBeNull();
+    });
+
+    it("refuses a duplicate hash and lists tokens without their hash", async () => {
+      const tenant = (await createTenant(app.db, { name: "Staff list" })).tenantId;
+      const make = (name: string, tokenHash: string) =>
+        withTenant(app.db, tenant, (tx) =>
+          createStaffToken(tx, tenant, { name, tokenHash, tokenPrefix: "st_abcdef" }),
+        );
+      await make("desk", "hash_staff_list_1");
+      await make("night", "hash_staff_list_2");
+      await expect(make("dup", "hash_staff_list_1")).rejects.toThrow();
+      const listed = await withTenant(app.db, tenant, (tx) => listStaffTokens(tx));
+      expect(listed.map((row) => row.name).sort()).toEqual(["desk", "night"]);
+      expect(JSON.stringify(listed)).not.toContain("hash_staff");
+      expect(await withTenant(app.db, otherTenantId, (tx) => listStaffTokens(tx))).toEqual([]);
+    });
+  });
+
+  describe("privacy requests", () => {
+    it("tracks a request from pending to a receipt with counts, per tenant", async () => {
+      const created = await withTenant(app.db, tenantId, (tx) =>
+        createPrivacyRequest(tx, tenantId, { type: "delete", subjectHash: "subject_hmac" }),
+      );
+      expect(created).toMatchObject({ type: "delete", status: "pending", counts: {}, completedAt: null });
+      const finished = await withTenant(app.db, tenantId, (tx) =>
+        finishPrivacyRequest(tx, created.id, {
+          status: "completed",
+          counts: { conversations: 2, messages: 14 },
+        }),
+      );
+      expect(finished).toBe(true);
+      expect(await withTenant(app.db, tenantId, (tx) => getPrivacyRequest(tx, created.id))).toMatchObject({
+        status: "completed",
+        counts: { conversations: 2, messages: 14 },
+      });
+      const listed = await withTenant(app.db, tenantId, (tx) => listPrivacyRequests(tx, 10));
+      expect(listed.map((row) => row.id)).toContain(created.id);
+      expect(await withTenant(app.db, otherTenantId, (tx) => getPrivacyRequest(tx, created.id))).toBeNull();
+      expect(await withTenant(app.db, otherTenantId, (tx) => listPrivacyRequests(tx, 10))).toEqual([]);
+      expect(
+        await withTenant(app.db, otherTenantId, (tx) =>
+          finishPrivacyRequest(tx, created.id, { status: "failed", counts: {} }),
+        ),
+      ).toBe(false);
+    });
+
+    it("finishes a request only once", async () => {
+      const created = await withTenant(app.db, tenantId, (tx) =>
+        createPrivacyRequest(tx, tenantId, { type: "export", subjectHash: null }),
+      );
+      const finish = () =>
+        withTenant(app.db, tenantId, (tx) =>
+          finishPrivacyRequest(tx, created.id, { status: "completed", counts: {} }),
+        );
+      expect(await finish()).toBe(true);
+      expect(await finish()).toBe(false);
     });
   });
 });

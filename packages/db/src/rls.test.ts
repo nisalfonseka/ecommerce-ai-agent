@@ -66,6 +66,36 @@ async function insertPhase6Rows(tx: Tx, tenantId: string, storeId: string, conve
   });
 }
 
+/** One row per Phase 7 table, plus the identity columns on the conversation, so every table is populated. */
+async function insertPhase7Rows(tx: Tx, tenantId: string, conversationId: string) {
+  await tx.insert(s.tenantSettings).values({ tenantId });
+  await tx.insert(s.verifications).values({
+    tenantId,
+    conversationId,
+    channel: "email",
+    destinationHash: "d1",
+    codeHash: "c1",
+    salt: "s1",
+    expiresAt: new Date(Date.now() + 600_000),
+  });
+  await tx.insert(s.consents).values({ tenantId, conversationId, noticeVersion: "2027-01" });
+  await tx
+    .insert(s.handoffs)
+    .values({ tenantId, conversationId, reason: "asked_for_person", summary: "Wants a person" });
+  await tx
+    .insert(s.staffTokens)
+    .values({ tenantId, name: "support", tokenHash: `hash_${tenantId}`, tokenPrefix: "st_abcdef" });
+  await tx.insert(s.privacyRequests).values({ tenantId, type: "export", subjectHash: "sh1" });
+  await tx
+    .update(s.conversations)
+    .set({
+      identity: { method: "email_otp", email: "a@b.lk" },
+      identityExpiresAt: new Date(Date.now() + 1_800_000),
+      identityHash: "ih1",
+    })
+    .where(sql`id = ${conversationId}`);
+}
+
 async function seedTenant(db: Db, name: string): Promise<{ tenantId: string; keyHash: string }> {
   const tenantId = randomUUID();
   const keyHash = createHash("sha256").update(`pk_test_${name}`).digest("hex");
@@ -134,6 +164,7 @@ async function seedTenant(db: Db, name: string): Promise<{ tenantId: string; key
       status: "completed",
     });
     await insertPhase6Rows(tx, tenantId, store.id, conversationId);
+    await insertPhase7Rows(tx, tenantId, conversationId);
   });
   return { tenantId, keyHash };
 }
@@ -234,6 +265,76 @@ describe.skipIf(testDb === null)("row-level security (as ace_app)", () => {
         }),
       ),
     ).rejects.toThrow();
+  });
+
+  it("rejects Phase 7 rows that carry another tenant's id, in every new table", async () => {
+    const [aConversation] = await withTenant(app.db, a.tenantId, (tx) => tx.select().from(s.conversations));
+    if (!aConversation) throw new Error("no conversation");
+    const conversationId = aConversation.id;
+    const foreign = b.tenantId;
+    const inserts: [string, (tx: Tx) => Promise<unknown>][] = [
+      ["tenant_settings", (tx) => tx.insert(s.tenantSettings).values({ tenantId: foreign })],
+      [
+        "verifications",
+        (tx) =>
+          tx.insert(s.verifications).values({
+            tenantId: foreign,
+            conversationId,
+            channel: "sms",
+            destinationHash: "d",
+            codeHash: "c",
+            salt: "s",
+            expiresAt: new Date(),
+          }),
+      ],
+      [
+        "consents",
+        (tx) => tx.insert(s.consents).values({ tenantId: foreign, conversationId, noticeVersion: "v" }),
+      ],
+      [
+        "handoffs",
+        (tx) =>
+          tx.insert(s.handoffs).values({ tenantId: foreign, conversationId, reason: "r", summary: "s" }),
+      ],
+      [
+        "staff_tokens",
+        (tx) =>
+          tx
+            .insert(s.staffTokens)
+            .values({ tenantId: foreign, name: "n", tokenHash: "x", tokenPrefix: "st_xxxxxx" }),
+      ],
+      [
+        "privacy_requests",
+        (tx) => tx.insert(s.privacyRequests).values({ tenantId: foreign, type: "delete" }),
+      ],
+    ];
+    for (const [table, insert] of inserts) {
+      await expect(
+        withTenant(app.db, a.tenantId, insert),
+        `${table} accepted a row with another tenant's id`,
+      ).rejects.toThrow();
+    }
+  });
+
+  it("cannot read or change another tenant's Phase 7 rows even by primary key", async () => {
+    const [bSettings] = await withTenant(app.db, b.tenantId, (tx) => tx.select().from(s.tenantSettings));
+    const [bHandoff] = await withTenant(app.db, b.tenantId, (tx) => tx.select().from(s.handoffs));
+    if (!bSettings || !bHandoff) throw new Error("seed rows missing");
+    await withTenant(app.db, a.tenantId, async (tx) => {
+      expect(
+        await tx.select().from(s.tenantSettings).where(sql`tenant_id = ${b.tenantId}`),
+        "tenant_settings",
+      ).toEqual([]);
+      expect(await tx.select().from(s.handoffs).where(sql`id = ${bHandoff.id}`), "handoffs").toEqual([]);
+      const updated = await tx
+        .update(s.handoffs)
+        .set({ status: "resolved" })
+        .where(sql`id = ${bHandoff.id}`)
+        .returning({ id: s.handoffs.id });
+      expect(updated).toEqual([]);
+    });
+    const [still] = await withTenant(app.db, b.tenantId, (tx) => tx.select().from(s.handoffs));
+    expect(still?.status).toBe("open");
   });
 
   it("refuses a tenant id that is not a UUID before querying", async () => {

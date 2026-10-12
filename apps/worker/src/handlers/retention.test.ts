@@ -25,6 +25,9 @@ async function tableCounts(tx: Tx): Promise<Counts> {
     tool_calls: schema.toolCalls,
     turn_traces: schema.turnTraces,
     webhook_events: schema.webhookEvents,
+    handoffs: schema.handoffs,
+    verifications: schema.verifications,
+    consents: schema.consents,
     usage_ledger: schema.usageLedger,
     attributed_orders: schema.attributedOrders,
   };
@@ -118,6 +121,39 @@ describe.skipIf(testDb === null)("retention.purge", () => {
           receivedAt,
         })),
       );
+      // Resolved and consumed rows, so the "one active per conversation" indexes allow two of each.
+      await tx.insert(schema.handoffs).values(
+        [expired("handoffs"), fresh("handoffs")].map((createdAt) => ({
+          tenantId,
+          conversationId,
+          reason: "asked_for_person",
+          summary: "Wants a person",
+          status: "resolved",
+          resolvedAt: createdAt,
+          createdAt,
+        })),
+      );
+      await tx.insert(schema.verifications).values(
+        [expired("verifications"), fresh("verifications")].map((createdAt) => ({
+          tenantId,
+          conversationId,
+          channel: "email",
+          destinationHash: "d",
+          codeHash: "c",
+          salt: "s",
+          expiresAt: createdAt,
+          consumedAt: createdAt,
+          createdAt,
+        })),
+      );
+      await tx.insert(schema.consents).values(
+        [expired("consents"), fresh("consents")].map((createdAt, i) => ({
+          tenantId,
+          conversationId,
+          noticeVersion: `v${i}`,
+          createdAt,
+        })),
+      );
       await tx.insert(schema.usageLedger).values({
         tenantId,
         storeId,
@@ -162,6 +198,9 @@ describe.skipIf(testDb === null)("retention.purge", () => {
         tool_calls: 1,
         turn_traces: 1,
         webhook_events: 1,
+        handoffs: 1,
+        verifications: 1,
+        consents: 1,
         usage_ledger: 1,
         attributed_orders: 1,
       });

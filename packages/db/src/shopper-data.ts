@@ -2,7 +2,8 @@
  * Tables that hold shopper data, with default retention (AGENTS.md: never store shopper data without
  * registering it for the purge and export jobs, which arrive in Phases 6–7). Defaults from workflow §K;
  * tenants may shorten them. usage_ledger and attributed_orders are not listed: they hold billing facts only.
- * MERCHANT_CONTENT_TABLES are not listed either (see there).
+ * MERCHANT_CONTENT_TABLES are not listed either (see there), nor are tenant_settings, staff_tokens and
+ * privacy_requests: configuration, token hashes and deletion receipts, with no shopper content.
  */
 export const SHOPPER_DATA_TABLES: readonly { table: string; retentionDays: number }[] = [
   { table: "conversations", retentionDays: 180 },
@@ -10,6 +11,10 @@ export const SHOPPER_DATA_TABLES: readonly { table: string; retentionDays: numbe
   { table: "tool_calls", retentionDays: 30 },
   { table: "turn_traces", retentionDays: 30 },
   { table: "webhook_events", retentionDays: 30 },
+  { table: "handoffs", retentionDays: 180 },
+  // Default tenant_settings.retention.otpHours (24 h); the per-tenant value comes from the settings row.
+  { table: "verifications", retentionDays: 1 },
+  { table: "consents", retentionDays: 180 },
 ];
 
 /**

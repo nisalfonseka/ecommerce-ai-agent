@@ -10,6 +10,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   vector,
 } from "drizzle-orm/pg-core";
@@ -93,23 +94,38 @@ export const widgetKeyLookup = pgTable("widget_key_lookup", {
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
 });
 
-export const conversations = pgTable("conversations", {
-  id: id(),
-  tenantId: tenantId(),
-  botId: uuid("bot_id")
-    .notNull()
-    .references(() => bots.id),
-  channel: text("channel").notNull().default("web"),
-  visitorId: text("visitor_id").notNull(),
-  session: jsonb("session").notNull(),
-  cartId: text("cart_id"),
-  summary: text("summary"),
-  /** Turn lease: a turn owns the conversation until this time (see acquireTurnLease). */
-  busyUntil: timestamp("busy_until", { withTimezone: true }),
-  status: text("status").notNull().default("open"),
-  lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
-  createdAt: createdAt(),
-});
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    botId: uuid("bot_id")
+      .notNull()
+      .references(() => bots.id),
+    channel: text("channel").notNull().default("web"),
+    visitorId: text("visitor_id").notNull(),
+    session: jsonb("session").notNull(),
+    cartId: text("cart_id"),
+    summary: text("summary"),
+    /** Turn lease: a turn owns the conversation until this time (see acquireTurnLease). */
+    busyUntil: timestamp("busy_until", { withTimezone: true }),
+    /**
+     * 'open' | 'handoff' | 'closed'. While 'handoff' a human owns the conversation and the engine never calls
+     * the model for it (enforced in code, not by the prompt).
+     */
+    status: text("status").notNull().default("open"),
+    /** The verified shopper identity (method and the one verified contact) as the engine stored it; null = anonymous. */
+    identity: jsonb("identity"),
+    /** When `identity` stops counting; an expired identity is treated as no identity. */
+    identityExpiresAt: timestamp("identity_expires_at", { withTimezone: true }),
+    /** HMAC of the verified email or phone (key derived from the master key): finds a shopper's conversations without raw contact data. */
+    identityHash: text("identity_hash"),
+    handoffOpenedAt: timestamp("handoff_opened_at", { withTimezone: true }),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("conversations_identity_hash").on(t.tenantId, t.identityHash)],
+);
 
 export const messages = pgTable(
   "messages",
@@ -120,7 +136,7 @@ export const messages = pgTable(
       .notNull()
       .references(() => conversations.id, { onDelete: "cascade" }),
     seq: integer("seq").notNull(),
-    /** "model": an AI SDK ModelMessage; "action": a deterministic UI action event. */
+    /** "model": an AI SDK ModelMessage; "action": a deterministic UI action event; "staff": a human reply during a handoff. */
     kind: text("kind").notNull(),
     payload: jsonb("payload").notNull(),
     /** What GET /v1/conversations/:id shows: text and UI parts, never tool payloads. */
@@ -385,6 +401,129 @@ export const attributedOrders = pgTable(
   (t) => [unique("attributed_orders_scope").on(t.tenantId, t.storeId, t.orderId)],
 );
 
+/** One row per tenant (tenant_id is the key). Absent row = defaults; see repos/tenant-settings.ts. */
+export const tenantSettings = pgTable("tenant_settings", {
+  tenantId: uuid("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id),
+  /** Partial { messagesDays, tracesDays, handoffDays, otpHours }; read through getRetention(), which clamps. */
+  retention: jsonb("retention").notNull().default({}),
+  /** Where handoff alerts go. Merchant staff addresses, not shopper data. */
+  handoffEmails: text("handoff_emails").array().notNull().default(sql`'{}'::text[]`),
+  /** { allowedCountryCodes, channels }: can only tighten the platform's send limits. */
+  otp: jsonb("otp").notNull().default({}),
+  requireConsent: boolean("require_consent").notNull().default(true),
+  privacyNoticeUrl: text("privacy_notice_url"),
+  /** sealSecret() output: the HMAC secret that signs the host page's session tokens. Never part of getTenantSettings(). */
+  hostSessionSecretSealed: bytea("host_session_secret_sealed"),
+  /** Shown to shoppers when the assistant is not sure and no person is reachable. */
+  contactInfo: text("contact_info"),
+  createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * One-time codes. Hashes only: `code_hash` is HMAC(code ‖ salt) and `destination_hash` an HMAC of the
+ * normalised contact, both produced by the engine; this package stores text.
+ */
+export const verifications = pgTable(
+  "verifications",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    /** 'sms' | 'email' */
+    channel: text("channel").notNull(),
+    destinationHash: text("destination_hash").notNull(),
+    codeHash: text("code_hash").notNull(),
+    salt: text("salt").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** Set when the code is used or replaced by a newer one; a consumed code never verifies again. */
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // At most one live code per conversation, enforced by the database as well as by createVerification.
+    uniqueIndex("verifications_one_pending").on(t.conversationId).where(sql`consumed_at is null`),
+    index("verifications_destination").on(t.tenantId, t.destinationHash, t.createdAt),
+    index("verifications_conversation").on(t.tenantId, t.conversationId, t.createdAt),
+  ],
+);
+
+/** The shopper agreed to a privacy-notice version for this conversation. */
+export const consents = pgTable(
+  "consents",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    noticeVersion: text("notice_version").notNull(),
+    noticeUrl: text("notice_url"),
+    createdAt: createdAt(),
+  },
+  (t) => [unique("consents_conversation_notice").on(t.conversationId, t.noticeVersion)],
+);
+
+/** A request for a human. `summary` is written for staff and already redacted (redactPii) by the engine. */
+export const handoffs = pgTable(
+  "handoffs",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    reason: text("reason").notNull(),
+    summary: text("summary").notNull(),
+    /** 'open' → 'claimed' → 'resolved' (or 'open' → 'resolved'); never backwards (see transitionHandoff). */
+    status: text("status").notNull().default("open"),
+    claimedBy: text("claimed_by"),
+    /** sealSecret() output: a contact the shopper left for staff. The only raw contact data at rest. */
+    contactSealed: bytea("contact_sealed"),
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // One unresolved handoff per conversation; a resolved one does not block the next.
+    uniqueIndex("handoffs_one_active").on(t.conversationId).where(sql`status <> 'resolved'`),
+    index("handoffs_inbox").on(t.tenantId, t.status, t.createdAt),
+  ],
+);
+
+/** Per-tenant staff API tokens (`st_<tenantId>.<secret>`). Only the hash is stored; the token is shown once. */
+export const staffTokens = pgTable("staff_tokens", {
+  id: id(),
+  tenantId: tenantId(),
+  name: text("name").notNull(),
+  /** sha256 hex of the whole token; unique across tenants, looked up inside withTenant. */
+  tokenHash: text("token_hash").notNull().unique(),
+  tokenPrefix: text("token_prefix").notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+/** Export, deletion and offboarding receipts: counts and an HMAC subject, never shopper content. */
+export const privacyRequests = pgTable("privacy_requests", {
+  id: id(),
+  tenantId: tenantId(),
+  /** 'export' | 'delete' | 'offboard' */
+  type: text("type").notNull(),
+  /** identity_hash of the data subject; null for a conversation-id request or offboarding. */
+  subjectHash: text("subject_hash"),
+  /** 'pending' | 'running' | 'completed' | 'failed' */
+  status: text("status").notNull().default("pending"),
+  /** Rows touched per table. */
+  counts: jsonb("counts").notNull().default({}),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
 /** Tables guarded by `tenant_id` (tenants itself is guarded by `id`). The RLS test iterates this list. */
 export const TENANT_TABLES = [
   "stores",
@@ -403,4 +542,10 @@ export const TENANT_TABLES = [
   "knowledge_chunks",
   "webhook_events",
   "attributed_orders",
+  "tenant_settings",
+  "verifications",
+  "consents",
+  "handoffs",
+  "staff_tokens",
+  "privacy_requests",
 ] as const;
