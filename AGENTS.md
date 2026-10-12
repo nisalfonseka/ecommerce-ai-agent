@@ -19,8 +19,8 @@ adapter**. The agent only knows the universal commerce contract, never Shopify, 
 ## Current status
 
 **Phases 1–5 are built, except what waits on the owner. Phase 6 is implemented on
-`phase-6-search-sync-knowledge`; its non-database checks are green.** The PostgreSQL/pgvector exit test and local
-stack smoke are pending on a machine with PostgreSQL or Docker; the current Mac has neither server. On hold:
+`phase-6-search-sync-knowledge`; its deterministic and PostgreSQL/pgvector-backed checks are green.** The local
+Medusa stack smoke is still pending because the current Mac has neither a PostgreSQL client/server nor Docker. On hold:
 - live evals and D3 (Phase 2 Task 10; no paid API keys yet)
 - the VPS staging deploy (Phase 3 Task 12) and the Phase 5 staging exit, which also needs PayHere sandbox credentials
 - Phase 6 live search/knowledge calibration and staging propagation check (paid embedding key + VPS)
