@@ -83,6 +83,12 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: pgvector for the runner's PostgreSQL (dev-stack.sh uses scripts/test-postgres.sh, not a service)
+        run: |
+          initdb="$(command -v initdb || ls /usr/lib/postgresql/*/bin/initdb | head -n 1)"
+          version="$(basename "$(dirname "$(dirname "$initdb")")")"
+          sudo apt-get update -q
+          sudo apt-get install -y -q "postgresql-${version}-pgvector"
       - run: pnpm --filter @ace/widget exec playwright install --with-deps chromium
       - run: pnpm --filter @ace/widget e2e
       - name: Traces on failure
