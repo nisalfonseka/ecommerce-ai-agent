@@ -27,8 +27,8 @@
 
 | ID | Question | Recommendation | Needed by |
 |---|---|---|---|
-| E1 | The spec wants prices/links checked before the shopper sees them (§C7), and also p95 first token < 2 s (§4.7). Live token streaming cannot satisfy the first rule. | **Buffered reply + live status events.** Stream `status` events while tools run ("Searching dresses…", well under 2 s), then send the validated reply and its UI parts. Measure real latency on staging. Revisit sentence-level streaming with retraction only if shoppers notice. Record as ADR-004. | Task 7 |
-| E2 | Budget enforcement needs a price per model. Prices change and differ by provider. | An owner-maintained `model-prices.json` (USD per 1M input/output tokens, with source URL and date). Bots can only use models listed there. Soft cap → the bot's cheap model; hard cap → "contact us" reply. Merchant alert at 80% (logged in Phase 3; notifications in Phase 7). | Task 9 |
+| E1 | *(provisional: built with the recommendation, ADR-004)* The spec wants prices/links checked before the shopper sees them (§C7), and also p95 first token < 2 s (§4.7). Live token streaming cannot satisfy the first rule. | **Buffered reply + live status events.** Stream `status` events while tools run ("Searching dresses…", well under 2 s), then send the validated reply and its UI parts. Measure real latency on staging. Revisit sentence-level streaming with retraction only if shoppers notice. Record as ADR-004. | Task 7 |
+| E2 | *(provisional: built with the recommendation; prices left null)* Budget enforcement needs a price per model. Prices change and differ by provider. | An owner-maintained `model-prices.json` (USD per 1M input/output tokens, with source URL and date). Bots can only use models listed there. Soft cap → the bot's cheap model; hard cap → "contact us" reply. Merchant alert at 80% (logged in Phase 3; notifications in Phase 7). | Task 9 |
 
 ## Review Focus
 
@@ -351,7 +351,16 @@ The host site sends `cartId` with each message. If a tool created or replaced th
 
 `GET /v1/conversations/:id` (widget key + conversation token) returns the display rows: user text, assistant text, UI parts. No tool payloads.
 
-- [ ] **Step 1: Failing tests** (scripted model from `@ace/agent/testing`, test database).
+**As built** (E1 not yet answered; built with the recommendation, ADR-004 marked provisional):
+- `prepareTurn` (validation, token check, bot load, conversation create/verify, lease) runs **before** the stream opens, so refusals are HTTP 400/404/409/429. `runPreparedTurn` never throws; it emits `error` instead.
+- The fallback model is used only if no tool ran yet: re-running after a cart write would repeat it under new keys.
+- `runTurn` gains `maxRetries` (default 1, spec §5: retry once, then fall back). The engine passes `TurnDeps.modelRetries`.
+- Stored history keeps the reply the shopper saw (after scrubbing), so a scrubbed price is not repeated next turn.
+- `@ace/agent` gains `scrubPrices(text, allowed, replacement)`, which uses the same detector as the grounding check.
+- Keyless demo: bot model `demo:search-only` searches the catalog for the shopper's words (`src/demo-model.ts`). `createModelResolver` refuses it when `NODE_ENV=production`.
+- Smoke-tested end to end with the built engine: `conversation` → `status` → `reply` (product cards) → `done`.
+
+- [x] **Step 1: Failing tests** (scripted model from `@ace/agent/testing`, test database).
   - The happy path emits `conversation`, `status(search_products)`, `reply` (with a `product_list` UI part), `done`, in that order.
   - Rows are persisted: messages, session refs, tool call (redacted), trace with `promptVersion`, usage.
   - A second turn using the same conversation sees the first turn's `#refs` ("#2" adds the right variant).
@@ -360,7 +369,7 @@ The host site sends `cartId` with each message. If a tool created or replaced th
   - A fallback model is used when the primary throws `APICallError`.
   - Tenant B's widget key with tenant A's conversation ID + token → 404.
   - An ungrounded amount is scrubbed from the text and tagged.
-- [ ] **Step 2:** ADR-004 (E1 outcome). Implement; checks; commit `feat(engine): chat turns over SSE with leases, persistence and traces`.
+- [x] **Step 2:** ADR-004 (E1 outcome). Implement; checks; commit `feat(engine): chat turns over SSE with leases, persistence and traces`.
 
 ---
 
@@ -370,13 +379,20 @@ The host site sends `cartId` with each message. If a tool created or replaced th
 
 `POST /v1/actions/:type` with types `add_to_cart` (`{ variantId, quantity }`), `update_cart_line` (`{ lineId, quantity }`), `view_cart`, `start_checkout`. Each requires a conversation token, runs the matching tool definition from `ALL_TOOLS` directly (no LLM) with the same `ToolContext` and lease, appends an `action` message (`"[shopper action] added Navy Cotton Kurta (M) ×1"` or the failure), and returns `{ result: ToolResult, ui: UiPart[], cartId }`. The idempotency key is the client-sent `actionId` (UUID, required), so a double click does not add twice.
 
-- [ ] **Step 1: Failing tests.**
+**As built:**
+- Body: `{ conversationId, conversationToken, actionId, cartId?, input }`. Inputs are strict per type (`add_to_cart` takes a `variantId`, never a `#ref`). Missing or foreign tokens → 404, like chat.
+- The tool call id is fixed (`action`), so the idempotency key is `ace:action-<actionId>:action` and a double click replays.
+- A repeated `actionId` is not noted twice in the history.
+- `leaseExistingConversation` is shared by chat and actions.
+- `src/testing/harness.ts` sets up an engine on a test database for route tests.
+
+- [x] **Step 1: Failing tests.**
   - The action adds to the cart, and the next chat turn's history contains the action note.
   - The same `actionId` twice → one line.
   - An unknown type → 404.
   - No token → 401.
   - An action while a turn holds the lease → 409.
-- [ ] **Step 2: Implement; checks; commit** `feat(engine): deterministic UI actions`.
+- [x] **Step 2: Implement; checks; commit** `feat(engine): deterministic UI actions`.
 
 ---
 
@@ -392,13 +408,21 @@ The host site sends `cartId` with each message. If a tool created or replaced th
 - `startTelemetry(config)`: when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, start the OTel Node SDK. `runTurn` gets `telemetry: { isEnabled: true, recordInputs: false, recordOutputs: false }` so prompts and replies (PII) never leave in spans.
 - Admin validation: a bot's `model`, `cheapModel` and `fallbackModel` must exist in the price table.
 
-- [ ] **Step 1: Failing tests.**
+**As built** (E2 not yet answered; built with the recommendation):
+- `model-prices.json` lists the candidate models with `null` prices. Prices are never invented: the owner fills them in from each provider's pricing page.
+- A `null` price means the cost is recorded as unknown and budgets cannot trigger for that model, so nothing blocks the owner while there are no paid keys.
+- `budgetState` → `chooseModel`: past the soft cap → the bot's cheap model; past the hard cap → a contact-only reply with **no model call**, stored with outcome `budget_contact_only`. Alert (≥ 80% of soft) is logged on each turn.
+- Each turn's trace and usage row carry `costMicros` (integer, rounded up).
+- **Deferred:** the optional OpenTelemetry exporter. Per-turn traces are already in Postgres (`turn_traces`), and there is no OTLP endpoint to send to yet. Add `@opentelemetry/sdk-node` when the owner picks one.
+- The test harness serialises test-database setup with an advisory lock on the base database. Parallel `ALTER ROLE ace_app` statements failed with "tuple concurrently updated".
+
+- [x] **Step 1: Failing tests.**
   - Cost arithmetic is integer and rounds up.
   - An unknown model → null cost, and bot creation rejects it.
   - The state transitions at 80% / 100% soft / 100% hard.
   - Soft → the cheap model is used for the turn; hard → a static "contact us" reply without calling any model.
   - The turn trace stores the cost.
-- [ ] **Step 2: Implement.** The owner fills `model-prices.json` from the providers' pricing pages; the plan ships it with the structure and `"checkedOn": null` placeholders, and startup refuses bots whose models have no price. Checks; commit `feat(engine): usage cost, budgets and optional OpenTelemetry`.
+- [x] **Step 2: Implement.** The owner fills `model-prices.json` from the providers' pricing pages; the plan ships it with the structure and `"checkedOn": null` placeholders, and startup refuses bots whose models have no price. Checks; commit `feat(engine): usage cost, budgets and optional OpenTelemetry`.
 
 ---
 
@@ -416,12 +440,19 @@ The host site sends `cartId` with each message. If a tool created or replaced th
   - `GET /admin/tenants/:id/usage?month=2026-10` (cost per conversation: total, conversations, average; the exit criterion "cost per conversation visible")
 - `pnpm seed` creates "Demo Clothing A" and "Demo Clothing B" (memory adapter, LKR, persona, the default model from D3) with widget keys for `http://localhost:5173`, and prints the keys.
 
-- [ ] **Step 1: Failing tests.**
+**As built:**
+- Foreign references (a store ID for a bot, a bot ID for a widget key) are looked up under the tenant before insert, because Postgres foreign-key checks bypass RLS. Without this, tenant B could attach a bot to tenant A's store.
+- Widget-key origins must be bare `http(s)` origins.
+- Store `credentials` are sealed with the master key and never returned.
+- `pnpm seed` (`src/seed-cli.ts`, also built as `dist/seed.js`) creates "Demo Clothing A" and "Demo Clothing B" with the keyless demo model by default (`ACE_SEED_MODEL`, `ACE_SEED_ORIGINS`). Tenant IDs are derived from the names, so re-runs find the same tenants and print fresh keys.
+- Smoke-tested on the built engine: migrate → seed → chat with a seeded key → `GET /admin/tenants/:id/usage` shows 1 turn, 1 conversation.
+
+- [x] **Step 1: Failing tests.**
   - No or wrong admin key → 401.
   - The full create flow works, and the widget key from it authenticates `/v1/chat`.
   - Usage for tenant A excludes tenant B.
   - The seed is idempotent (by tenant name).
-- [ ] **Step 2: Implement; checks; commit** `feat(engine): admin API and demo tenant seed`.
+- [x] **Step 2: Implement; checks; commit** `feat(engine): admin API and demo tenant seed`.
 
 ---
 
@@ -436,9 +467,16 @@ The host site sends `cartId` with each message. If a tool created or replaced th
 - `caddy` (80/443, `reverse_proxy engine:8080`, automatic TLS for `$ACE_DOMAIN`).
 - `backup`: a nightly `pg_dump -Fc` to a mounted directory, kept 14 days, plus an optional `rclone` copy to the off-site target configured by the owner.
 
-- [ ] **Step 1:** CI gains a `docker build .` job (no push) so the image always builds.
-- [ ] **Step 2:** Locally: `docker compose up` (where Docker is available), then `pnpm seed` against it and `curl -N` a chat turn with the memory adapter and a scripted model flag (`ACE_FAKE_MODEL=1`, accepted only when `NODE_ENV !== "production"`), to prove the stack without API keys.
-- [ ] **Step 3: Commit** `chore(deploy): engine image, compose stack, Caddy and backups`.
+**As built:**
+- The image is a two-stage `node:24-slim` build. pnpm 12 comes from npm, `pnpm deploy --prod` produces the runtime folder, and `@ace/*` are dev dependencies of the engine because they are bundled. The image holds `dist/` (main, migrate, seed), production `node_modules`, `migrations/` and `model-prices.json`, runs as the `node` user, and has a health check.
+- Compose: `postgres` (owner `ace_owner`), `migrate` (one-shot), `engine`, `caddy` (TLS; `flush_interval -1` for SSE), `backup` (nightly `pg_dump -Fc`, kept 14 days in `./backups`; the off-site copy is the owner's choice). Secrets come from `.env.production` (`.env.production.example` is committed).
+- Postgres' owner is a superuser in the official image. Only `migrate` uses it; the engine connects as `ace_app` (no `BYPASSRLS`), so RLS holds.
+- There is no Docker daemon in the development container. The local proof is the `pnpm deploy` output running on its own (migrate, start in production mode, `/healthz`) plus `docker compose config`. The image itself is proven by the new CI job `image`: build, `up --wait`, health check, seed, admin call.
+- The keyless chat smoke stays local (`NODE_ENV=development`), because the image refuses the demo model in production.
+
+- [x] **Step 1:** CI gains a `docker build .` job (no push) so the image always builds.
+- [x] **Step 2:** Locally: `docker compose up` (where Docker is available), then `pnpm seed` against it and `curl -N` a chat turn with the memory adapter and a scripted model flag (`ACE_FAKE_MODEL=1`, accepted only when `NODE_ENV !== "production"`), to prove the stack without API keys.
+- [x] **Step 3: Commit** `chore(deploy): engine image, compose stack, Caddy and backups`.
 
 ---
 

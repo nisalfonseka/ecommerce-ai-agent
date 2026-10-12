@@ -1,5 +1,5 @@
 import type { VerifiedIdentity } from "@ace/contracts";
-import { CAPABILITIES } from "@ace/contracts";
+import { CAPABILITIES, ProductSchema } from "@ace/contracts";
 import { describe, expect, it } from "vitest";
 import { availabilityFor, MemoryCommerceProvider } from "./memory-provider";
 import { defaultSeed } from "./seed";
@@ -212,6 +212,23 @@ describe("MemoryCommerceProvider — carts", () => {
     expect(resultB.itemCount).toBe(1);
   });
 
+  it("can leave replay to the engine (idempotency: false)", async () => {
+    const provider = new MemoryCommerceProvider({ idempotency: false });
+    const cart = await provider.createCart({}, key());
+    const same = key();
+    await provider.addCartLines(cart.id, add("p_kurta_navy_m", 1), same);
+    expect((await provider.addCartLines(cart.id, add("p_kurta_navy_m", 1), same)).itemCount).toBe(2);
+  });
+
+  it("setStock changes live availability (test hook)", async () => {
+    const provider = new MemoryCommerceProvider();
+    provider.setStock("p_linen_shirt_black_l", 5);
+    expect(await provider.getInventory(["p_linen_shirt_black_l"])).toEqual([
+      { variantId: "p_linen_shirt_black_l", availability: "in_stock", quantityAvailable: 5 },
+    ]);
+    expect(() => provider.setStock("nope", 1)).toThrow();
+  });
+
   it("keeps carts separate between provider instances", async () => {
     const first = new MemoryCommerceProvider();
     const second = new MemoryCommerceProvider();
@@ -243,5 +260,29 @@ describe("MemoryCommerceProvider — carts", () => {
     const provider = new MemoryCommerceProvider({ now: () => new Date("2026-10-08T12:00:00.000Z") });
     const cart = await provider.createCart({}, key());
     expect(cart.updatedAt).toBe("2026-10-08T12:00:00.000Z");
+  });
+});
+
+describe("MemoryCommerceProvider — test controls", () => {
+  it("removeProduct hides the product from get and list", async () => {
+    const provider = new MemoryCommerceProvider();
+    provider.removeProduct("p_linen_shirt_black");
+    expect(await provider.getProduct("p_linen_shirt_black")).toBeNull();
+    const listed = await provider.listProducts({});
+    expect(listed.items.map((p) => p.id)).not.toContain("p_linen_shirt_black");
+    expect(() => provider.removeProduct("nope")).toThrow();
+  });
+
+  it("setPrice keeps priceRange valid and bumps updatedAt", async () => {
+    const provider = new MemoryCommerceProvider({ now: () => new Date("2026-10-05T00:00:00.000Z") });
+    const before = await provider.getProduct("p_linen_shirt_black");
+    const variant = before?.variants[0];
+    if (!before || !variant) throw new Error("seed missing");
+    provider.setPrice(variant.id, 999_999);
+    const after = await provider.getProduct("p_linen_shirt_black");
+    expect(after?.variants[0]?.price.amount).toBe(999_999);
+    expect(after?.priceRange.max.amount).toBe(999_999);
+    expect(after?.updatedAt).toBe("2026-10-05T00:00:00.000Z");
+    expect(ProductSchema.safeParse(after).success).toBe(true);
   });
 });

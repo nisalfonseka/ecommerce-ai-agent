@@ -24,6 +24,8 @@ function readOnlyStub(): CommerceProvider {
     updateCartAttributes: notSupported,
     createCheckout: notSupported,
     lookupOrder: notSupported,
+    quoteCodOrder: notSupported,
+    placeCodOrder: notSupported,
     listOrders: notSupported,
   };
 }
@@ -34,6 +36,7 @@ describeProviderConformance("read-only stub", async () => ({
     searchTerm: "dress",
     productId: "prod_dress",
     inStockVariantId: "unused",
+    inStockQuantity: 2,
     outOfStockVariantId: "unused",
     orderNumber: "unused",
     orderOwner: { method: "email_otp", email: "owner@example.com", verifiedAt },

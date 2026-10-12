@@ -1,0 +1,29 @@
+{
+  "name": "@ace/search",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "search-evals": "tsx src/eval/cli.ts"
+  },
+  "dependencies": {
+    "@ace/contracts": "workspace:*",
+    "@ace/db": "workspace:*",
+    "@ace/knowledge": "workspace:*",
+    "ai": "^7.0.133",
+    "drizzle-orm": "^0.45.3",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@ace/adapter-memory": "workspace:*",
+    "@ace/agent": "workspace:*",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

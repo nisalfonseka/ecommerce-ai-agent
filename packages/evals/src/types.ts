@@ -32,7 +32,10 @@ export interface EvalCase {
   language: EvalLanguage;
   tags: string[];
   description: string;
-  setup?: { identity?: VerifiedIdentity; seed?: (seed: MemorySeed) => void };
+  /** `cod`: the bot has cash on delivery enabled (no limits). */
+  setup?: { identity?: VerifiedIdentity; seed?: (seed: MemorySeed) => void; cod?: boolean };
+  /** Store documents for this case. Omitted uses the default policy set; [] keeps the tool but finds nothing. */
+  knowledge?: { title: string; markdown: string }[];
   turns: EvalTurn[];
 }
 

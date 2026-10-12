@@ -1,0 +1,8 @@
+# TLS (automatic certificates) and reverse proxy for the engine. ACE_DOMAIN comes from .env.production.
+{$ACE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy engine:8080 {
+		# Server-Sent Events: pass each event through immediately.
+		flush_interval -1
+	}
+}

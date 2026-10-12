@@ -26,6 +26,8 @@ describe("composeInstructions", () => {
       "discount",
       "language",
       "check_availability",
+      "search_knowledge",
+      "Never guess a policy",
     ]) {
       expect(text.toLowerCase()).toContain(rule.toLowerCase());
     }

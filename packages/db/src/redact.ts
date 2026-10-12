@@ -1,4 +1,6 @@
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+// Bounded to RFC 5321 lengths: unbounded runs rescan to the end of the text from every position (quadratic time,
+// seconds on long tool output).
+const EMAIL = /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24}/g;
 // 13–19 digits, optionally grouped by spaces or dashes: payment card numbers.
 const CARD = /\b(?:\d[ -]?){12,18}\d\b/g;
 // E.164 (+94771234567) and Sri Lankan local numbers (0771234567, 077 123 4567).

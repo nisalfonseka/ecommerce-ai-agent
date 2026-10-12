@@ -1,5 +1,7 @@
 import { MemoryCommerceProvider } from "@ace/adapter-memory";
 import type { ModelMessage } from "ai";
+import { APICallError } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { AgentInputError, runTurn } from "./agent";
 import { createToolContext } from "./context";
@@ -155,4 +157,31 @@ describe("runTurn", () => {
     ).rejects.toBeInstanceOf(AgentInputError);
     expect(model.doGenerateCalls).toHaveLength(0);
   });
+
+  it("retries a failing model once by default (spec §5) and as configured", async () => {
+    const failing = () =>
+      new MockLanguageModelV4({
+        doGenerate: async () => {
+          throw new APICallError({
+            message: "overloaded",
+            url: "u",
+            requestBodyValues: {},
+            statusCode: 503,
+            isRetryable: true,
+          });
+        },
+      });
+    const ctx = () =>
+      createToolContext({ provider: new MemoryCommerceProvider(), conversationId: "conv", turnId: "t1" });
+    const once = failing();
+    await expect(
+      runTurn({ model: once, ctx: ctx(), persona, store, history: [], userMessage: "hi" }),
+    ).rejects.toThrow();
+    expect(once.doGenerateCalls).toHaveLength(2);
+    const never = failing();
+    await expect(
+      runTurn({ model: never, ctx: ctx(), persona, store, history: [], userMessage: "hi", maxRetries: 0 }),
+    ).rejects.toThrow();
+    expect(never.doGenerateCalls).toHaveLength(1);
+  }, 15_000);
 });

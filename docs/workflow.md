@@ -35,6 +35,18 @@ and how the system improves afterwards. Architecture details are in the
 | A9 | Us | Issue a widget key, set allowed origins, give the install snippet `<script src=".../ace.js" data-key="pk_…" async></script>`. Storefront passes the cart ID and, if logged in, a signed identity token. | Widget visible on staging |
 | A10 | Merchant | Soft launch (staff only) → public launch. Set up handoff notifications (email/WhatsApp to staff). | Live; dashboard shows conversations |
 
+Phase 6 admin sequence (all calls use the admin bearer key):
+
+- **A4:** `POST /admin/tenants/:tenantId/stores/:storeId/sync` with `{ "full": true }`; poll `GET` on the same
+  path until `state.status` is `ready`, `counts.active` matches the live catalog, and stale enrichment/embedding
+  counts reach zero.
+- **A5:** `GET /admin/tenants/:tenantId/stores/:storeId/enrichment`; apply reviewed corrections with
+  `PUT /admin/tenants/:tenantId/stores/:storeId/products/:productId/overrides`.
+- **A6:** `POST /admin/tenants/:tenantId/stores/:storeId/knowledge` with a title and a `markdown`, `pdf` or `url`
+  source; poll `GET .../knowledge` until every document is `ready`.
+- **A7:** `POST /admin/tenants/:tenantId/stores/:storeId/webhook-secret`; configure the returned secret and
+  `/webhooks/:storeId` path on the platform, then send a signed test event.
+
 ---
 
 ## B. Catalog sync and enrichment (continuous)
@@ -56,13 +68,21 @@ sequenceDiagram
   alt text or images changed
     W->>Q: enqueue enrich.product + embed.product
   end
-  Note over W,DB: Nightly reconciliation: listProducts(updatedSince=last_success)<br/>catches missed webhooks; weekly full resync marks deleted products
+  Note over W,DB: Every 15 min: incremental reconcile listProducts(updatedSince=watermark − 5 min)<br/>repairs missed webhooks; nightly full reconcile marks deleted products
 ```
 
 Rules:
 
 - The webhook handler only verifies, dedupes and enqueues. It does no heavy work, so it can answer the platform quickly.
 - Jobs are idempotent (upsert by `(tenant_id, product_id)`); retries are safe.
+- The worker (`apps/worker`, same image as the engine) runs the jobs. `sync.reconcile-all` fans out one
+  `sync.reconcile` per index-mode store: incrementally every 15 minutes (`RECONCILE_CRON`), so a dropped webhook
+  is repaired within 15 minutes, and in full nightly (`FULL_RECONCILE_CRON`, 02:30). An admin can trigger either
+  with `POST /admin/tenants/:tenantId/stores/:storeId/sync` and read progress with `GET` on the same path.
+- A job whose payload fails validation is logged (`job.invalid_payload`, name and id only) and completed, not
+  retried. `sync.product`, `enrich.product` and `embed.product` for a store that is not in index mode are logged
+  and completed without calling the store or a model (`sync.reconcile` still runs, to build the index first).
+- A reconcile or purge attempt may run for an hour (`expireInSeconds` 3600); other jobs for five minutes.
 - Enrichment uses the cheap model to extract `{category, color[], pattern, fabric[], occasion[], fit, gender, season}`.
   Merchant overrides always win over model output.
 - The index never decides a final price or stock answer (see C6).
@@ -115,8 +135,8 @@ the conversation as an event so the agent knows about it on the next turn.
 
 > Shopper: "I need a black dress for a wedding, under 20,000, size M"
 
-1. **Normalise:** cheap model → `{ text: "black dress wedding", filters: { category: "dress", options: { color: ["Black"], size: ["M"] }, priceMax: 2000000, inStockOnly: true } }` (LKR minor units).
-2. **Search:** `search_products` → top 3–5 summaries; session state stores them as `#1…#5`.
+1. **Normalise:** the agent model fills the `search_products` input → `{ query: "black dress wedding", filters: { category: "dress", options: { color: ["Black"], size: ["M"] }, priceMax: 2000000, inStockOnly: true } }` (LKR minor units). No extra model call: in index mode a fixed lexicon maps Singlish, Sinhala and Tamil words to catalog English (ADR-008, S2).
+2. **Search:** `search_products` → top 3–5 summaries; session state stores them as `#1…#5`. In index mode the read model picks the candidates (full-text + vector, RRF) and every candidate is re-read live, so prices and stock come from the store (ADR-008).
 3. **Respond:** short text plus product cards rendered from tool data (image, title, price, stock badge).
 4. > "Is #2 available in large too? What's the fabric?"
    → `get_product(#2)` + `check_availability` (live). Answer from data; fabric from product attributes or knowledge base.
@@ -133,17 +153,21 @@ the conversation as an event so the agent knows about it on the next turn.
 
 ---
 
-## E. Cash-on-Delivery order (Phase 5+, only if the tenant enables COD)
+## E. Cash-on-Delivery order (Phase 5, only if the tenant enables COD; ADR-007)
 
-1. The shopper asks to pay cash on delivery.
-2. The agent collects delivery details through a **form card** (not free text): name, phone, address, city. The phone is
-   verified by OTP if the tenant requires it.
-3. `place_cod_order` is a tool with `toolApproval: 'user-approval'`. The widget shows an **order summary card** (items,
-   delivery fee, total, address) with **Confirm** / **Edit** buttons. Approval is bound to the server with the
-   approval secret, so a crafted client message cannot skip it.
-4. On Confirm, the adapter places the order (idempotency key), and the shopper gets the order number plus the
-   confirmation the store normally sends.
-5. Business rules in code: COD limits (max order value, allowed cities), from tenant config.
+1. The shopper asks to pay cash on delivery. The agent calls `start_cod_order` (no input). It is offered only when the
+   store supports `orders.place_cod` and the bot has `storeFacts.cod.enabled`.
+2. The widget shows a **delivery form card**: name, phone, address, city, optional email and note. Details are typed
+   into the form, never into chat. Phone verification by OTP, if the tenant requires it, comes with Phase 7 identity.
+3. The form posts the UI action `cod_quote`. The engine validates the details and applies the COD rules in code: allowed
+   cities and the order-value limit `maxTotal`. It gets the store's quote, delivery fee included, and keeps a draft in
+   the session. The widget shows an **order summary card** (items, delivery fee, total, address) with **Confirm** /
+   **Edit**.
+4. **Confirm** posts the UI action `place_cod_order`, which is the shopper's approval.
+   - The engine re-quotes. If the total changed, the shopper gets a new summary to confirm.
+   - Otherwise the adapter places the order (`placeCodOrder`, idempotency key = the click's `actionId`).
+   - The shopper gets the order card with the number. The store sends its usual confirmation.
+5. The model has no tool that places orders, and nothing the model writes can confirm one.
 
 ---
 
@@ -166,8 +190,12 @@ sequenceDiagram
 ```
 
 - Payment verification lives in the store backend (the PayHere provider in Medusa), never in the agent.
-- Attribution: an order is **chat-assisted** if its cart had `ace_conversation_id`. That is the merchant-facing ROI
-  metric.
+- Attribution: an order is **chat-assisted** if its cart had `ace_conversation_id` naming a conversation of that
+  tenant and store. That is the merchant-facing ROI metric. The `order.placed` job upserts `attributed_orders`
+  (one row per order; foreign or malformed ids are stored as not chat-assisted) and marks the webhook processed.
+  `chat_assisted` is fixed when the order is attributed, so it survives the conversation's retention purge.
+  `GET /admin/tenants/:tenantId/attribution?from=&to=` reports orders, chat-assisted orders and revenue per
+  currency (never summed across currencies); the default range is month to date.
 
 ---
 
@@ -207,6 +235,14 @@ request; a policy question with low retrieval confidence; a tool failure that bl
 threshold: "I'm not sure, let me get someone from the team" → flow H. Product facts (price, stock, sizes available)
 never come from RAG.
 
+Retrieval is scoped to the turn's tenant and store and searches only `ready` documents. It fuses the best eight
+pgvector and full-text matches with reciprocal-rank fusion. A passage qualifies when its cosine score meets the
+store's `search.knowledgeThreshold` or it ranks in both legs' top three. Query-embedding failure degrades to qualified
+full-text matches (`ts_rank_cd ≥ 0.1`) instead of failing the turn. The default real-model threshold is 0.6 until it is
+calibrated with `pnpm search-evals --knowledge --embedding <model>`; the deterministic demo threshold is 0.15. The
+tool returns at most three 1,200-character passages, wrapped as untrusted store data. The answer must name the source;
+no confident passage means the assistant says it is not sure and directs the shopper to the store.
+
 ---
 
 ## J. Failure handling (any step)
@@ -225,7 +261,11 @@ never come from RAG.
 
 - Consent recorded on the first message; the privacy notice links to the merchant's policy.
 - Retention: messages 180 days, traces 30 days, OTP records 24 hours (defaults, configurable per tenant).
-- A daily `retention.purge` job deletes expired data.
+- A daily `retention.purge` job (`RETENTION_CRON`, 03:00) deletes expired data per tenant, inside that tenant's RLS
+  context, in batches of 1,000 for each table in `SHOPPER_DATA_TABLES` (conversations by last message, webhook
+  events by receipt, others by creation). It logs counts per table, never content. A tenant whose pass fails is
+  logged and skipped; the job then fails and is retried. `usage_ledger` and
+  `attributed_orders` hold billing facts only and are kept.
 - Shopper requests (via the merchant): export and deletion by email or phone, handled by the admin API.
 - Breach runbook: detect → contain → notify merchants (controllers) promptly so they can meet their notification duty.
 

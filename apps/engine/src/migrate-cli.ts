@@ -1,4 +1,5 @@
 import { MIGRATIONS_FOLDER, runMigrations } from "@ace/db";
+import { installJobSchema } from "@ace/db/jobs";
 
 // One-shot: `node dist/migrate.js`. Runs as the database owner; sets the ace_app login password.
 const ownerUrl = process.env.MIGRATION_DATABASE_URL;
@@ -8,4 +9,5 @@ if (!ownerUrl || !appPassword) {
   process.exit(1);
 }
 await runMigrations(ownerUrl, appPassword, process.env.ACE_MIGRATIONS_DIR ?? MIGRATIONS_FOLDER);
+await installJobSchema(ownerUrl);
 console.log("migrations applied");

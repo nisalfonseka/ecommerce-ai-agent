@@ -1,2 +1,7 @@
 export { describeProviderConformance } from "./conformance";
-export type { ConformanceFixtures, ConformanceSubject } from "./fixtures";
+export type {
+  ConformanceControl,
+  ConformanceFixtures,
+  ConformanceOptions,
+  ConformanceSubject,
+} from "./fixtures";

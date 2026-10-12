@@ -4,6 +4,7 @@ import {
   extractPriceMentions,
   findUngroundedAmounts,
   MAX_USER_MESSAGE_CHARS,
+  scrubPrices,
   shopperAmounts,
 } from "./guardrails";
 
@@ -52,5 +53,16 @@ describe("findUngroundedAmounts", () => {
     const observed = new Set([1850000]);
     expect(findUngroundedAmounts("Only LKR 18,500.00, was Rs. 25,000", observed)).toEqual([2500000]);
     expect(findUngroundedAmounts("No prices here", observed)).toEqual([]);
+  });
+});
+
+describe("scrubPrices", () => {
+  it("replaces only the amounts that are not allowed, in any supported format", () => {
+    const allowed = new Set([1850000]);
+    expect(scrubPrices("Was Rs. 25,000/=, now LKR 18,500.00!", allowed, "[see the product card]")).toBe(
+      "Was [see the product card], now LKR 18,500.00!",
+    );
+    expect(scrubPrices("விலை 999 ரூபாய்", allowed, "[x]")).toBe("விலை [x]");
+    expect(scrubPrices("Size 32, 2 items", allowed, "[x]")).toBe("Size 32, 2 items");
   });
 });

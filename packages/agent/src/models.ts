@@ -1,7 +1,7 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
-import type { LanguageModel } from "ai";
+import type { EmbeddingModel, embedMany, LanguageModel } from "ai";
 
 export type ProviderName = "google" | "openai" | "anthropic";
 
@@ -36,6 +36,34 @@ export function resolveModel(spec: string): LanguageModel {
       return openai(modelId);
     case "anthropic":
       return anthropic(modelId);
+  }
+}
+
+export type EmbeddingProviderOptions = NonNullable<Parameters<typeof embedMany>[0]["providerOptions"]>;
+
+export interface ResolvedEmbeddingModel {
+  model: EmbeddingModel;
+  providerOptions: (purpose: "document" | "query") => EmbeddingProviderOptions;
+}
+
+/** Every embedding column is vector(768), so each provider is asked for 768 dimensions explicitly. */
+export function resolveEmbeddingModel(spec: string): ResolvedEmbeddingModel {
+  const { provider, modelId } = parseModelSpec(spec);
+  switch (provider) {
+    case "google":
+      return {
+        model: google.embedding(modelId),
+        providerOptions: (purpose) => ({
+          google: {
+            outputDimensionality: 768,
+            taskType: purpose === "query" ? "RETRIEVAL_QUERY" : "RETRIEVAL_DOCUMENT",
+          },
+        }),
+      };
+    case "openai":
+      return { model: openai.embedding(modelId), providerOptions: () => ({ openai: { dimensions: 768 } }) };
+    case "anthropic":
+      throw new Error("anthropic has no embedding model; use google:… or openai:…");
   }
 }
 

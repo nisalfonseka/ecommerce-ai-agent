@@ -1,3 +1,19 @@
+import type { CodDetails, Money, Order } from "@ace/contracts";
+
+/**
+ * Delivery details and the quote the shopper is looking at, between the COD form and Confirm. Personal data:
+ * it lives only in the conversation's session (covered by retention, export and purge) and is cleared once the
+ * order is placed.
+ */
+export interface CodDraft {
+  cartId: string;
+  details: CodDetails;
+  subtotal: Money;
+  deliveryFee: Money;
+  total: Money;
+  itemCount: number;
+}
+
 /** A product the shopper has seen, addressable as "#n" in later messages. */
 export interface ShownProduct {
   ref: string;
@@ -15,6 +31,9 @@ export interface SessionState {
    * new cart mid-conversation (e.g. after a checkout), and that cart must be tagged too.
    */
   attributedCartId: string | null;
+  codDraft?: CodDraft | null;
+  /** The last COD order and the idempotency key that placed it, so a retried Confirm returns it again. */
+  lastOrder?: { key: string; order: Order } | null;
 }
 
 export function createSession(): SessionState {

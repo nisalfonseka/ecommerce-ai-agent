@@ -1,6 +1,8 @@
 import { defaultSeed, MemoryCommerceProvider } from "@ace/adapter-memory";
 import { createSession, createToolContext, type Persona, runTurn, type StoreFacts } from "@ace/agent";
+import { createStaticKnowledge } from "@ace/knowledge/testing";
 import type { LanguageModel, ModelMessage } from "ai";
+import { DEFAULT_KNOWLEDGE } from "./cases/knowledge";
 import { scoreTurn } from "./scorers";
 import type { CaseResult, EvalCase, TurnRecord } from "./types";
 
@@ -20,6 +22,7 @@ export async function runCase(evalCase: EvalCase, options: RunCaseOptions): Prom
   const history: ModelMessage[] = [];
   const turns: TurnRecord[] = [];
   let cartId: string | null = null;
+  const knowledge = createStaticKnowledge(evalCase.knowledge ?? DEFAULT_KNOWLEDGE);
 
   try {
     for (const [index, turn] of evalCase.turns.entries()) {
@@ -29,6 +32,8 @@ export async function runCase(evalCase: EvalCase, options: RunCaseOptions): Prom
         turnId: `${evalCase.id}_t${index + 1}`,
         identity: evalCase.setup?.identity ?? null,
         session,
+        cod: evalCase.setup?.cod ? { maxTotal: null, allowedCities: null, countryCode: "LK" } : null,
+        knowledge,
         cartId,
       });
       const started = Date.now();

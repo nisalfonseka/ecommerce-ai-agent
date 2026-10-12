@@ -11,6 +11,7 @@ const EnvSchema = z.object({
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(1),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
 export interface EngineConfig {
@@ -23,6 +24,8 @@ export interface EngineConfig {
   /** Proxies in front of the engine (Caddy = 1); used to read the client IP from X-Forwarded-For. */
   trustProxyHops: number;
   otlpEndpoint: string | undefined;
+  /** The keyless demo model ("demo:*") is allowed only outside production. */
+  allowDemoModel: boolean;
 }
 
 /** Validates the environment. Errors name the variable and the rule, never the value (it may be a secret). */
@@ -42,5 +45,6 @@ export function loadConfig(env: Record<string, string | undefined>): EngineConfi
     logLevel: e.LOG_LEVEL,
     trustProxyHops: e.TRUST_PROXY_HOPS,
     otlpEndpoint: e.OTEL_EXPORTER_OTLP_ENDPOINT,
+    allowDemoModel: e.NODE_ENV !== "production",
   };
 }

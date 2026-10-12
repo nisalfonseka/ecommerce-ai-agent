@@ -1,0 +1,427 @@
+{
+  "id": "prod_01M4G99VE301FRJWFK87H7X14F",
+  "handle": "linen-shirt-black",
+  "title": "Black Linen Shirt",
+  "description": "Breathable linen shirt with a relaxed fit for hot days.",
+  "thumbnail": "http://localhost:8000/images/linen-shirt-black.svg",
+  "updated_at": "2026-10-09T12:13:13.547Z",
+  "status": "published",
+  "metadata": {
+    "attributes": {
+      "color": ["black"],
+      "fabric": ["linen"],
+      "occasion": ["casual", "office"]
+    }
+  },
+  "variants": [
+    {
+      "id": "variant_01M4G99VJ4V59S8VHC6CK0FHGY",
+      "title": "Black / S",
+      "sku": "LINEN-SHIRT-BLACK-S",
+      "barcode": null,
+      "ean": null,
+      "upc": null,
+      "allow_backorder": false,
+      "manage_inventory": true,
+      "hs_code": null,
+      "origin_country": null,
+      "mid_code": null,
+      "material": null,
+      "weight": null,
+      "length": null,
+      "height": null,
+      "width": null,
+      "metadata": null,
+      "variant_rank": 0,
+      "thumbnail": null,
+      "product_id": "prod_01M4G99VE301FRJWFK87H7X14F",
+      "created_at": "2026-10-09T12:13:13.671Z",
+      "updated_at": "2026-10-09T12:13:13.671Z",
+      "deleted_at": null,
+      "options": [
+        {
+          "id": "optval_01M4G99VE9VDS9MVZHEZ3YR1TD",
+          "value": "Black",
+          "rank": null,
+          "metadata": null,
+          "option_id": "opt_01M4G99VE3B4XJ89RTG8ZNK5WF",
+          "option": {
+            "id": "opt_01M4G99VE3B4XJ89RTG8ZNK5WF",
+            "title": "Color",
+            "is_exclusive": true,
+            "metadata": null,
+            "created_at": "2026-10-09T12:13:13.548Z",
+            "updated_at": "2026-10-09T12:13:13.548Z",
+            "deleted_at": null
+          },
+          "created_at": "2026-10-09T12:13:13.549Z",
+          "updated_at": "2026-10-09T12:13:13.549Z",
+          "deleted_at": null
+        },
+        {
+          "id": "optval_01M4G99VE9FFRGQ4KQ19C0WRRX",
+          "value": "S",
+          "rank": null,
+          "metadata": null,
+          "option_id": "opt_01M4G99VE4E3489D1XPXRAS09E",
+          "option": {
+            "id": "opt_01M4G99VE4E3489D1XPXRAS09E",
+            "title": "Size",
+            "is_exclusive": true,
+            "metadata": null,
+            "created_at": "2026-10-09T12:13:13.548Z",
+            "updated_at": "2026-10-09T12:13:13.548Z",
+            "deleted_at": null
+          },
+          "created_at": "2026-10-09T12:13:13.549Z",
+          "updated_at": "2026-10-09T12:13:13.549Z",
+          "deleted_at": null
+        }
+      ],
+      "calculated_price": {
+        "id": "pset_01M4G99VM7TJ8V53WSWNHKXVQN",
+        "is_calculated_price_price_list": false,
+        "is_calculated_price_tax_inclusive": true,
+        "calculated_amount": 6500,
+        "raw_calculated_amount": {
+          "value": "6500",
+          "precision": 20
+        },
+        "is_original_price_price_list": false,
+        "is_original_price_tax_inclusive": true,
+        "original_amount": 6500,
+        "raw_original_amount": {
+          "value": "6500",
+          "precision": 20
+        },
+        "currency_code": "lkr",
+        "calculated_price": {
+          "id": "price_01M4G99VM7XW5N5MEVWG4E9K2Q",
+          "price_list_id": null,
+          "price_list_type": null,
+          "min_quantity": null,
+          "max_quantity": null
+        },
+        "original_price": {
+          "id": "price_01M4G99VM7XW5N5MEVWG4E9K2Q",
+          "price_list_id": null,
+          "price_list_type": null,
+          "min_quantity": null,
+          "max_quantity": null
+        }
+      },
+      "inventory_quantity": 5
+    },
+    {
+      "id": "variant_01M4G99VJ56SR270SGHFT4AEVE",
+      "title": "Black / M",
+      "sku": "LINEN-SHIRT-BLACK-M",
+      "barcode": null,
+      "ean": null,
+      "upc": null,
+      "allow_backorder": false,
+      "manage_inventory": true,
+      "hs_code": null,
+      "origin_country": null,
+      "mid_code": null,
+      "material": null,
+      "weight": null,
+      "length": null,
+      "height": null,
+      "width": null,
+      "metadata": null,
+      "variant_rank": 0,
+      "thumbnail": null,
+      "product_id": "prod_01M4G99VE301FRJWFK87H7X14F",
+      "created_at": "2026-10-09T12:13:13.672Z",
+      "updated_at": "2026-10-09T12:13:13.672Z",
+      "deleted_at": null,
+      "options": [
+        {
+          "id": "optval_01M4G99VE9VDS9MVZHEZ3YR1TD",
+          "value": "Black",
+          "rank": null,
+          "metadata": null,
+          "option_id": "opt_01M4G99VE3B4XJ89RTG8ZNK5WF",
+          "option": {
+            "id": "opt_01M4G99VE3B4XJ89RTG8ZNK5WF",
+            "title": "Color",
+            "is_exclusive": true,
+            "metadata": null,
+            "created_at": "2026-10-09T12:13:13.548Z",
+            "updated_at": "2026-10-09T12:13:13.548Z",
+            "deleted_at": null
+          },
+          "created_at": "2026-10-09T12:13:13.549Z",
+          "updated_at": "2026-10-09T12:13:13.549Z",
+          "deleted_at": null
+        },
+        {
+          "id": "optval_01M4G99VE9P9B3G0ZR4QDJ64XJ",
+          "value": "M",
+          "rank": null,
+          "metadata": null,
+          "option_id": "opt_01M4G99VE4E3489D1XPXRAS09E",
+          "option": {
+            "id": "opt_01M4G99VE4E3489D1XPXRAS09E",
+            "title": "Size",
+            "is_exclusive": true,
+            "metadata": null,
+            "created_at": "2026-10-09T12:13:13.548Z",
+            "updated_at": "2026-10-09T12:13:13.548Z",
+            "deleted_at": null
+          },
+          "created_at": "2026-10-09T12:13:13.549Z",
+          "updated_at": "2026-10-09T12:13:13.549Z",
+          "deleted_at": null
+        }
+      ],
+      "calculated_price": {
+        "id": "pset_01M4G99VM8TBBNY2ZCCQSMBRQ4",
+        "is_calculated_price_price_list": false,
+        "is_calculated_price_tax_inclusive": true,
+        "calculated_amount": 6500,
+        "raw_calculated_amount": {
+          "value": "6500",
+          "precision": 20
+        },
+        "is_original_price_price_list": false,
+        "is_original_price_tax_inclusive": true,
+        "original_amount": 6500,
+        "raw_original_amount": {
+          "value": "6500",
+          "precision": 20
+        },
+        "currency_code": "lkr",
+        "calculated_price": {
+          "id": "price_01M4G99VM7Z719R94R9YDX3Q8Q",
+          "price_list_id": null,
+          "price_list_type": null,
+          "min_quantity": null,
+          "max_quantity": null
+        },
+        "original_price": {
+          "id": "price_01M4G99VM7Z719R94R9YDX3Q8Q",
+          "price_list_id": null,
+          "price_list_type": null,
+          "min_quantity": null,
+          "max_quantity": null
+        }
+      },
+      "inventory_quantity": 3
+    },
+    {
+      "id": "variant_01M4G99VJ5G66XJSG6JWD627XP",
+      "title": "Black / L",
+      "sku": "LINEN-SHIRT-BLACK-L",
+      "barcode": null,
+      "ean": null,
+      "upc": null,
+      "allow_backorder": false,
+      "manage_inventory": true,
+      "hs_code": null,
+      "origin_country": null,
+      "mid_code": null,
+      "material": null,
+      "weight": null,
+      "length": null,
+      "height": null,
+      "width": null,
+      "metadata": null,
+      "variant_rank": 0,
+      "thumbnail": null,
+      "product_id": "prod_01M4G99VE301FRJWFK87H7X14F",
+      "created_at": "2026-10-09T12:13:13.672Z",
+      "updated_at": "2026-10-09T12:13:13.672Z",
+      "deleted_at": null,
+      "options": [
+        {
+          "id": "optval_01M4G99VE9VDS9MVZHEZ3YR1TD",
+          "value": "Black",
+          "rank": null,
+          "metadata": null,
+          "option_id": "opt_01M4G99VE3B4XJ89RTG8ZNK5WF",
+          "option": {
+            "id": "opt_01M4G99VE3B4XJ89RTG8ZNK5WF",
+            "title": "Color",
+            "is_exclusive": true,
+            "metadata": null,
+            "created_at": "2026-10-09T12:13:13.548Z",
+            "updated_at": "2026-10-09T12:13:13.548Z",
+            "deleted_at": null
+          },
+          "created_at": "2026-10-09T12:13:13.549Z",
+          "updated_at": "2026-10-09T12:13:13.549Z",
+          "deleted_at": null
+        },
+        {
+          "id": "optval_01M4G99VE94S2ZK79XN9TRT6GK",
+          "value": "L",
+          "rank": null,
+          "metadata": null,
+          "option_id": "opt_01M4G99VE4E3489D1XPXRAS09E",
+          "option": {
+            "id": "opt_01M4G99VE4E3489D1XPXRAS09E",
+            "title": "Size",
+            "is_exclusive": true,
+            "metadata": null,
+            "created_at": "2026-10-09T12:13:13.548Z",
+            "updated_at": "2026-10-09T12:13:13.548Z",
+            "deleted_at": null
+          },
+          "created_at": "2026-10-09T12:13:13.549Z",
+          "updated_at": "2026-10-09T12:13:13.549Z",
+          "deleted_at": null
+        }
+      ],
+      "calculated_price": {
+        "id": "pset_01M4G99VM8BDPPADP5J1SRQ6Y1",
+        "is_calculated_price_price_list": false,
+        "is_calculated_price_tax_inclusive": true,
+        "calculated_amount": 6500,
+        "raw_calculated_amount": {
+          "value": "6500",
+          "precision": 20
+        },
+        "is_original_price_price_list": false,
+        "is_original_price_tax_inclusive": true,
+        "original_amount": 6500,
+        "raw_original_amount": {
+          "value": "6500",
+          "precision": 20
+        },
+        "currency_code": "lkr",
+        "calculated_price": {
+          "id": "price_01M4G99VM8XA0M5T3BM2DADPHQ",
+          "price_list_id": null,
+          "price_list_type": null,
+          "min_quantity": null,
+          "max_quantity": null
+        },
+        "original_price": {
+          "id": "price_01M4G99VM8XA0M5T3BM2DADPHQ",
+          "price_list_id": null,
+          "price_list_type": null,
+          "min_quantity": null,
+          "max_quantity": null
+        }
+      },
+      "inventory_quantity": 0
+    }
+  ],
+  "images": [
+    {
+      "id": "img_01M4G99VE596C4M7B9XFB355EZ",
+      "url": "http://localhost:8000/images/linen-shirt-black.svg",
+      "metadata": null,
+      "rank": 0,
+      "product_id": "prod_01M4G99VE301FRJWFK87H7X14F",
+      "created_at": "2026-10-09T12:13:13.549Z",
+      "updated_at": "2026-10-09T12:13:13.549Z",
+      "deleted_at": null
+    }
+  ],
+  "options": [
+    {
+      "id": "opt_01M4G99VE3B4XJ89RTG8ZNK5WF",
+      "title": "Color",
+      "is_exclusive": true,
+      "metadata": null,
+      "created_at": "2026-10-09T12:13:13.548Z",
+      "updated_at": "2026-10-09T12:13:13.548Z",
+      "deleted_at": null,
+      "values": [
+        {
+          "id": "optval_01M4G99VE9VDS9MVZHEZ3YR1TD",
+          "value": "Black",
+          "rank": null,
+          "metadata": null,
+          "option_id": "opt_01M4G99VE3B4XJ89RTG8ZNK5WF",
+          "created_at": "2026-10-09T12:13:13.549Z",
+          "updated_at": "2026-10-09T12:13:13.549Z",
+          "deleted_at": null
+        }
+      ]
+    },
+    {
+      "id": "opt_01M4G99VE4E3489D1XPXRAS09E",
+      "title": "Size",
+      "is_exclusive": true,
+      "metadata": null,
+      "created_at": "2026-10-09T12:13:13.548Z",
+      "updated_at": "2026-10-09T12:13:13.548Z",
+      "deleted_at": null,
+      "values": [
+        {
+          "id": "optval_01M4G99VE9FFRGQ4KQ19C0WRRX",
+          "value": "S",
+          "rank": null,
+          "metadata": null,
+          "option_id": "opt_01M4G99VE4E3489D1XPXRAS09E",
+          "created_at": "2026-10-09T12:13:13.549Z",
+          "updated_at": "2026-10-09T12:13:13.549Z",
+          "deleted_at": null
+        },
+        {
+          "id": "optval_01M4G99VE9P9B3G0ZR4QDJ64XJ",
+          "value": "M",
+          "rank": null,
+          "metadata": null,
+          "option_id": "opt_01M4G99VE4E3489D1XPXRAS09E",
+          "created_at": "2026-10-09T12:13:13.549Z",
+          "updated_at": "2026-10-09T12:13:13.549Z",
+          "deleted_at": null
+        },
+        {
+          "id": "optval_01M4G99VE94S2ZK79XN9TRT6GK",
+          "value": "L",
+          "rank": null,
+          "metadata": null,
+          "option_id": "opt_01M4G99VE4E3489D1XPXRAS09E",
+          "created_at": "2026-10-09T12:13:13.549Z",
+          "updated_at": "2026-10-09T12:13:13.549Z",
+          "deleted_at": null
+        }
+      ]
+    }
+  ],
+  "categories": [
+    {
+      "id": "pcat_01M4G99VD6ZPNXQYQ73R6PC0MY",
+      "name": "shirt",
+      "description": "",
+      "handle": "shirt",
+      "mpath": "pcat_01M4G99VD6ZPNXQYQ73R6PC0MY",
+      "is_active": true,
+      "is_internal": false,
+      "rank": 0,
+      "external_id": null,
+      "metadata": null,
+      "parent_category_id": null,
+      "parent_category": null,
+      "created_at": "2026-10-09T12:13:13.512Z",
+      "updated_at": "2026-10-09T12:13:13.512Z",
+      "deleted_at": null
+    }
+  ],
+  "tags": [
+    {
+      "id": "ptag_01M4G99VDHAZ2YT8QJR9Q0E0Y8",
+      "value": "men",
+      "external_id": null,
+      "metadata": null,
+      "created_at": "2026-10-09T12:13:13.522Z",
+      "updated_at": "2026-10-09T12:13:13.522Z",
+      "deleted_at": null
+    },
+    {
+      "id": "ptag_01M4G99VDJYZQAZPJM274V56G3",
+      "value": "summer",
+      "external_id": null,
+      "metadata": null,
+      "created_at": "2026-10-09T12:13:13.522Z",
+      "updated_at": "2026-10-09T12:13:13.522Z",
+      "deleted_at": null
+    }
+  ]
+}

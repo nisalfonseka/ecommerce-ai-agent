@@ -15,6 +15,8 @@ describe("loadConfig", () => {
     expect(config.port).toBe(8080);
     expect(config.masterKey).toHaveLength(32);
     expect(config.trustProxyHops).toBe(1);
+    expect(config.allowDemoModel).toBe(true);
+    expect(loadConfig({ ...valid, NODE_ENV: "production" }).allowDemoModel).toBe(false);
   });
 
   it("names the bad variable without echoing secret values", () => {

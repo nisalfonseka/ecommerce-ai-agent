@@ -1,0 +1,13 @@
+.git
+**/node_modules
+**/dist
+.turbo
+.env
+.env.*
+!.env.example
+!.env.production.example
+evals-reports
+backups
+coverage
+# The engine image never needs the reference store (its own toolchain, ADR-006).
+apps/reference-store

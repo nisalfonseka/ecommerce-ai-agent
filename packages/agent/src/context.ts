@@ -1,4 +1,5 @@
-import type { CommerceProvider, VerifiedIdentity, WriteOptions } from "@ace/contracts";
+import type { CommerceProvider, Money, VerifiedIdentity, WriteOptions } from "@ace/contracts";
+import type { KnowledgeSearch } from "./knowledge";
 import { createSession, type SessionState } from "./session";
 import type { ToolFailureCode } from "./tool-result";
 import type { UiPart } from "./ui";
@@ -13,6 +14,16 @@ export interface ToolLogEntry {
   errorCode?: ToolFailureCode;
 }
 
+/** The tenant's cash-on-delivery rules (bot config), enforced in tool code. null limits mean "no limit". */
+export interface CodPolicy {
+  /** Highest order total (delivery included) accepted for COD. */
+  maxTotal: Money | null;
+  /** Cities the store delivers COD to; matched case-insensitively. */
+  allowedCities: string[] | null;
+  /** ISO 3166-1 alpha-2 country the delivery form is for. */
+  countryCode: string;
+}
+
 /** Server-side state for one turn. Built by the engine; the model can never set any of it. */
 export interface ToolContext {
   readonly provider: CommerceProvider;
@@ -20,6 +31,10 @@ export interface ToolContext {
   readonly turnId: string;
   readonly identity: VerifiedIdentity | null;
   readonly session: SessionState;
+  /** Cash on delivery for this bot; null when the tenant has not enabled it. */
+  readonly cod: CodPolicy | null;
+  /** Store-scoped policy and guide retrieval; null hides the tool for stores with no ready documents. */
+  readonly knowledge: KnowledgeSearch | null;
   /** Host site's cart; tools replace it when they have to create a new one. */
   cartId: string | null;
   readonly ui: UiPart[];
@@ -39,6 +54,8 @@ export interface CreateToolContextInput {
   turnId: string;
   identity?: VerifiedIdentity | null;
   session?: SessionState;
+  cod?: CodPolicy | null;
+  knowledge?: KnowledgeSearch | null;
   cartId?: string | null;
   onUnexpectedError?: (error: unknown) => void;
   onToolStart?: (name: string) => void;
@@ -55,6 +72,8 @@ export function createToolContext(input: CreateToolContextInput): ToolContext {
     turnId: input.turnId,
     identity: input.identity ?? null,
     session: input.session ?? createSession(),
+    cod: input.cod ?? null,
+    knowledge: input.knowledge ?? null,
     cartId: input.cartId ?? null,
     ui: [],
     observedAmounts: new Set(),

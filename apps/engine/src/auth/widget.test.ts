@@ -46,6 +46,9 @@ describe("widgetAuth", () => {
     });
     expect(res.status).toBe(204);
     expect(res.headers.get("access-control-allow-origin")).toBe("https://shop.test");
-    expect(res.headers.get("access-control-allow-headers")).toContain("authorization");
+    // Every header the widget sends must be allowed, or the browser blocks the request.
+    for (const header of ["authorization", "content-type", "x-visitor-id", "x-conversation-token"]) {
+      expect(res.headers.get("access-control-allow-headers"), header).toContain(header);
+    }
   });
 });

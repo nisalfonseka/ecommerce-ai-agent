@@ -1,0 +1,18 @@
+{
+  "id": "reg_01M4G99V329MYWC4AD7G2ZN90Z",
+  "currency_code": "lkr",
+  "countries": [
+    {
+      "iso_2": "lk",
+      "iso_3": "lka",
+      "num_code": "144",
+      "name": "SRI LANKA",
+      "display_name": "Sri Lanka",
+      "region_id": "reg_01M4G99V329MYWC4AD7G2ZN90Z",
+      "metadata": null,
+      "created_at": "2026-10-09T12:13:03.967Z",
+      "updated_at": "2026-10-09T12:13:13.194Z",
+      "deleted_at": null
+    }
+  ]
+}

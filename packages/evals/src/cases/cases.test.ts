@@ -11,6 +11,12 @@ describe("golden cases", () => {
     expect(new Set(ALL_CASES.map((c) => c.id)).size).toBe(ALL_CASES.length);
   });
 
+  it("has the ten planned multilingual knowledge cases", () => {
+    expect(ALL_CASES.filter((c) => c.tags.includes("knowledge") && !c.tags.includes("safety"))).toHaveLength(
+      10,
+    );
+  });
+
   it("covers every language with at least 5 cases and has safety cases", () => {
     for (const language of ["en", "si", "ta", "singlish"] as const) {
       expect(ALL_CASES.filter((c) => c.language === language).length, language).toBeGreaterThanOrEqual(5);
