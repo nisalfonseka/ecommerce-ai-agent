@@ -1,9 +1,40 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Tx } from "../client";
 import { handoffs } from "../schema";
 
-export type HandoffRow = typeof handoffs.$inferSelect;
+/**
+ * What every handoff read returns. The sealed contact is deliberately not a column here: a row that travels
+ * through staff API code and logs must not carry it, so the one reader is getHandoffContactSealed.
+ */
+export interface HandoffRow {
+  id: string;
+  tenantId: string;
+  conversationId: string;
+  reason: string;
+  summary: string;
+  status: string;
+  claimedBy: string | null;
+  /** A contact was left for staff; read it with getHandoffContactSealed. */
+  hasContact: boolean;
+  notifiedAt: Date | null;
+  resolvedAt: Date | null;
+  createdAt: Date;
+}
 export type HandoffStatus = "open" | "claimed" | "resolved";
+
+const HANDOFF_COLUMNS = {
+  id: handoffs.id,
+  tenantId: handoffs.tenantId,
+  conversationId: handoffs.conversationId,
+  reason: handoffs.reason,
+  summary: handoffs.summary,
+  status: handoffs.status,
+  claimedBy: handoffs.claimedBy,
+  hasContact: sql<boolean>`${handoffs.contactSealed} is not null`,
+  notifiedAt: handoffs.notifiedAt,
+  resolvedAt: handoffs.resolvedAt,
+  createdAt: handoffs.createdAt,
+};
 
 export interface HandoffInput {
   conversationId: string;
@@ -15,14 +46,20 @@ export interface HandoffInput {
 }
 
 export async function getHandoff(tx: Tx, id: string): Promise<HandoffRow | null> {
-  const [row] = await tx.select().from(handoffs).where(eq(handoffs.id, id));
+  const [row] = await tx.select(HANDOFF_COLUMNS).from(handoffs).where(eq(handoffs.id, id));
   return row ?? null;
+}
+
+/** sealSecret() output for the contact the shopper left, or null. The only reader of `contact_sealed`. */
+export async function getHandoffContactSealed(tx: Tx, id: string): Promise<Buffer | null> {
+  const [row] = await tx.select({ sealed: handoffs.contactSealed }).from(handoffs).where(eq(handoffs.id, id));
+  return row?.sealed ?? null;
 }
 
 /** The conversation's unresolved handoff, if any (there is at most one: see handoffs_one_active). */
 export async function getActiveHandoff(tx: Tx, conversationId: string): Promise<HandoffRow | null> {
   const [row] = await tx
-    .select()
+    .select(HANDOFF_COLUMNS)
     .from(handoffs)
     .where(and(eq(handoffs.conversationId, conversationId), inArray(handoffs.status, ["open", "claimed"])));
   return row ?? null;
@@ -49,7 +86,7 @@ export async function createHandoff(
         contactSealed: input.contactSealed ?? null,
       })
       .onConflictDoNothing()
-      .returning();
+      .returning(HANDOFF_COLUMNS);
     if (inserted) return { handoff: inserted, created: true };
     const existing = await getActiveHandoff(tx, input.conversationId);
     if (existing) return { handoff: existing, created: false };
@@ -91,7 +128,7 @@ export async function transitionHandoff(
     .update(handoffs)
     .set(set)
     .where(and(eq(handoffs.id, id), inArray(handoffs.status, from)))
-    .returning();
+    .returning(HANDOFF_COLUMNS);
   if (row) return { ok: true, handoff: row };
   const [current] = await tx.select({ status: handoffs.status }).from(handoffs).where(eq(handoffs.id, id));
   if (!current) return { ok: false, reason: "not_found" };
@@ -116,7 +153,7 @@ export async function listHandoffs(
   const where =
     options.status && options.status.length > 0 ? inArray(handoffs.status, options.status) : undefined;
   return tx
-    .select()
+    .select(HANDOFF_COLUMNS)
     .from(handoffs)
     .where(where)
     .orderBy(desc(handoffs.createdAt), desc(handoffs.id))

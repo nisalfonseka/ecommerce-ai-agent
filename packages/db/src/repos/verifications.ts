@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, gte, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
 import type { Tx } from "../client";
 import { verifications } from "../schema";
 
@@ -32,15 +32,25 @@ export async function createVerification(
     .update(verifications)
     .set({ consumedAt: new Date() })
     .where(and(eq(verifications.conversationId, input.conversationId), isNull(verifications.consumedAt)));
+  // Field by field, not a spread: whatever else a caller's object carries (attempts, consumedAt, a tenant id)
+  // must not reach the row.
   const [row] = await tx
     .insert(verifications)
-    .values({ tenantId, ...input })
+    .values({
+      tenantId,
+      conversationId: input.conversationId,
+      channel: input.channel,
+      destinationHash: input.destinationHash,
+      codeHash: input.codeHash,
+      salt: input.salt,
+      expiresAt: input.expiresAt,
+    })
     .returning();
   if (!row) throw new Error("verification insert returned no row");
   return row;
 }
 
-/** The conversation's live code: unconsumed and not expired at `now`. The caller checks `attempts`. */
+/** The conversation's live code: unconsumed and not expired at `now`. `attempts` shows how much of the cap is spent. */
 export async function getPendingVerification(
   tx: Tx,
   conversationId: string,
@@ -61,17 +71,41 @@ export async function getPendingVerification(
   return row ?? null;
 }
 
-/** Counts a wrong attempt atomically. Returns the new total, or null when the code is gone or consumed. */
-export async function incrementAttempts(tx: Tx, id: string): Promise<number | null> {
+/**
+ * Reserve-first attempt cap. Call this before comparing the submitted code and compare only when it returns a
+ * number. One UPDATE both checks the cap and counts the attempt, so N parallel guesses cannot all read
+ * `attempts = 0`: at most `maxAttempts` of them ever get a number, whatever the interleaving. A reserved attempt
+ * is spent whether the code then matches or not. Null means the code can no longer be tried (unknown, consumed,
+ * expired, or already at the cap) and the caller must not compare anything.
+ */
+export async function reserveAttempt(
+  tx: Tx,
+  id: string,
+  maxAttempts: number,
+  now: Date = new Date(),
+): Promise<number | null> {
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+    throw new Error("reserveAttempt: maxAttempts must be a positive integer");
+  }
   const [row] = await tx
     .update(verifications)
     .set({ attempts: sql`${verifications.attempts} + 1` })
-    .where(and(eq(verifications.id, id), isNull(verifications.consumedAt)))
+    .where(
+      and(
+        eq(verifications.id, id),
+        isNull(verifications.consumedAt),
+        gt(verifications.expiresAt, now),
+        lt(verifications.attempts, maxAttempts),
+      ),
+    )
     .returning({ attempts: verifications.attempts });
   return row?.attempts ?? null;
 }
 
-/** Single use: true for exactly one caller, false for a replay, an expired code or an unknown id. */
+/**
+ * Single use: one UPDATE guarded by `consumed_at IS NULL`, so under concurrency exactly one caller gets true;
+ * a replay, an expired code or an unknown id gets false. Call it only for a code that reserveAttempt let through.
+ */
 export async function consumeVerification(tx: Tx, id: string, now: Date): Promise<boolean> {
   const rows = await tx
     .update(verifications)

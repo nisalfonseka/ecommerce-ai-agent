@@ -267,53 +267,110 @@ describe.skipIf(testDb === null)("row-level security (as ace_app)", () => {
     ).rejects.toThrow();
   });
 
-  it("rejects Phase 7 rows that carry another tenant's id, in every new table", async () => {
-    const [aConversation] = await withTenant(app.db, a.tenantId, (tx) => tx.select().from(s.conversations));
-    if (!aConversation) throw new Error("no conversation");
-    const conversationId = aConversation.id;
-    const foreign = b.tenantId;
-    const inserts: [string, (tx: Tx) => Promise<unknown>][] = [
-      ["tenant_settings", (tx) => tx.insert(s.tenantSettings).values({ tenantId: foreign })],
-      [
-        "verifications",
-        (tx) =>
-          tx.insert(s.verifications).values({
-            tenantId: foreign,
-            conversationId,
-            channel: "sms",
-            destinationHash: "d",
-            codeHash: "c",
-            salt: "s",
-            expiresAt: new Date(),
-          }),
-      ],
-      [
-        "consents",
-        (tx) => tx.insert(s.consents).values({ tenantId: foreign, conversationId, noticeVersion: "v" }),
-      ],
-      [
-        "handoffs",
-        (tx) =>
-          tx.insert(s.handoffs).values({ tenantId: foreign, conversationId, reason: "r", summary: "s" }),
-      ],
-      [
-        "staff_tokens",
-        (tx) =>
-          tx
-            .insert(s.staffTokens)
-            .values({ tenantId: foreign, name: "n", tokenHash: "x", tokenPrefix: "st_xxxxxx" }),
-      ],
-      [
-        "privacy_requests",
-        (tx) => tx.insert(s.privacyRequests).values({ tenantId: foreign, type: "delete" }),
-      ],
-    ];
-    for (const [table, insert] of inserts) {
+  /** Thrown to roll a probe transaction back after it proved something. */
+  class Rollback extends Error {}
+
+  /** Row-level security violation (what a WITH CHECK failure raises), as drizzle wraps the driver error. */
+  const RLS_VIOLATION = { cause: { code: "42501" } };
+
+  const PHASE7_TABLES = [
+    "tenant_settings",
+    "verifications",
+    "consents",
+    "handoffs",
+    "staff_tokens",
+    "privacy_requests",
+  ] as const;
+
+  it("rejects Phase 7 inserts for another tenant with a policy violation, never a constraint error", async () => {
+    // C is a real tenant with no Phase 7 rows, so a row for C collides with nothing: no primary key, partial
+    // unique index or foreign key can fire, and only the WITH CHECK policy can reject it.
+    const c = randomUUID();
+    await withTenant(app.db, c, (tx) => tx.insert(s.tenants).values({ id: c, name: `Tenant C ${c}` }));
+
+    /** A tenant-A conversation created inside the probe transaction (rolled back with it). */
+    const freshConversation = async (tx: Tx): Promise<string> => {
+      const [bot] = await tx.select().from(s.bots);
+      if (!bot) throw new Error("no bot");
+      const [conversation] = await tx
+        .insert(s.conversations)
+        .values({ tenantId: a.tenantId, botId: bot.id, visitorId: `probe-${randomUUID()}`, session: {} })
+        .returning();
+      if (!conversation) throw new Error("conversation not created");
+      return conversation.id;
+    };
+    const probes: Record<
+      (typeof PHASE7_TABLES)[number],
+      (tx: Tx, tenantId: string, conversationId: string) => Promise<unknown>
+    > = {
+      tenant_settings: (tx, tenantId) => tx.insert(s.tenantSettings).values({ tenantId }),
+      verifications: (tx, tenantId, conversationId) =>
+        tx.insert(s.verifications).values({
+          tenantId,
+          conversationId,
+          channel: "sms",
+          destinationHash: "d",
+          codeHash: "c",
+          salt: "s",
+          expiresAt: new Date(Date.now() + 600_000),
+        }),
+      consents: (tx, tenantId, conversationId) =>
+        tx.insert(s.consents).values({ tenantId, conversationId, noticeVersion: "probe" }),
+      handoffs: (tx, tenantId, conversationId) =>
+        tx.insert(s.handoffs).values({ tenantId, conversationId, reason: "r", summary: "s" }),
+      staff_tokens: (tx, tenantId) =>
+        tx
+          .insert(s.staffTokens)
+          .values({ tenantId, name: "n", tokenHash: `probe_${randomUUID()}`, tokenPrefix: "st_xxxxxx" }),
+      privacy_requests: (tx, tenantId) => tx.insert(s.privacyRequests).values({ tenantId, type: "delete" }),
+    };
+
+    for (const table of PHASE7_TABLES) {
+      const probe = probes[table];
+      // Control: the same row for the transaction's own tenant is accepted, so the only thing that differs in
+      // the failing case is the tenant id. (tenant_settings: A already has its row, so C is its own control.)
+      const owner = table === "tenant_settings" ? c : a.tenantId;
       await expect(
-        withTenant(app.db, a.tenantId, insert),
-        `${table} accepted a row with another tenant's id`,
-      ).rejects.toThrow();
+        withTenant(app.db, owner, async (tx) => {
+          await probe(tx, owner, table === "tenant_settings" ? "" : await freshConversation(tx));
+          throw new Rollback();
+        }),
+        `${table}: the control insert for its own tenant must be valid`,
+      ).rejects.toBeInstanceOf(Rollback);
+
+      await expect(
+        withTenant(app.db, a.tenantId, async (tx) => {
+          const conversationId = table === "tenant_settings" ? "" : await freshConversation(tx);
+          await probe(tx, c, conversationId);
+        }),
+        `${table} accepted a row carrying another tenant's id`,
+      ).rejects.toMatchObject(RLS_VIOLATION);
     }
+  });
+
+  it("rejects moving a Phase 7 row to another tenant with an UPDATE (WITH CHECK, not just USING)", async () => {
+    const c = randomUUID();
+    await withTenant(app.db, c, (tx) => tx.insert(s.tenants).values({ id: c, name: `Tenant D ${c}` }));
+    for (const table of PHASE7_TABLES) {
+      await expect(
+        withTenant(app.db, a.tenantId, (tx) =>
+          tx.execute(sql`update ${sql.identifier(table)} set tenant_id = ${c}::uuid`),
+        ),
+        `${table} let a row move to another tenant`,
+      ).rejects.toMatchObject(RLS_VIOLATION);
+    }
+    // Nothing moved: tenant A still has its single seeded row in each table.
+    await withTenant(app.db, a.tenantId, async (tx) => {
+      for (const table of PHASE7_TABLES) {
+        const rows = await tx.execute<{ tenant_id: string }>(
+          sql`select tenant_id from ${sql.identifier(table)}`,
+        );
+        expect(
+          rows.rows.map((row) => row.tenant_id),
+          table,
+        ).toEqual([a.tenantId]);
+      }
+    });
   });
 
   it("cannot read or change another tenant's Phase 7 rows even by primary key", async () => {

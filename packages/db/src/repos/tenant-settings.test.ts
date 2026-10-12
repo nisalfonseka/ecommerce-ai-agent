@@ -156,8 +156,24 @@ describe("tenantSettingsPatchSchema", () => {
     }
   });
 
-  it("fills the otp defaults for a partial otp object", () => {
+  it("keeps a partial otp patch partial, so it merges instead of resetting the other field", () => {
     const parsed = tenantSettingsPatchSchema.parse({ otp: { channels: ["email"] } });
-    expect(parsed.otp).toEqual({ allowedCountryCodes: ["94"], channels: ["email"] });
+    expect(parsed.otp).toEqual({ channels: ["email"] });
+    expect(tenantSettingsPatchSchema.parse({ otp: { allowedCountryCodes: ["94"] } }).otp).toEqual({
+      allowedCountryCodes: ["94"],
+    });
+  });
+
+  it("reads a partly stored otp object with the default for the missing field", () => {
+    const settings = toTenantSettings({
+      retention: {},
+      handoffEmails: [],
+      otp: { channels: ["email"] },
+      requireConsent: true,
+      privacyNoticeUrl: null,
+      contactInfo: null,
+      hostSessionSecretSealed: null,
+    });
+    expect(settings.otp).toEqual({ allowedCountryCodes: ["94"], channels: ["email"] });
   });
 });

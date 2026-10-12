@@ -1,3 +1,5 @@
+import { type SQL, sql } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import type { Tx } from "../client";
 import { tenantSettings } from "../schema";
@@ -60,9 +62,11 @@ export const tenantSettingsPatchSchema = z
   .strictObject({
     retention: retentionPatchSchema,
     handoffEmails: z.array(z.email()).max(10),
+    // No defaults here: an otp patch is merged into the stored object, so a field it leaves out must stay as it
+    // is. The defaults are applied when settings are read (storedOtpSchema).
     otp: z.strictObject({
-      allowedCountryCodes: countryCodes.default(() => [...DEFAULT_OTP.allowedCountryCodes]),
-      channels: channels.default(() => [...DEFAULT_OTP.channels]),
+      allowedCountryCodes: countryCodes.optional(),
+      channels: channels.optional(),
     }),
     requireConsent: z.boolean(),
     privacyNoticeUrl: z
@@ -73,7 +77,11 @@ export const tenantSettingsPatchSchema = z
   })
   .partial();
 
-/** Each field that is present replaces the stored one; absent fields are left alone. */
+/**
+ * Top-level fields that are present replace the stored ones (a `handoffEmails` array is replaced as a whole);
+ * absent fields are left alone. `retention` and `otp` are objects and are merged key by key: a patch that names
+ * only `otpHours` keeps a stored `messagesDays`.
+ */
 export type TenantSettingsPatch = z.input<typeof tenantSettingsPatchSchema>;
 
 /** Read-side shapes: a corrupt stored value falls back to the default instead of breaking the tenant. */
@@ -168,24 +176,48 @@ export async function getTenantSettings(tx: Tx): Promise<TenantSettings> {
   return toTenantSettings(row ?? null);
 }
 
-/** Creates the tenant's row on first use. Validates `patch`; throws a ZodError on an invalid one. */
+function definedEntries<T extends object>(value: T): Partial<T> {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
+}
+
+/**
+ * `column || patch` for a jsonb object column. It runs inside the upsert statement, so concurrent patches
+ * cannot overwrite each other's keys, and a stored value that is not an object (corrupt) is replaced by `{}`
+ * first instead of being nested into an array.
+ */
+function mergeJsonb(column: PgColumn, patch: object): SQL {
+  return sql`case when jsonb_typeof(${column}) = 'object' then ${column} else '{}'::jsonb end || ${JSON.stringify(patch)}::jsonb`;
+}
+
+/**
+ * Creates the tenant's row on first use and applies `patch` (see TenantSettingsPatch for the merge rules).
+ * Validates `patch`; throws a ZodError on an invalid one.
+ */
 export async function upsertTenantSettings(
   tx: Tx,
   tenantId: string,
   patch: TenantSettingsPatch,
 ): Promise<TenantSettings> {
   const parsed = tenantSettingsPatchSchema.parse(patch);
-  const values: Partial<typeof tenantSettings.$inferInsert> = {};
-  if (parsed.retention !== undefined) values.retention = parsed.retention;
-  if (parsed.handoffEmails !== undefined) values.handoffEmails = parsed.handoffEmails;
-  if (parsed.otp !== undefined) values.otp = parsed.otp;
-  if (parsed.requireConsent !== undefined) values.requireConsent = parsed.requireConsent;
-  if (parsed.privacyNoticeUrl !== undefined) values.privacyNoticeUrl = parsed.privacyNoticeUrl;
-  if (parsed.contactInfo !== undefined) values.contactInfo = parsed.contactInfo;
+  const scalars: Partial<typeof tenantSettings.$inferInsert> = {};
+  if (parsed.handoffEmails !== undefined) scalars.handoffEmails = parsed.handoffEmails;
+  if (parsed.requireConsent !== undefined) scalars.requireConsent = parsed.requireConsent;
+  if (parsed.privacyNoticeUrl !== undefined) scalars.privacyNoticeUrl = parsed.privacyNoticeUrl;
+  if (parsed.contactInfo !== undefined) scalars.contactInfo = parsed.contactInfo;
+  const retention = parsed.retention === undefined ? undefined : definedEntries(parsed.retention);
+  const otp = parsed.otp === undefined ? undefined : definedEntries(parsed.otp);
   const [row] = await tx
     .insert(tenantSettings)
-    .values({ tenantId, ...values })
-    .onConflictDoUpdate({ target: tenantSettings.tenantId, set: { ...values, updatedAt: new Date() } })
+    .values({ tenantId, ...scalars, ...(retention && { retention }), ...(otp && { otp }) })
+    .onConflictDoUpdate({
+      target: tenantSettings.tenantId,
+      set: {
+        ...scalars,
+        ...(retention && { retention: mergeJsonb(tenantSettings.retention, retention) }),
+        ...(otp && { otp: mergeJsonb(tenantSettings.otp, otp) }),
+        updatedAt: new Date(),
+      },
+    })
     .returning();
   if (!row) throw new Error("tenant settings upsert returned no row");
   return toTenantSettings(row);

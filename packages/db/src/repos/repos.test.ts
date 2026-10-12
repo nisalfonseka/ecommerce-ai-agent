@@ -28,6 +28,7 @@ import {
   createHandoff,
   getActiveHandoff,
   getHandoff,
+  getHandoffContactSealed,
   listHandoffs,
   markHandoffNotified,
   transitionHandoff,
@@ -52,7 +53,7 @@ import {
   countRecentStarts,
   createVerification,
   getPendingVerification,
-  incrementAttempts,
+  reserveAttempt,
 } from "./verifications";
 import {
   getWebhookEvent,
@@ -366,6 +367,65 @@ describe.skipIf(testDb === null)("repositories (as ace_app)", () => {
       });
     });
 
+    it("merges a retention patch into the stored retention instead of replacing it", async () => {
+      const tenant = (await createTenant(app.db, { name: "Retention merge" })).tenantId;
+      const upsert = (patch: Parameters<typeof upsertTenantSettings>[2]) =>
+        withTenant(app.db, tenant, (tx) => upsertTenantSettings(tx, tenant, patch));
+      await upsert({ retention: { messagesDays: 30 } });
+      const merged = await upsert({ retention: { otpHours: 12 } });
+      expect(merged.retention).toEqual({ messagesDays: 30, otpHours: 12 });
+      expect(getRetention(merged)).toEqual({
+        messagesDays: 30,
+        tracesDays: 30,
+        handoffDays: 180,
+        otpHours: 12,
+      });
+      // A key the patch names is overwritten; an empty patch object changes nothing.
+      expect((await upsert({ retention: { messagesDays: 60 } })).retention).toEqual({
+        messagesDays: 60,
+        otpHours: 12,
+      });
+      expect((await upsert({ retention: {} })).retention).toEqual({ messagesDays: 60, otpHours: 12 });
+      expect((await withTenant(app.db, tenant, (tx) => getTenantSettings(tx))).retention).toEqual({
+        messagesDays: 60,
+        otpHours: 12,
+      });
+    });
+
+    it("merges an otp patch, keeping the fields it does not mention", async () => {
+      const tenant = (await createTenant(app.db, { name: "Otp merge" })).tenantId;
+      const upsert = (patch: Parameters<typeof upsertTenantSettings>[2]) =>
+        withTenant(app.db, tenant, (tx) => upsertTenantSettings(tx, tenant, patch));
+      await upsert({ otp: { allowedCountryCodes: ["94", "91"], channels: ["sms", "email"] } });
+      expect((await upsert({ otp: { channels: ["email"] } })).otp).toEqual({
+        allowedCountryCodes: ["94", "91"],
+        channels: ["email"],
+      });
+      expect((await upsert({ otp: { allowedCountryCodes: ["94"] } })).otp).toEqual({
+        allowedCountryCodes: ["94"],
+        channels: ["email"],
+      });
+      // Other fields are untouched by an otp-only patch, and the stored defaults apply to a fresh tenant.
+      const fresh = (await createTenant(app.db, { name: "Otp fresh" })).tenantId;
+      const first = await withTenant(app.db, fresh, (tx) =>
+        upsertTenantSettings(tx, fresh, { otp: { channels: ["email"] } }),
+      );
+      expect(first.otp).toEqual({ allowedCountryCodes: ["94"], channels: ["email"] });
+    });
+
+    it("recovers from a stored retention that is not an object, instead of nesting it", async () => {
+      const tenant = (await createTenant(app.db, { name: "Corrupt retention" })).tenantId;
+      await withTenant(app.db, tenant, async (tx) => {
+        await upsertTenantSettings(tx, tenant, { requireConsent: false });
+        await tx.execute(sql`update tenant_settings set retention = '"forever"'::jsonb`);
+      });
+      const patched = await withTenant(app.db, tenant, (tx) =>
+        upsertTenantSettings(tx, tenant, { retention: { otpHours: 6 } }),
+      );
+      expect(patched.retention).toEqual({ otpHours: 6 });
+      expect(patched.requireConsent).toBe(false);
+    });
+
     it("rejects an invalid patch before it reaches the database", async () => {
       await expect(
         withTenant(app.db, tenantId, (tx) =>
@@ -418,6 +478,18 @@ describe.skipIf(testDb === null)("repositories (as ace_app)", () => {
       ).toBe(false);
     });
 
+    it("stores only the fields it is given: a wider input object cannot set attempts, state or tenant", async () => {
+      const { id } = await newConversation("ver-0");
+      const sneaky = {
+        ...input(id),
+        attempts: 4,
+        consumedAt: new Date(),
+        tenantId: otherTenantId,
+      };
+      const row = await withTenant(app.db, tenantId, (tx) => createVerification(tx, tenantId, sneaky));
+      expect(row).toMatchObject({ attempts: 0, consumedAt: null, tenantId });
+    });
+
     it("does not return an expired code, and refuses to consume it", async () => {
       const { id } = await newConversation("ver-2");
       const row = await withTenant(app.db, tenantId, (tx) =>
@@ -428,21 +500,57 @@ describe.skipIf(testDb === null)("repositories (as ace_app)", () => {
       expect(await withTenant(app.db, tenantId, (tx) => consumeVerification(tx, row.id, later))).toBe(false);
     });
 
-    it("counts wrong attempts atomically and lets a code be consumed exactly once", async () => {
+    it("reserves an attempt before the code is compared, and never beyond the cap, even in parallel", async () => {
       const { id } = await newConversation("ver-3");
       const row = await withTenant(app.db, tenantId, (tx) => createVerification(tx, tenantId, input(id)));
-      const attempts = await Promise.all(
-        [1, 2, 3].map(() => withTenant(app.db, tenantId, (tx) => incrementAttempts(tx, row.id))),
+      const now = new Date();
+      const results = await Promise.all(
+        Array.from({ length: 20 }, () =>
+          withTenant(app.db, tenantId, (tx) => reserveAttempt(tx, row.id, 5, now)),
+        ),
       );
-      expect([...attempts].sort()).toEqual([1, 2, 3]);
+      const reserved = results.filter((n): n is number => n !== null);
+      // 20 simultaneous guesses against a cap of 5: exactly 5 get to compare the code, numbered 1..5.
+      expect(reserved.sort()).toEqual([1, 2, 3, 4, 5]);
+      const stored = await withTenant(app.db, tenantId, (tx) => getPendingVerification(tx, id, now));
+      expect(stored?.attempts).toBe(5);
+      expect(await withTenant(app.db, tenantId, (tx) => reserveAttempt(tx, row.id, 5, now))).toBeNull();
+    });
+
+    it("refuses to reserve an attempt on a consumed, expired or unknown code, or a nonsense cap", async () => {
+      const { id } = await newConversation("ver-3b");
+      const row = await withTenant(app.db, tenantId, (tx) =>
+        createVerification(tx, tenantId, input(id, { expiresAt: new Date(Date.now() + 60_000) })),
+      );
+      const reserve = (target: string, now = new Date()) =>
+        withTenant(app.db, tenantId, (tx) => reserveAttempt(tx, target, 5, now));
+      expect(await reserve(row.id, new Date(Date.now() + 120_000)), "expired").toBeNull();
+      expect(await reserve("00000000-0000-4000-8000-000000000000"), "unknown").toBeNull();
+      expect(await reserve(row.id), "live").toBe(1);
+      expect(await withTenant(app.db, tenantId, (tx) => consumeVerification(tx, row.id, new Date()))).toBe(
+        true,
+      );
+      expect(await reserve(row.id), "consumed").toBeNull();
+      await expect(
+        withTenant(app.db, tenantId, (tx) => reserveAttempt(tx, row.id, 0, new Date())),
+      ).rejects.toThrow(/maxAttempts/);
+      await expect(
+        withTenant(app.db, otherTenantId, (tx) => reserveAttempt(tx, row.id, 5, new Date())),
+      ).resolves.toBeNull();
+    });
+
+    it("lets a code be consumed exactly once, however many consume it at the same time", async () => {
+      const { id } = await newConversation("ver-3c");
+      const row = await withTenant(app.db, tenantId, (tx) => createVerification(tx, tenantId, input(id)));
       const consumed = await Promise.all(
-        [1, 2].map(() => withTenant(app.db, tenantId, (tx) => consumeVerification(tx, row.id, new Date()))),
+        [1, 2, 3, 4].map(() =>
+          withTenant(app.db, tenantId, (tx) => consumeVerification(tx, row.id, new Date())),
+        ),
       );
       expect(consumed.filter(Boolean)).toHaveLength(1);
       expect(
         await withTenant(app.db, tenantId, (tx) => getPendingVerification(tx, id, new Date())),
       ).toBeNull();
-      expect(await withTenant(app.db, tenantId, (tx) => incrementAttempts(tx, row.id))).toBeNull();
     });
 
     it("counts starts per conversation and per destination inside a window, for rate limits", async () => {
@@ -617,6 +725,48 @@ describe.skipIf(testDb === null)("repositories (as ace_app)", () => {
       expect(winner?.ok && winner.handoff.claimedBy).toBe(stored?.claimedBy);
     });
 
+    it("never returns the sealed contact from a handoff read; one dedicated reader does", async () => {
+      const { conversation, handoff } = await newHandoff("ho-6");
+      const claimed = await withTenant(app.db, tenantId, (tx) =>
+        transitionHandoff(tx, handoff.id, { to: "claimed", claimedBy: "Nimali" }),
+      );
+      if (!claimed.ok) throw new Error("claim failed");
+      const again = await withTenant(app.db, tenantId, (tx) =>
+        createHandoff(tx, tenantId, { conversationId: conversation.id, reason: "x", summary: "y" }),
+      );
+      const rows: object[] = [
+        handoff,
+        claimed.handoff,
+        again.handoff,
+        ...(await withTenant(app.db, tenantId, (tx) => listHandoffs(tx, { limit: 200 }))),
+      ];
+      const fetched = await withTenant(app.db, tenantId, (tx) => getHandoff(tx, handoff.id));
+      const active = await withTenant(app.db, tenantId, (tx) => getActiveHandoff(tx, conversation.id));
+      if (!fetched || !active) throw new Error("handoff not found");
+      rows.push(fetched, active);
+      for (const row of rows) {
+        expect(row, "a handoff read exposed contactSealed").not.toHaveProperty("contactSealed");
+      }
+      expect(fetched).toMatchObject({ hasContact: true, status: "claimed" });
+
+      const sealed = await withTenant(app.db, tenantId, (tx) => getHandoffContactSealed(tx, handoff.id));
+      expect(sealed?.toString("utf8")).toBe("sealed-contact");
+      expect(
+        await withTenant(app.db, otherTenantId, (tx) => getHandoffContactSealed(tx, handoff.id)),
+      ).toBeNull();
+    });
+
+    it("reports a handoff without a contact as hasContact: false and reads no sealed value", async () => {
+      const conversation = await withTenant(app.db, tenantId, (tx) =>
+        createConversation(tx, tenantId, { botId, visitorId: "ho-7", session: {} }),
+      );
+      const { handoff } = await withTenant(app.db, tenantId, (tx) =>
+        createHandoff(tx, tenantId, { conversationId: conversation.id, reason: "other", summary: "s" }),
+      );
+      expect(handoff.hasContact).toBe(false);
+      expect(await withTenant(app.db, tenantId, (tx) => getHandoffContactSealed(tx, handoff.id))).toBeNull();
+    });
+
     it("records the notification once, so a retried job sends one email", async () => {
       const { handoff } = await newHandoff("ho-5");
       expect(
@@ -681,7 +831,10 @@ describe.skipIf(testDb === null)("repositories (as ace_app)", () => {
       const created = await withTenant(app.db, tenantId, (tx) =>
         createStaffToken(tx, tenantId, { name: "temp", tokenHash: "hash_staff_2", tokenPrefix: "st_5678cd" }),
       );
-      expect(await withTenant(app.db, tenantId, (tx) => revokeStaffToken(tx, created.id))).toBe(true);
+      const at = new Date("2027-01-15T10:00:00.000Z");
+      expect(await withTenant(app.db, tenantId, (tx) => revokeStaffToken(tx, created.id, at))).toBe(true);
+      const listed = await withTenant(app.db, tenantId, (tx) => listStaffTokens(tx));
+      expect(listed.find((row) => row.id === created.id)?.revokedAt).toEqual(at);
       expect(await withTenant(app.db, tenantId, (tx) => revokeStaffToken(tx, created.id))).toBe(false);
       expect(await withTenant(app.db, otherTenantId, (tx) => revokeStaffToken(tx, created.id))).toBe(false);
       expect(await withTenant(app.db, tenantId, (tx) => findStaffToken(tx, "hash_staff_2"))).toBeNull();

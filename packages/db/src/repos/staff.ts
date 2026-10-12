@@ -50,10 +50,10 @@ export async function findStaffToken(tx: Tx, tokenHash: string): Promise<StaffTo
 }
 
 /** True when this call revoked it; false when it was already revoked or is not this tenant's. */
-export async function revokeStaffToken(tx: Tx, id: string): Promise<boolean> {
+export async function revokeStaffToken(tx: Tx, id: string, now: Date = new Date()): Promise<boolean> {
   const rows = await tx
     .update(staffTokens)
-    .set({ revokedAt: new Date() })
+    .set({ revokedAt: now })
     .where(and(eq(staffTokens.id, id), isNull(staffTokens.revokedAt)))
     .returning({ id: staffTokens.id });
   return rows.length > 0;

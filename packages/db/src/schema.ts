@@ -114,7 +114,13 @@ export const conversations = pgTable(
      * the model for it (enforced in code, not by the prompt).
      */
     status: text("status").notNull().default("open"),
-    /** The verified shopper identity (method and the one verified contact) as the engine stored it; null = anonymous. */
+    /**
+     * The verified shopper identity as the engine stored it: the method plus the one verified contact, which is
+     * the raw email or phone (order matching needs the value, not a hash). It is short-lived by design: the
+     * engine nulls it at `identity_expires_at` and the retention purge clears any expired identity that is left,
+     * so raw contact data does not outlive the verification window. `identity_hash` is the long-lived key.
+     * Null = anonymous.
+     */
     identity: jsonb("identity"),
     /** When `identity` stops counting; an expired identity is treated as no identity. */
     identityExpiresAt: timestamp("identity_expires_at", { withTimezone: true }),
@@ -483,7 +489,10 @@ export const handoffs = pgTable(
     /** 'open' → 'claimed' → 'resolved' (or 'open' → 'resolved'); never backwards (see transitionHandoff). */
     status: text("status").notNull().default("open"),
     claimedBy: text("claimed_by"),
-    /** sealSecret() output: a contact the shopper left for staff. The only raw contact data at rest. */
+    /**
+     * sealSecret() output: a contact the shopper left for staff, encrypted. Read only through
+     * getHandoffContactSealed(); no other handoff read returns it.
+     */
     contactSealed: bytea("contact_sealed"),
     notifiedAt: timestamp("notified_at", { withTimezone: true }),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
