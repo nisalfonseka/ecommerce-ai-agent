@@ -27,6 +27,8 @@ const prices = loadModelPrices(
 );
 const logger = createLogger({ level: config.logLevel });
 const { db, close } = createDb(config.databaseUrl);
+const resolveEmbedder = (spec: string) =>
+  embedderFor(spec, { allowDemo: config.allowDemoModel, resolve: resolveEmbeddingModel });
 
 const app = createApp({
   logger,
@@ -49,8 +51,7 @@ const turnDeps = {
     // Index-mode stores (config.search.mode) search the read model; demo:* embedders only outside production.
     index: {
       db,
-      embedderFor: (spec) =>
-        embedderFor(spec, { allowDemo: config.allowDemoModel, resolve: resolveEmbeddingModel }),
+      embedderFor: resolveEmbedder,
     },
     logger,
   }),
@@ -58,6 +59,7 @@ const turnDeps = {
   models: createModelResolver({ allowDemo: config.allowDemoModel }),
   logger,
   prices,
+  knowledge: { embedderFor: resolveEmbedder },
   visitorLimiter: createRateLimiter({ limitPerMinute: 20 }),
   ipLimiter: createRateLimiter({ limitPerMinute: 60 }),
   trustProxyHops: config.trustProxyHops,

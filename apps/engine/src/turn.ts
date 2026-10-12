@@ -18,6 +18,7 @@ import {
   type Db,
   getBotWithStore,
   getConversation,
+  hasReadyKnowledge,
   loadMessages,
   type MessageInput,
   monthToDateCostMicros,
@@ -28,7 +29,9 @@ import {
   saveSessionAndRelease,
   withTenant,
 } from "@ace/db";
+import { createKnowledgeSearch, type Embedder } from "@ace/knowledge";
 import type { ProviderFactory } from "@ace/providers";
+import { parseStoreSearchConfig } from "@ace/search";
 import type { LanguageModel, ModelMessage } from "ai";
 import type { Logger } from "pino";
 import type { createConversationTokens } from "./auth/conversation-token";
@@ -56,6 +59,8 @@ export interface TurnDeps {
   leaseMs?: number;
   /** Owner-maintained price table (E2); unknown prices mean unknown cost, so budgets cannot trigger. */
   prices: ModelPrices;
+  /** Embedding models for store knowledge. Omitted in tests or deployments that disable knowledge retrieval. */
+  knowledge?: { embedderFor(spec: string): Embedder };
   /** Provider retries per model before falling back (default: the agent's, i.e. once). */
   modelRetries?: number;
   now?: () => number;
@@ -221,12 +226,39 @@ export async function runPreparedTurn(
     const stored = await withTenant(deps.db, tenantId, (tx) => loadMessages(tx, conversationId));
     const history: ModelMessage[] = toModelMessages(stored.rows);
     const storeFacts = parseStoreFacts(prepared.bot.storeFacts);
+    const readyKnowledge = await withTenant(deps.db, tenantId, (tx) =>
+      hasReadyKnowledge(tx, prepared.store.id),
+    );
+    let knowledge = null;
+    if (readyKnowledge && deps.knowledge) {
+      const search = parseStoreSearchConfig(prepared.store.config);
+      try {
+        knowledge = createKnowledgeSearch({
+          db: deps.db,
+          tenantId,
+          storeId: prepared.store.id,
+          embedder: deps.knowledge.embedderFor(search.embeddingModel),
+          threshold: search.embeddingModel.startsWith("demo:") ? undefined : search.knowledgeThreshold,
+          onError: (error) =>
+            deps.logger.warn(
+              { err: error, tenantId, storeId: prepared.store.id },
+              "knowledge search degraded",
+            ),
+        });
+      } catch (error) {
+        deps.logger.warn(
+          { err: error, tenantId, storeId: prepared.store.id },
+          "knowledge embedding model unavailable; hiding knowledge search",
+        );
+      }
+    }
     const ctx = createToolContext({
       provider: deps.providers(tenantId, prepared.store),
       conversationId,
       turnId,
       session: parseSession(prepared.conversation.session),
       cod: codPolicy(storeFacts),
+      knowledge,
       cartId: request.cartId ?? prepared.conversation.cartId,
       onToolStart: (name) => emit("status", { tool: name }),
       onUnexpectedError: (error) => deps.logger.error({ err: error, turnId }, "tool failed unexpectedly"),

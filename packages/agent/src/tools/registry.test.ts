@@ -13,6 +13,7 @@ describe("buildTools", () => {
       provider: new MemoryCommerceProvider(),
       conversationId: "c",
       turnId: "t",
+      knowledge: { search: async () => [] },
     });
     expect(Object.keys(buildTools(ctx)).sort()).toEqual(
       [
@@ -20,13 +21,14 @@ describe("buildTools", () => {
         "check_availability",
         "get_product",
         "lookup_order",
+        "search_knowledge",
         "search_products",
         "start_checkout",
         "update_cart_line",
         "view_cart",
       ].sort(),
     );
-    expect(ALL_TOOLS).toHaveLength(9);
+    expect(ALL_TOOLS).toHaveLength(10);
   });
 
   it("adds start_cod_order only when the tenant enabled cash on delivery", () => {
@@ -67,6 +69,7 @@ describe("unexpected errors", () => {
       address: { line1: "12 Galle Road", city: "Colombo", countryCode: "LK" },
     },
     place_cod_order: {},
+    search_knowledge: { query: "returns" },
   };
 
   it("every tool reports non-commerce errors to the hook and hides them from the model", async () => {
@@ -110,6 +113,7 @@ describe("unexpected errors", () => {
           verifiedAt: "2026-10-01T00:00:00.000Z",
         },
         onUnexpectedError: () => reported.push(def.name),
+        knowledge: { search: () => Promise.reject(new Error("socket hang up")) },
       });
       const result = await def.run(ctx, def.inputSchema.parse(inputs[def.name]), "c1");
       expect(result, def.name).toMatchObject({ ok: false, error: { code: "UPSTREAM_UNAVAILABLE" } });

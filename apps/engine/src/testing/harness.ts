@@ -9,6 +9,7 @@ import {
   withTenant,
 } from "@ace/db";
 import type { TestDatabase } from "@ace/db/testing";
+import { createDemoEmbedder } from "@ace/knowledge";
 import { createProviderFactory } from "@ace/providers";
 import type { LanguageModel } from "ai";
 import { createApp } from "../app";
@@ -88,6 +89,7 @@ export async function createEngineHarness(testDb: TestDatabase) {
         },
       },
     }),
+    knowledge: { embedderFor: () => createDemoEmbedder() },
     visitorLimiter: createRateLimiter({ limitPerMinute: 1000 }),
     ipLimiter: createRateLimiter({ limitPerMinute: 1000 }),
   };

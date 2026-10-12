@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import { callTool, say, scriptedModel } from "@ace/agent/testing";
 import {
   acquireTurnLease,
   createBot,
   createDb,
+  createDocument,
   createPgIdempotencyStore,
   createStore,
   createTenant,
@@ -11,6 +13,7 @@ import {
   withTenant,
 } from "@ace/db";
 import { createTestDatabase } from "@ace/db/testing";
+import { createDemoEmbedder, ingestDocument } from "@ace/knowledge";
 import { createProviderFactory } from "@ace/providers";
 import { APICallError, type LanguageModel } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
@@ -62,6 +65,7 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
   let keyA: string;
   let keyB: string;
   let fallbackKey: string;
+  let storeA: string;
   /** What the next turn's model returns, per model spec. */
   let models: Record<string, LanguageModel>;
   const tokens = createConversationTokens("t".repeat(40));
@@ -79,9 +83,9 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
   async function seed(
     name: string,
     fallbackModel: string | null,
-  ): Promise<{ tenantId: string; key: string }> {
+  ): Promise<{ tenantId: string; key: string; storeId: string }> {
     const { tenantId } = await createTenant(pool.db, { name });
-    const key = await withTenant(pool.db, tenantId, async (tx) => {
+    const created = await withTenant(pool.db, tenantId, async (tx) => {
       const store = await createStore(tx, tenantId, { platform: "memory", currency: "LKR" });
       const bot = await createBot(tx, tenantId, {
         storeId: store.id,
@@ -93,15 +97,16 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
         budgetSoftUsdMicros: 1_000_000,
         budgetHardUsdMicros: 2_000_000,
       });
-      return (await issueWidgetKey(tx, tenantId, { botId: bot.id, allowedOrigins: [ORIGIN] })).key;
+      const key = (await issueWidgetKey(tx, tenantId, { botId: bot.id, allowedOrigins: [ORIGIN] })).key;
+      return { key, storeId: store.id };
     });
-    return { tenantId, key };
+    return { tenantId, ...created };
   }
 
   beforeAll(async () => {
     if (!testDb) return;
     pool = createDb(testDb.appUrl);
-    ({ tenantId: tenantA, key: keyA } = await seed("Chat A", null));
+    ({ tenantId: tenantA, key: keyA, storeId: storeA } = await seed("Chat A", null));
     ({ tenantId: tenantB, key: keyB } = await seed("Chat B", null));
     ({ key: fallbackKey } = await seed("Chat Fallback", "test:fallback"));
     const logger = createLogger({ level: "silent" });
@@ -122,6 +127,7 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
       logger,
       modelRetries: 0,
       prices: new Map(),
+      knowledge: { embedderFor: () => createDemoEmbedder() },
       visitorLimiter: createRateLimiter({ limitPerMinute: 1000 }),
       ipLimiter: createRateLimiter({ limitPerMinute: 1000 }),
     });
@@ -177,6 +183,39 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
     );
     expect(trace.rows[0]).toMatchObject({ tool_names: ["search_products"], busy_until: null });
     expect(trace.rows[0]?.prompt_version).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+  });
+
+  it("wires ready store knowledge into the turn and sends cited passages to the model", async () => {
+    const content = "# Exchanges\n\nItems can be exchanged within 7 days with the receipt.";
+    const document = await withTenant(pool.db, tenantA, (tx) =>
+      createDocument(tx, tenantA, {
+        storeId: storeA,
+        title: "Returns policy",
+        sourceType: "markdown",
+        sourceUrl: null,
+        content,
+        contentHash: createHash("sha256").update(content).digest("hex"),
+      }),
+    );
+    await ingestDocument(
+      {
+        db: pool.db,
+        tenantId: tenantA,
+        storeId: storeA,
+        embedder: createDemoEmbedder(),
+      },
+      document.id,
+    );
+    const model = scriptedModel([
+      callTool("k1", "search_knowledge", { query: "exchange days" }),
+      say("According to our Returns policy, exchanges are accepted within 7 days."),
+    ]);
+    models = { "test:primary": model };
+    const events = await turn(keyA, { message: "How long do I have to exchange an item?" });
+    expect(events.map((event) => event.event)).toEqual(["conversation", "status", "reply", "done"]);
+    expect(events[1]?.data).toEqual({ tool: "search_knowledge" });
+    expect(events[2]?.data).toMatchObject({ text: expect.stringContaining("Returns policy") });
+    expect(JSON.stringify(model.doGenerateCalls[1])).toContain("BEGIN UNTRUSTED STORE PASSAGE");
   });
 
   it("keeps #refs across turns and returns the cart it created", async () => {

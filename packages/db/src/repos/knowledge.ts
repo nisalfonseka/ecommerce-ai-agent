@@ -219,3 +219,82 @@ export async function listChunks(tx: Tx, storeId: string, documentId: string): P
     .where(and(eq(knowledgeChunks.storeId, storeId), eq(knowledgeChunks.documentId, documentId)))
     .orderBy(asc(knowledgeChunks.seq));
 }
+
+/** Cheap per-turn gate used to hide search_knowledge when this store has no searchable documents. */
+export async function hasReadyKnowledge(tx: Tx, storeId: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: knowledgeDocuments.id })
+    .from(knowledgeDocuments)
+    .where(and(eq(knowledgeDocuments.storeId, storeId), eq(knowledgeDocuments.status, "ready")))
+    .limit(1);
+  return row !== undefined;
+}
+
+export interface KnowledgeSearchRow {
+  chunkId: string;
+  documentTitle: string;
+  heading: string | null;
+  text: string;
+  score: number;
+}
+
+export interface KnowledgeChunkSearch {
+  vector: KnowledgeSearchRow[];
+  fullText: KnowledgeSearchRow[];
+}
+
+interface RawSearchRow extends Record<string, unknown> {
+  chunk_id: string;
+  document_title: string;
+  heading: string | null;
+  text: string;
+  score: number | string;
+}
+
+const RETRIEVAL_LEG_LIMIT = 8;
+
+const rows = (result: { rows: RawSearchRow[] }): KnowledgeSearchRow[] =>
+  result.rows.map((row) => ({
+    chunkId: row.chunk_id,
+    documentTitle: row.document_title,
+    heading: row.heading,
+    text: row.text,
+    score: Number(row.score),
+  }));
+
+/** Store-filtered vector and full-text legs. RLS supplies the tenant boundary. */
+export async function searchChunks(
+  tx: Tx,
+  input: {
+    storeId: string;
+    query: string;
+    queryEmbedding: number[] | null;
+    embeddingModel: string;
+  },
+): Promise<KnowledgeChunkSearch> {
+  const c = knowledgeChunks;
+  const d = knowledgeDocuments;
+  const fullText = await tx.execute<RawSearchRow>(sql`
+    with query as (select websearch_to_tsquery('simple', ${input.query}) as value)
+    select c.id as chunk_id, d.title as document_title, c.heading, c.text,
+      ts_rank_cd(c.search_tsv, query.value) as score
+    from ${c} c
+    join ${d} d on d.id = c.document_id and d.tenant_id = c.tenant_id and d.store_id = c.store_id
+    cross join query
+    where c.store_id = ${input.storeId} and d.status = 'ready' and c.search_tsv @@ query.value
+    order by score desc, d.title, c.seq
+    limit ${RETRIEVAL_LEG_LIMIT}
+  `);
+  if (input.queryEmbedding === null) return { vector: [], fullText: rows(fullText) };
+  const vector = await tx.execute<RawSearchRow>(sql`
+    select c.id as chunk_id, d.title as document_title, c.heading, c.text,
+      1 - (c.embedding <=> ${JSON.stringify(input.queryEmbedding)}::vector) as score
+    from ${c} c
+    join ${d} d on d.id = c.document_id and d.tenant_id = c.tenant_id and d.store_id = c.store_id
+    where c.store_id = ${input.storeId} and d.status = 'ready'
+      and c.embedding_model = ${input.embeddingModel} and c.embedding is not null
+    order by c.embedding <=> ${JSON.stringify(input.queryEmbedding)}::vector, d.title, c.seq
+    limit ${RETRIEVAL_LEG_LIMIT}
+  `);
+  return { vector: rows(vector), fullText: rows(fullText) };
+}

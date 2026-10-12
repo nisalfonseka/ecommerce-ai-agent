@@ -1,4 +1,51 @@
 import { deflateSync } from "node:zlib";
+import { chunkText } from "./chunk";
+import { createDemoEmbedder, type Embedder } from "./embedding";
+import { DEFAULT_KNOWLEDGE_THRESHOLD, DEMO_THRESHOLD, type KnowledgeSearch } from "./retrieve";
+
+export const KNOWLEDGE_CALIBRATION_DOCUMENTS = [
+  {
+    title: "Returns",
+    markdown: "# Exchanges\n\nItems can be exchanged within 7 days with the original receipt.",
+  },
+  {
+    title: "Delivery",
+    markdown: "# Island-wide delivery\n\nDelivery takes 2-4 working days and costs LKR 400.",
+  },
+  {
+    title: "Payment",
+    markdown: "# Cash on delivery\n\nCash on delivery is available for orders up to LKR 50,000.",
+  },
+  {
+    title: "Size",
+    markdown:
+      "# Clothing sizes\n\nS chest 36 inches. M chest 38 inches. L chest 40 inches. XL chest 42 inches.",
+  },
+  { title: "Care", markdown: "# Linen\n\nHand wash linen in cold water and air dry in the shade." },
+];
+
+export const KNOWLEDGE_CALIBRATION_QUERIES: [query: string, title: string | null][] = [
+  ["exchanging deadline", "Returns"],
+  ["receipt exchange", "Returns"],
+  ["exchange days", "Returns"],
+  ["delivery duration", "Delivery"],
+  ["island delivery", "Delivery"],
+  ["delivery costs", "Delivery"],
+  ["cash payment", "Payment"],
+  ["cash limit", "Payment"],
+  ["cash availability", "Payment"],
+  ["medium chest", "Size"],
+  ["clothing sizing", "Size"],
+  ["XL inches", "Size"],
+  ["washing linens", "Care"],
+  ["cold wash", "Care"],
+  ["drying linen", "Care"],
+  ["vouchers presents", null],
+  ["Sunday opening", null],
+  ["shop address", null],
+  ["repairs tailoring", null],
+  ["loyalty rewards", null],
+];
 
 export interface TestPdfOptions {
   /** Content stream of each page (PDF operators), one entry per page. */
@@ -83,4 +130,134 @@ export function makePdf({ pages, compress = false }: TestPdfOptions): Buffer {
   ].join("\n");
   parts.push(Buffer.from(xref, "latin1"));
   return Buffer.concat(parts);
+}
+
+interface StaticChunk {
+  id: string;
+  documentTitle: string;
+  heading: string | null;
+  text: string;
+  embeddedText: string;
+}
+
+const WORD = /\p{L}[\p{L}\p{M}\p{N}]*/gu;
+
+function words(text: string): Set<string> {
+  return new Set(text.normalize("NFKC").toLowerCase().match(WORD) ?? []);
+}
+
+function cosine(a: number[], b: number[]): number {
+  let dot = 0;
+  let a2 = 0;
+  let b2 = 0;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    dot += x * y;
+    a2 += x * x;
+    b2 += y * y;
+  }
+  return a2 === 0 || b2 === 0 ? 0 : dot / Math.sqrt(a2 * b2);
+}
+
+/** In-memory equivalent of retrieval, for deterministic agent tests and live evals without Postgres. */
+export function createStaticKnowledge(
+  docs: { title: string; markdown: string }[],
+  embedder: Embedder = createDemoEmbedder(),
+  options: { threshold?: number } = {},
+): KnowledgeSearch {
+  const chunks: StaticChunk[] = docs.flatMap((doc, documentIndex) =>
+    chunkText(doc.markdown).map((chunk) => ({
+      id: `${documentIndex}:${chunk.seq}`,
+      documentTitle: doc.title,
+      heading: chunk.heading,
+      text: chunk.text,
+      embeddedText: chunk.heading ? `${chunk.heading}\n\n${chunk.text}` : chunk.text,
+    })),
+  );
+  const indexed = embedder.embed(
+    chunks.map((chunk) => chunk.embeddedText),
+    "document",
+  );
+  const threshold =
+    options.threshold ?? (embedder.model === "demo:hash-v1" ? DEMO_THRESHOLD : DEFAULT_KNOWLEDGE_THRESHOLD);
+  return {
+    async search(query, searchOptions) {
+      const limit = Math.max(1, Math.floor(searchOptions?.limit ?? 3));
+      const [vectors, queryVectors] = await Promise.all([indexed, embedder.embed([query], "query")]);
+      const queryVector = queryVectors[0];
+      if (!queryVector) return [];
+      const vector = chunks
+        .map((chunk, index) => ({ chunk, score: cosine(vectors[index] ?? [], queryVector) }))
+        .sort((a, b) => b.score - a.score || a.chunk.id.localeCompare(b.chunk.id))
+        .slice(0, 8);
+      const queryWords = words(query);
+      const fullText = chunks
+        .map((chunk) => {
+          const overlap = [...words(chunk.embeddedText)].filter((word) => queryWords.has(word)).length;
+          return { chunk, score: queryWords.size === 0 ? 0 : overlap / queryWords.size };
+        })
+        .filter((row) => row.score > 0)
+        .sort((a, b) => b.score - a.score || a.chunk.id.localeCompare(b.chunk.id))
+        .slice(0, 8);
+      const vectorTop = new Set(vector.slice(0, 3).map((row) => row.chunk.id));
+      const fullTextTop = new Set(fullText.slice(0, 3).map((row) => row.chunk.id));
+      const allowed = new Set(vector.filter((row) => row.score >= threshold).map((row) => row.chunk.id));
+      for (const id of vectorTop) if (fullTextTop.has(id)) allowed.add(id);
+      const scores = new Map<string, { chunk: StaticChunk; score: number }>();
+      for (const leg of [vector, fullText]) {
+        leg.forEach((row, index) => {
+          if (!allowed.has(row.chunk.id)) return;
+          const current = scores.get(row.chunk.id) ?? { chunk: row.chunk, score: 0 };
+          current.score += 1 / (60 + index + 1);
+          scores.set(row.chunk.id, current);
+        });
+      }
+      return [...scores.values()]
+        .sort((a, b) => b.score - a.score || a.chunk.id.localeCompare(b.chunk.id))
+        .slice(0, limit)
+        .map(({ chunk, score }) => ({
+          documentTitle: chunk.documentTitle,
+          heading: chunk.heading,
+          text: chunk.text,
+          score,
+        }));
+    },
+  };
+}
+
+export async function calibrateKnowledgeThreshold(
+  embedder: Embedder,
+  thresholds: number[],
+): Promise<{ threshold: number; correct: number; total: number }[]> {
+  const queryTexts = KNOWLEDGE_CALIBRATION_QUERIES.map(([query]) => query);
+  const queryVectors = await embedder.embed(queryTexts, "query");
+  const queryCache = new Map(queryTexts.map((query, index) => [query, queryVectors[index] ?? []]));
+  const documentCache = new Map<string, Promise<number[][]>>();
+  const cached: Embedder = {
+    model: embedder.model,
+    embed(values, purpose) {
+      if (purpose === "query" && values.length === 1) {
+        const vector = queryCache.get(values[0] ?? "");
+        if (vector) return Promise.resolve([vector]);
+      }
+      const key = JSON.stringify([purpose, values]);
+      const existing = documentCache.get(key);
+      if (existing) return existing;
+      const pending = embedder.embed(values, purpose);
+      documentCache.set(key, pending);
+      return pending;
+    },
+  };
+  const scores: { threshold: number; correct: number; total: number }[] = [];
+  for (const threshold of thresholds) {
+    const knowledge = createStaticKnowledge(KNOWLEDGE_CALIBRATION_DOCUMENTS, cached, { threshold });
+    let correct = 0;
+    for (const [query, expected] of KNOWLEDGE_CALIBRATION_QUERIES) {
+      const actual = (await knowledge.search(query, { limit: 1 }))[0]?.documentTitle ?? null;
+      if (actual === expected) correct += 1;
+    }
+    scores.push({ threshold, correct, total: KNOWLEDGE_CALIBRATION_QUERIES.length });
+  }
+  return scores.sort((a, b) => b.correct - a.correct || a.threshold - b.threshold);
 }

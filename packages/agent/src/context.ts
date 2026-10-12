@@ -1,4 +1,5 @@
 import type { CommerceProvider, Money, VerifiedIdentity, WriteOptions } from "@ace/contracts";
+import type { KnowledgeSearch } from "./knowledge";
 import { createSession, type SessionState } from "./session";
 import type { ToolFailureCode } from "./tool-result";
 import type { UiPart } from "./ui";
@@ -32,6 +33,8 @@ export interface ToolContext {
   readonly session: SessionState;
   /** Cash on delivery for this bot; null when the tenant has not enabled it. */
   readonly cod: CodPolicy | null;
+  /** Store-scoped policy and guide retrieval; null hides the tool for stores with no ready documents. */
+  readonly knowledge: KnowledgeSearch | null;
   /** Host site's cart; tools replace it when they have to create a new one. */
   cartId: string | null;
   readonly ui: UiPart[];
@@ -52,6 +55,7 @@ export interface CreateToolContextInput {
   identity?: VerifiedIdentity | null;
   session?: SessionState;
   cod?: CodPolicy | null;
+  knowledge?: KnowledgeSearch | null;
   cartId?: string | null;
   onUnexpectedError?: (error: unknown) => void;
   onToolStart?: (name: string) => void;
@@ -69,6 +73,7 @@ export function createToolContext(input: CreateToolContextInput): ToolContext {
     identity: input.identity ?? null,
     session: input.session ?? createSession(),
     cod: input.cod ?? null,
+    knowledge: input.knowledge ?? null,
     cartId: input.cartId ?? null,
     ui: [],
     observedAmounts: new Set(),

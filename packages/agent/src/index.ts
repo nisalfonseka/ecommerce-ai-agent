@@ -24,6 +24,7 @@ export {
   scrubPrices,
   shopperAmounts,
 } from "./guardrails";
+export type { KnowledgePassage, KnowledgeSearch } from "./knowledge";
 export {
   hasApiKey,
   PROVIDER_ENV_KEYS,
