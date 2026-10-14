@@ -30,6 +30,8 @@ export interface ToolContext {
   readonly conversationId: string;
   readonly turnId: string;
   readonly identity: VerifiedIdentity | null;
+  /** Enabled verification channels for a deterministic form; null hides verification tools. */
+  readonly verification: { channels: ("sms" | "email")[] } | null;
   readonly session: SessionState;
   /** Cash on delivery for this bot; null when the tenant has not enabled it. */
   readonly cod: CodPolicy | null;
@@ -53,6 +55,7 @@ export interface CreateToolContextInput {
   conversationId: string;
   turnId: string;
   identity?: VerifiedIdentity | null;
+  verification?: { channels: ("sms" | "email")[] } | null;
   session?: SessionState;
   cod?: CodPolicy | null;
   knowledge?: KnowledgeSearch | null;
@@ -71,6 +74,7 @@ export function createToolContext(input: CreateToolContextInput): ToolContext {
     conversationId: input.conversationId,
     turnId: input.turnId,
     identity: input.identity ?? null,
+    verification: input.verification ?? null,
     session: input.session ?? createSession(),
     cod: input.cod ?? null,
     knowledge: input.knowledge ?? null,

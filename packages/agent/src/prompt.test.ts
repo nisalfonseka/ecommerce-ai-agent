@@ -28,6 +28,10 @@ describe("composeInstructions", () => {
       "check_availability",
       "search_knowledge",
       "Never guess a policy",
+      "secure form",
+      "Please use the verification form",
+      "Never guess an order",
+      "request_human",
     ]) {
       expect(text.toLowerCase()).toContain(rule.toLowerCase());
     }

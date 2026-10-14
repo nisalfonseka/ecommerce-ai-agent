@@ -116,7 +116,7 @@ describe.skipIf(testDb === null)("POST /v1/actions/:type", () => {
     const otherReply = otherEvents.find((event) => event.event === "reply")?.data as {
       ui?: { type: string }[];
     };
-    expect(otherReply.ui?.map((part) => part.type)).toContain("verification_required");
+    expect(otherReply.ui?.map((part) => part.type)).toContain("verification_form");
 
     await withTenant(h.pool.db, h.tenantId, (tx) =>
       tx
@@ -132,7 +132,7 @@ describe.skipIf(testDb === null)("POST /v1/actions/:type", () => {
     const expiredReply = expiredEvents.find((event) => event.event === "reply")?.data as {
       ui?: { type: string }[];
     };
-    expect(expiredReply.ui?.map((part) => part.type)).toContain("verification_required");
+    expect(expiredReply.ui?.map((part) => part.type)).toContain("verification_form");
   });
 
   it("applies a repeated actionId once (double click)", async () => {

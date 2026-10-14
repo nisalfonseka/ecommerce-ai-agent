@@ -233,7 +233,7 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
     };
     const invalid = await turn(keyA, { message: "track ACE-1001", identityToken: `${token}x` });
     const invalidUi = invalid.find((event) => event.event === "reply")?.data.ui as { type: string }[];
-    expect(invalidUi.map((part) => part.type)).toContain("verification_required");
+    expect(invalidUi.map((part) => part.type)).toContain("verification_form");
   });
 
   it("wires ready store knowledge into the turn and sends cited passages to the model", async () => {

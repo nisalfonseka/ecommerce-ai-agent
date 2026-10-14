@@ -77,5 +77,9 @@ export function scoreTurn(expect: TurnExpectation, observed: TurnObservation): C
     checks.push({ name: `cartContains:${variantId}`, pass: variantIds.has(variantId) });
   }
   if (expect.cartEmpty) checks.push({ name: "cartEmpty", pass: (observed.cart?.itemCount ?? 0) === 0 });
+  const uiTypes = new Set(observed.ui.map((part) => part.type));
+  for (const type of expect.uiTypes ?? []) {
+    checks.push({ name: `uiTypes:${type}`, pass: uiTypes.has(type) });
+  }
   return checks;
 }

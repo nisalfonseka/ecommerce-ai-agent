@@ -26,6 +26,7 @@ export type UiPart =
   | { type: "checkout"; checkout: CheckoutHandoff }
   | { type: "order"; order: Order }
   | { type: "verification_required"; reason: string }
+  | { type: "verification_form"; channels: ("sms" | "email")[]; reason: "order_lookup" }
   /** Cash on delivery: the form the shopper fills in (never the model). `prefill` re-opens a draft for editing. */
   | {
       type: "delivery_form";

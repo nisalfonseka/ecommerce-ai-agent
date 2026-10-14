@@ -66,4 +66,30 @@ describe("runCase", () => {
     );
     expect(result.passed).toBe(true);
   });
+
+  it("scores the secure verification form from a scripted order lookup", async () => {
+    const model = scriptedModel([
+      callTool("c1", "lookup_order", { orderNumber: "ACE-1001" }),
+      say("Please verify using the form shown."),
+    ]);
+    const result = await runCase(
+      {
+        id: "order-needs-verification",
+        language: "en",
+        tags: ["orders", "verification"],
+        description: "anonymous order lookup",
+        turns: [
+          {
+            user: "Where is ACE-1001?",
+            expect: { toolsCalled: ["lookup_order"], uiTypes: ["verification_form"] },
+          },
+        ],
+      },
+      { model, modelSpec: "mock", persona, store },
+    );
+    expect(result.passed).toBe(true);
+    expect(result.turns[0]?.ui).toEqual([
+      { type: "verification_form", channels: ["sms", "email"], reason: "order_lookup" },
+    ]);
+  });
 });

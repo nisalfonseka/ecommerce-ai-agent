@@ -20,6 +20,7 @@ describe("buildTools", () => {
         "add_to_cart",
         "check_availability",
         "get_product",
+        "list_orders",
         "lookup_order",
         "search_knowledge",
         "search_products",
@@ -28,7 +29,7 @@ describe("buildTools", () => {
         "view_cart",
       ].sort(),
     );
-    expect(ALL_TOOLS).toHaveLength(10);
+    expect(ALL_TOOLS).toHaveLength(12);
   });
 
   it("adds start_cod_order only when the tenant enabled cash on delivery", () => {
@@ -62,6 +63,7 @@ describe("unexpected errors", () => {
     update_cart_line: { lineId: "l", quantity: 1 },
     start_checkout: {},
     lookup_order: { orderNumber: "ACE-1001" },
+    list_orders: { limit: 5 },
     start_cod_order: {},
     cod_quote: {
       name: "Nimali",
@@ -82,11 +84,13 @@ describe("unexpected errors", () => {
       updateCartLine: () => Promise.reject(new Error("socket hang up")),
       createCheckout: () => Promise.reject(new Error("socket hang up")),
       lookupOrder: () => Promise.reject(new Error("socket hang up")),
+      listOrders: () => Promise.reject(new Error("socket hang up")),
       quoteCodOrder: () => Promise.reject(new Error("socket hang up")),
     });
     const reported: string[] = [];
     const lkr = (amount: number) => ({ amount, currency: "LKR" });
     for (const def of [...ALL_TOOLS, ...ACTION_TOOLS]) {
+      if (def.name === "start_verification") continue;
       const session = createSession();
       session.codDraft = {
         cartId: "cart_1",

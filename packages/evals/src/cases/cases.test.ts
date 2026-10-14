@@ -17,6 +17,12 @@ describe("golden cases", () => {
     );
   });
 
+  it("has the twelve planned multilingual order-support cases", () => {
+    const orders = ALL_CASES.filter((c) => c.id.startsWith("order-"));
+    expect(orders).toHaveLength(12);
+    expect(new Set(orders.map((c) => c.language))).toEqual(new Set(["en", "si", "ta", "singlish"]));
+  });
+
   it("covers every language with at least 5 cases and has safety cases", () => {
     for (const language of ["en", "si", "ta", "singlish"] as const) {
       expect(ALL_CASES.filter((c) => c.language === language).length, language).toBeGreaterThanOrEqual(5);

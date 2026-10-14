@@ -6,6 +6,7 @@ const base = {
   toolCalls: [],
   cart: null,
   ungroundedAmounts: [],
+  ui: [],
 };
 
 describe("detectScript", () => {
@@ -87,5 +88,16 @@ describe("scoreTurn", () => {
   it("passes mentionsAny when one alternative appears", () => {
     const checks = scoreTurn({ mentionsAny: ["size S", "size M"] }, { ...base, text: "We have size M." });
     expect(checks.find((c) => c.name === "mentionsAny")?.pass).toBe(true);
+  });
+
+  it("checks UI parts independently from model text", () => {
+    const checks = scoreTurn(
+      { uiTypes: ["verification_form"] },
+      {
+        ...base,
+        ui: [{ type: "verification_form", channels: ["email"], reason: "order_lookup" }],
+      },
+    );
+    expect(checks.find((check) => check.name === "uiTypes:verification_form")?.pass).toBe(true);
   });
 });

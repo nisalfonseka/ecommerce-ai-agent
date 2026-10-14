@@ -19,6 +19,7 @@ import {
   getBotWithStore,
   getConversation,
   getHostSessionSecretSealed,
+  getTenantSettings,
   hasReadyKnowledge,
   loadMessages,
   type MessageInput,
@@ -248,11 +249,12 @@ export async function runPreparedTurn(
         identity = null;
       }
     }
-    const readyKnowledge = await withTenant(deps.db, tenantId, (tx) =>
-      hasReadyKnowledge(tx, prepared.store.id),
-    );
+    const tenantFeatures = await withTenant(deps.db, tenantId, async (tx) => ({
+      readyKnowledge: await hasReadyKnowledge(tx, prepared.store.id),
+      settings: await getTenantSettings(tx),
+    }));
     let knowledge = null;
-    if (readyKnowledge && deps.knowledge) {
+    if (tenantFeatures.readyKnowledge && deps.knowledge) {
       const search = parseStoreSearchConfig(prepared.store.config);
       try {
         const embedder = deps.knowledge.embedderFor(search.embeddingModel);
@@ -286,6 +288,10 @@ export async function runPreparedTurn(
       knowledge,
       cartId: request.cartId ?? prepared.conversation.cartId,
       identity,
+      verification:
+        tenantFeatures.settings.otp.channels.length > 0
+          ? { channels: tenantFeatures.settings.otp.channels }
+          : null,
       onToolStart: (name) => emit("status", { tool: name }),
       onUnexpectedError: (error) => deps.logger.error({ err: error, turnId }, "tool failed unexpectedly"),
       now,

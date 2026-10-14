@@ -31,6 +31,7 @@ export async function runCase(evalCase: EvalCase, options: RunCaseOptions): Prom
         conversationId: `eval_${evalCase.id}`,
         turnId: `${evalCase.id}_t${index + 1}`,
         identity: evalCase.setup?.identity ?? null,
+        verification: { channels: ["sms", "email"] },
         session,
         cod: evalCase.setup?.cod ? { maxTotal: null, allowedCities: null, countryCode: "LK" } : null,
         knowledge,
@@ -54,6 +55,7 @@ export async function runCase(evalCase: EvalCase, options: RunCaseOptions): Prom
         toolCalls: result.toolCalls,
         cart,
         ungroundedAmounts: result.ungroundedAmounts,
+        ui: result.ui,
       };
       turns.push({
         ...observation,

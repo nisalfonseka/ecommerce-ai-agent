@@ -6,7 +6,8 @@ import { checkAvailabilityTool, getProductTool, searchProductsTool } from "./cat
 import { codQuoteAction, placeCodOrderAction, startCodOrderTool } from "./cod";
 import type { CommerceToolDef } from "./define";
 import { searchKnowledgeTool } from "./knowledge";
-import { lookupOrderTool } from "./orders";
+import { listOrdersTool, lookupOrderTool } from "./orders";
+import { startVerificationTool } from "./verification";
 
 export const ALL_TOOLS: CommerceToolDef<z.ZodType, unknown>[] = [
   searchProductsTool,
@@ -18,6 +19,8 @@ export const ALL_TOOLS: CommerceToolDef<z.ZodType, unknown>[] = [
   startCheckoutTool,
   startCodOrderTool,
   lookupOrderTool,
+  listOrdersTool,
+  startVerificationTool,
   searchKnowledgeTool,
 ];
 

@@ -8,6 +8,7 @@ const turn = {
   toolCalls: [],
   cart: null,
   ungroundedAmounts: [],
+  ui: [],
   checks: [{ name: "grounded", pass: true }],
   latencyMs: 100,
   inputTokens: 10,

@@ -1,4 +1,5 @@
 import type { MemorySeed } from "@ace/adapter-memory";
+import type { UiPart } from "@ace/agent";
 import type { Cart, VerifiedIdentity } from "@ace/contracts";
 
 export type EvalLanguage = "en" | "si" | "ta" | "singlish";
@@ -20,6 +21,8 @@ export interface TurnExpectation {
   /** Variant IDs that must be in the cart after this turn. */
   cartContains?: string[];
   cartEmpty?: boolean;
+  /** UI part types the tool layer, not model prose, must produce. */
+  uiTypes?: UiPart["type"][];
 }
 
 export interface EvalTurn {
@@ -50,6 +53,7 @@ export interface TurnObservation {
   toolCalls: { name: string; input: unknown }[];
   cart: Cart | null;
   ungroundedAmounts: number[];
+  ui: UiPart[];
 }
 
 export interface TurnRecord extends TurnObservation {
