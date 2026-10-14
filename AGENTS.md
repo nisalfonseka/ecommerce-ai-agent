@@ -80,6 +80,7 @@ packages/
   adapter-medusa/    reference store adapter                                  (Phase 5)
   adapter-shopify/   Shopify via UCP / Storefront MCP                         (Phase 9)
   providers/         store → adapter + idempotency + search-index factory
+  notify/            text.lk SMS, Brevo email and log-only development notifier
   agent/             tools, ToolContext, prompts, guardrails, agent loop      (Phase 2)
   evals/             golden conversations + scorers + runner                  (Phase 2)
   db/                Drizzle schema, migrations, RLS, encryption              (Phase 3)

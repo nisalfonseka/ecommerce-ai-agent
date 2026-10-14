@@ -147,13 +147,13 @@ export function createNotifier(env: Record<string, string | undefined>): Notifie
 export function maskDestination(value: string): string;   // "+94*****4567", "a***@e***.com"
 ```
 
-- [ ] **Step 1: Failing tests** (injected `fetch`, no network).
+- [x] **Step 1: Failing tests** (injected `fetch`, no network).
   - text.lk: URL `https://app.text.lk/api/v3/sms/send`, method POST, headers `Authorization: Bearer <token>`, `Content-Type: application/json`, `Accept: application/json`, body `{ recipient: "94771234567", sender_id, type: "plain", message }` (the `+` is stripped); a 401 → `unauthorized`; 422 or `status: "error"` body → `rejected`; 429 → `rate_limited`; 5xx or a thrown fetch or timeout → `unavailable`; a non-`+94` destination passes through unchanged but a malformed one → `invalid_destination` before any request.
   - Brevo: URL `https://api.brevo.com/v3/smtp/email`, header `api-key`, body `{ sender, to: [{ email }], subject, textContent }`; 401 → `unauthorized`; 400 → `rejected`; 429 → `rate_limited`; 5xx → `unavailable`; success returns `messageId` as `providerId`.
   - Errors and logs never contain the token, the message text or the unmasked destination (assert on `error.message`, `String(error)` and the `log` calls).
   - `createNotifier`: missing vendor variables throw an error naming the variable; `ACE_NOTIFY_MODE=log` with `NODE_ENV=production` throws.
   - **No retries inside the senders** (a repeated SMS is a cost and a nuisance; callers decide). Say so in a comment.
-- [ ] **Step 2: Implement; checks.** Commit `feat(notify): text.lk SMS and Brevo email senders`.
+- [x] **Step 2: Implement; checks.** Commit `feat(notify): text.lk SMS and Brevo email senders`.
 - [ ] **Step 3 (owner-gated):** with a real text.lk token + approved sender ID and a Brevo key + verified sender, `pnpm --filter @ace/notify smoke --sms +94… --email …` sends one test message each. The script refuses to run without an explicit `--yes` and never prints secrets.
 
 ### Task 4: OTP verification, host sessions and identity on the turn (G1)
