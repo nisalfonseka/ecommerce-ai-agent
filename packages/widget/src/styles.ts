@@ -2,14 +2,14 @@
 export const STYLES = `
 :host { all: initial; }
 * { box-sizing: border-box; }
-.root, button, textarea, a {
+.root, button, textarea, input, select, a {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Sinhala", "Iskoola Pota",
     "Noto Sans Tamil", "Latha", sans-serif;
   font-size: 15px; line-height: 1.45; color: #1f2328;
 }
 button { cursor: pointer; border-radius: 8px; border: 1px solid #d0d7de; background: #fff; padding: 6px 10px; }
 button:disabled { cursor: not-allowed; opacity: .45; }
-button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 3px solid #0969da; outline-offset: 2px; }
+button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #0969da; outline-offset: 2px; }
 .launcher { position: fixed; right: 20px; bottom: 20px; width: 56px; height: 56px; border-radius: 50%;
   border: none; background: #1f2328; color: #fff; font-size: 24px; box-shadow: 0 4px 16px rgba(0,0,0,.25); z-index: 2147483000; }
 .panel { position: fixed; right: 20px; bottom: 20px; width: 380px; height: min(640px, calc(100vh - 40px));
@@ -46,6 +46,9 @@ a.title:hover { text-decoration: underline; }
 .subtotal { display: flex; justify-content: space-between; font-weight: 600; border-top: 1px solid #d0d7de; padding-top: 6px; }
 .primary { background: #1f2328; color: #fff; border: none; padding: 8px 14px; text-align: center; text-decoration: none; display: inline-block; border-radius: 8px; }
 .notice { background: #f6f8fa; }
+.handoff-status { margin: 0; color: #57606a; font-size: 13px; }
+.message.staff { align-self: stretch; border-left: 3px solid #8250df; padding-left: 10px; }
+.team-label { display: block; color: #8250df; font-size: 12px; font-weight: 600; }
 .composer { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #d0d7de; }
 .composer textarea { flex: 1; resize: none; border: 1px solid #d0d7de; border-radius: 8px; padding: 8px; }
 .consent { padding: 12px 16px; border-top: 1px solid #d0d7de; display: flex; flex-direction: column; gap: 8px; }
@@ -54,6 +57,10 @@ a.title:hover { text-decoration: underline; }
 .cod-form legend { font-weight: 600; margin-bottom: 4px; }
 .field { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .field input, .field select { font: inherit; padding: 6px 8px; border: 1px solid #d0d7de; border-radius: 8px; }
+.verify form, .verify fieldset { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px; }
+.verify legend { font-weight: 600; margin-bottom: 4px; }
+.channel-choice { display: flex; gap: 12px; }
+.channel-choice label { display: inline-flex; gap: 4px; align-items: center; }
 .cod-summary address { font-style: normal; color: #57606a; font-size: 13px; }
 .subtotal.total { font-weight: 600; }
 @media (max-width: 480px) {

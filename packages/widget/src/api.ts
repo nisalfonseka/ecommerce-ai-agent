@@ -13,9 +13,13 @@ export class ApiError extends Error {
 }
 
 export type ChatEvent =
-  | { event: "conversation"; data: { conversationId: string; conversationToken: string } }
+  | {
+      event: "conversation";
+      data: { conversationId: string; conversationToken: string; privacyNoticeUrl?: string | null };
+    }
   | { event: "status"; data: { tool: string } }
   | { event: "reply"; data: { text: string; ui: UiPart[]; cartId: string | null } }
+  | { event: "handoff"; data: { status: "waiting" | "claimed" } }
   | { event: "done"; data: unknown }
   | { event: "error"; data: { code: string; message: string } };
 
@@ -24,6 +28,7 @@ export interface ChatRequest {
   conversationId?: string;
   conversationToken?: string;
   cartId?: string;
+  identityToken?: string;
 }
 
 export interface ActionResponse {
@@ -33,14 +38,14 @@ export interface ActionResponse {
 }
 
 export interface DisplayMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "staff";
   text: string;
   ui?: UiPart[];
 }
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
-const KNOWN_EVENTS = new Set(["conversation", "status", "reply", "done", "error"]);
+const KNOWN_EVENTS = new Set(["conversation", "status", "reply", "handoff", "done", "error"]);
 
 async function toApiError(res: Response): Promise<ApiError> {
   const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
@@ -73,22 +78,34 @@ export function createApi(options: { api: string; key: string; visitorId: string
       }
     },
 
-    async action(type: string, body: Record<string, unknown>): Promise<ActionResponse> {
+    async action<T = ActionResponse>(type: string, body: Record<string, unknown>): Promise<T> {
       const res = await doFetch(`${options.api}/v1/actions/${encodeURIComponent(type)}`, {
         method: "POST",
         headers: headers({ "content-type": "application/json" }),
         body: JSON.stringify(body),
       });
       if (!res.ok) throw await toApiError(res);
-      return (await res.json()) as ActionResponse;
+      return (await res.json()) as T;
     },
 
-    async loadConversation(conversationId: string, token: string): Promise<{ messages: DisplayMessage[] }> {
+    async loadConversation(
+      conversationId: string,
+      token: string,
+    ): Promise<{ messages: DisplayMessage[]; status?: "open" | "handoff" | "closed" }> {
       const res = await doFetch(`${options.api}/v1/conversations/${encodeURIComponent(conversationId)}`, {
         headers: headers({ "x-conversation-token": token }),
       });
       if (!res.ok) throw await toApiError(res);
-      return (await res.json()) as { messages: DisplayMessage[] };
+      return (await res.json()) as { messages: DisplayMessage[]; status?: "open" | "handoff" | "closed" };
+    },
+
+    async consent(token: string, noticeVersion: string): Promise<void> {
+      const res = await doFetch(`${options.api}/v1/consent`, {
+        method: "POST",
+        headers: headers({ "content-type": "application/json", "x-conversation-token": token }),
+        body: JSON.stringify({ noticeVersion }),
+      });
+      if (!res.ok) throw await toApiError(res);
     },
   };
 }

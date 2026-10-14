@@ -17,6 +17,7 @@ import {
   withTenant,
 } from "@ace/db";
 import { maskDestination, type Notifier, NotifyError } from "@ace/notify";
+import type { DevOutbox } from "./dev-outbox";
 import { deriveKey, hashCode, identityHash } from "./hash";
 
 const CODE_SECONDS = 10 * 60;
@@ -37,6 +38,7 @@ export interface OtpDeps {
   ipLimiter?: {
     check(key: string): { ok: true } | { ok: false; retryAfterS: number };
   };
+  outbox?: Pick<DevOutbox, "record">;
 }
 
 export type StartResult =
@@ -96,7 +98,7 @@ export async function startVerification(
   const codeKey = deriveKey(deps.masterKey, "ace/otp/v1");
 
   try {
-    return await withTenant(deps.db, ctx.tenantId, async (tx) => {
+    const result = await withTenant(deps.db, ctx.tenantId, async (tx): Promise<StartResult> => {
       const settings = await getTenantSettings(tx);
       if (!settings.otp.channels.includes(input.channel)) return { ok: false, reason: "channel_disabled" };
       if (input.channel === "sms" && !allowedPhone(normalized, settings.otp.allowedCountryCodes)) {
@@ -147,6 +149,15 @@ export async function startVerification(
       }
       return response;
     });
+    if (result.ok) {
+      deps.outbox?.record({
+        tenantId: ctx.tenantId,
+        conversationId: ctx.conversationId,
+        channel: input.channel,
+        text: otpText(code),
+      });
+    }
+    return result;
   } catch (error) {
     if (error instanceof NotifyError) return { ok: false, reason: "unavailable" };
     throw error;

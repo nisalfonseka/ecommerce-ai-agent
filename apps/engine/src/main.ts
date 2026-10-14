@@ -11,12 +11,14 @@ import { createApp } from "./app";
 import { createConversationTokens } from "./auth/conversation-token";
 import { loadModelPrices } from "./budget";
 import { loadConfig } from "./config";
+import { createDevOutbox } from "./identity/dev-outbox";
 import { createLogger } from "./log";
 import { createModelResolver } from "./models";
 import { createRateLimiter } from "./rate-limit";
 import { registerActionRoutes } from "./routes/actions";
 import { registerAdminRoutes } from "./routes/admin";
 import { registerChatRoutes } from "./routes/chat";
+import { registerDevOutboxRoute } from "./routes/dev-outbox";
 import { registerStaffRoutes } from "./routes/staff";
 import { registerWebhookRoutes } from "./routes/webhooks";
 
@@ -30,6 +32,7 @@ const prices = loadModelPrices(
 const logger = createLogger({ level: config.logLevel });
 const { db, close } = createDb(config.databaseUrl);
 const notifier = createNotifier({ ...process.env, ACE_NOTIFY_MODE: config.notifyMode });
+const devOutbox = !config.isProduction && config.notifyMode === "log" ? createDevOutbox() : null;
 const resolveEmbedder = (spec: string) =>
   embedderFor(spec, { allowDemo: config.allowDemoModel, resolve: resolveEmbeddingModel });
 
@@ -74,11 +77,13 @@ const turnDeps = {
     notifier,
     masterKey: config.masterKey,
     ipLimiter: createRateLimiter({ limit: 20, windowMs: 60 * 60 * 1000 }),
+    ...(devOutbox ? { outbox: devOutbox } : {}),
   },
   jobs: jobQueue.queue,
 };
 registerChatRoutes(app, turnDeps);
 registerActionRoutes(app, turnDeps);
+registerDevOutboxRoute(app, devOutbox ? { outbox: devOutbox, tokens: turnDeps.tokens } : null);
 registerStaffRoutes(app, { db, jobs: jobQueue.queue });
 registerAdminRoutes(app, {
   db,

@@ -36,10 +36,21 @@ describe("conversation state", () => {
       messages: [
         { role: "user", text: "hi" },
         { role: "assistant", text: "Hello!", ui: [] },
+        { role: "staff", text: "I can help." },
       ],
     });
-    expect(s.messages).toHaveLength(2);
+    expect(s.messages).toHaveLength(3);
     s = reduce(s, { type: "action_result", ui: [], cartId: "cart_2" });
     expect(s.cartId).toBe("cart_2");
+  });
+
+  it("tracks handoff ownership and finishes a waiting send without an assistant reply", () => {
+    let s = reduce(initialState(null), { type: "user_sent", text: "hello team" });
+    s = reduce(s, { type: "handoff", status: "waiting" });
+    expect(s).toMatchObject({ sending: false, handoff: "waiting" });
+    s = reduce(s, { type: "handoff", status: "claimed" });
+    expect(s.handoff).toBe("claimed");
+    s = reduce(s, { type: "handoff_closed" });
+    expect(s).toMatchObject({ handoff: null, handoffClosedNotice: true });
   });
 });

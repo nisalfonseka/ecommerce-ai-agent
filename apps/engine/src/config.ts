@@ -27,6 +27,7 @@ export interface EngineConfig {
   otlpEndpoint: string | undefined;
   /** The keyless demo model ("demo:*") is allowed only outside production. */
   allowDemoModel: boolean;
+  isProduction: boolean;
   notifyMode: "log" | "remote";
 }
 
@@ -52,6 +53,7 @@ export function loadConfig(env: Record<string, string | undefined>): EngineConfi
     trustProxyHops: e.TRUST_PROXY_HOPS,
     otlpEndpoint: e.OTEL_EXPORTER_OTLP_ENDPOINT,
     allowDemoModel: e.NODE_ENV !== "production",
+    isProduction: e.NODE_ENV === "production",
     notifyMode,
   };
 }

@@ -10,9 +10,18 @@ function script(attrs: Record<string, string>, src = "https://cdn.example.lk/ace
 
 describe("readConfig", () => {
   it("reads the key and API origin from the script tag", () => {
-    expect(readConfig(script({ "data-key": "pk_live_abc", "data-api": "https://api.example.lk/" }))).toEqual({
+    expect(
+      readConfig(
+        script({
+          "data-key": "pk_live_abc",
+          "data-api": "https://api.example.lk/",
+          "data-privacy-notice": "https://shop.example.lk/privacy",
+        }),
+      ),
+    ).toEqual({
       key: "pk_live_abc",
       api: "https://api.example.lk",
+      privacyNoticeUrl: "https://shop.example.lk/privacy",
     });
   });
 

@@ -4,13 +4,22 @@ import { emitCartUpdated, installHostApi } from "./host";
 describe("installHostApi", () => {
   it("replays calls queued before the script loaded, then serves direct calls", () => {
     const win = window as Window & { ACE?: unknown };
-    win.ACE = { q: [["setCart", "cart_early"], ["open"], ["unknown", 1]] };
-    const handlers = { open: vi.fn(), close: vi.fn(), setCart: vi.fn() };
+    win.ACE = {
+      q: [["setCart", "cart_early"], ["setIdentity", "host.jwt"], ["open"], ["unknown", 1]],
+    };
+    const handlers = { open: vi.fn(), close: vi.fn(), setCart: vi.fn(), setIdentity: vi.fn() };
     installHostApi(win, handlers);
     expect(handlers.setCart).toHaveBeenCalledWith("cart_early");
     expect(handlers.open).toHaveBeenCalledTimes(1);
-    (win.ACE as { setCart(id: string | null): void }).setCart("cart_late");
+    expect(handlers.setIdentity).toHaveBeenCalledWith("host.jwt");
+    const api = win.ACE as {
+      setCart(id: string | null): void;
+      setIdentity(token: string | null): void;
+    };
+    api.setCart("cart_late");
+    api.setIdentity(null);
     expect(handlers.setCart).toHaveBeenLastCalledWith("cart_late");
+    expect(handlers.setIdentity).toHaveBeenLastCalledWith(null);
   });
 });
 

@@ -4,7 +4,7 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActionResponse, ChatEvent, WidgetApi } from "../api";
 import { createStorage } from "../storage";
-import { App } from "./App";
+import { App, type HostControls } from "./App";
 
 const money = (amount: number) => ({ amount, currency: "LKR" });
 
@@ -83,6 +83,7 @@ function fakeApi(replyUi: UiPart[] = [productList], replyText = "Here you go.") 
     chat,
     action,
     loadConversation: vi.fn(async () => ({ messages: [] })),
+    consent: vi.fn(async () => undefined),
   } as unknown as WidgetApi;
   return { api, chat, action, finishAction: (value: ActionResponse) => resolveAction?.(value) };
 }
@@ -93,6 +94,7 @@ beforeEach(() => {
   document.body.append(container);
 });
 afterEach(() => {
+  vi.useRealTimers();
   render(null, container);
   container.remove();
 });
@@ -158,6 +160,92 @@ describe("App", () => {
     await act(async () => button("Start chat")?.click());
     expect(q("textarea")).not.toBeNull();
     expect(storage.consentGiven()).toBe(true);
+  });
+
+  it("keeps the host identity token in memory, sends it on chat, and clears it", async () => {
+    const fake = fakeApi();
+    const values = new Map<string, string>();
+    const written: string[] = [];
+    const storage = createStorage({
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => {
+        values.set(key, value);
+        written.push(value);
+      },
+      removeItem: (key) => values.delete(key),
+    });
+    storage.giveConsent();
+    let controls: HostControls | undefined;
+    await act(async () => {
+      render(
+        <App
+          widgetKey="pk_live_test"
+          api={fake.api}
+          storage={storage}
+          win={window}
+          initialCartId={null}
+          bindHost={(value) => {
+            controls = value;
+          }}
+        />,
+        container,
+      );
+    });
+    if (!controls) throw new Error("host controls were not bound");
+    controls.setIdentity("host.jwt.secret");
+    await openAndSend("first");
+    expect(fake.chat.mock.calls[0]?.[0]).toMatchObject({ identityToken: "host.jwt.secret" });
+    controls.setIdentity(null);
+    await openAndSend("second");
+    expect(fake.chat.mock.calls[1]?.[0]).not.toHaveProperty("identityToken");
+    expect(written.join("\n")).not.toContain("host.jwt.secret");
+  });
+
+  it("shows the merchant privacy notice and records consent after the conversation starts", async () => {
+    const fake = fakeApi();
+    const storage = createStorage(null);
+    await act(async () => {
+      render(
+        <App
+          widgetKey="pk_live_test"
+          api={fake.api}
+          storage={storage}
+          win={window}
+          initialCartId={null}
+          privacyNoticeUrl="https://shop.example.lk/privacy"
+        />,
+        container,
+      );
+    });
+    await act(async () => button("Open shopping assistant")?.click());
+    expect(q<HTMLAnchorElement>("a")?.href).toBe("https://shop.example.lk/privacy");
+    await act(async () => button("Start chat")?.click());
+    await openAndSend("hello");
+    expect(fake.api.consent).toHaveBeenCalledWith("t1", "2026-10-14");
+  });
+
+  it("polls during handoff, labels staff replies, then returns to the assistant", async () => {
+    vi.useFakeTimers();
+    const handoff: UiPart = { type: "handoff", status: "requested" };
+    const fake = fakeApi([handoff], "I have asked the team to help.");
+    vi.mocked(fake.api.loadConversation).mockResolvedValue({
+      status: "open",
+      messages: [
+        { role: "user", text: "I need a person" },
+        { role: "staff", text: "Hello from the store team." },
+      ],
+    });
+    await mount(fake.api);
+    await openAndSend("I need a person");
+    expect(container.textContent).toContain("A team member will reply here");
+    expect(q<HTMLTextAreaElement>("textarea")?.disabled).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(fake.api.loadConversation).toHaveBeenCalledWith("c1", "t1");
+    expect(container.textContent).toContain("Team");
+    expect(container.textContent).toContain("Hello from the store team.");
+    expect(container.textContent).toContain("Back with the assistant.");
   });
 
   it("renders model and product text as text, never HTML", async () => {

@@ -17,12 +17,18 @@ describe("createApi", () => {
     );
     const api = createApi({ api: "https://api.test", key: "pk_live_a", visitorId: "visitor-123", fetch });
     const events: ChatEvent[] = [];
-    await api.chat({ message: "hello", cartId: "cart_1" }, (event) => events.push(event));
+    await api.chat({ message: "hello", cartId: "cart_1", identityToken: "host.jwt" }, (event) =>
+      events.push(event),
+    );
     expect(events.map((e) => e.event)).toEqual(["conversation", "status", "reply", "done"]);
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.test/v1/chat");
     expect(init.headers).toMatchObject({ authorization: "Bearer pk_live_a", "x-visitor-id": "visitor-123" });
-    expect(JSON.parse(String(init.body))).toEqual({ message: "hello", cartId: "cart_1" });
+    expect(JSON.parse(String(init.body))).toEqual({
+      message: "hello",
+      cartId: "cart_1",
+      identityToken: "host.jwt",
+    });
   });
 
   it("turns error JSON into a typed ApiError", async () => {
@@ -55,5 +61,15 @@ describe("createApi", () => {
     expect(await api.loadConversation("c1", "t1")).toEqual({ messages: [] });
     const [, init] = fetch.mock.calls[1] as unknown as [string, RequestInit];
     expect(init.headers).toMatchObject({ "x-conversation-token": "t1" });
+  });
+
+  it("posts consent with the conversation token", async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+    const api = createApi({ api: "https://api.test", key: "pk_live_a", visitorId: "visitor-123", fetch });
+    await api.consent("t1", "notice-v1");
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.test/v1/consent");
+    expect(init.headers).toMatchObject({ "x-conversation-token": "t1" });
+    expect(JSON.parse(String(init.body))).toEqual({ noticeVersion: "notice-v1" });
   });
 });

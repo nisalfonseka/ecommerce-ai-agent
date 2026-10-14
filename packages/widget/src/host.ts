@@ -3,6 +3,8 @@ export interface HostHandlers {
   close(): void;
   /** The host site's cart id; sent with every message and action (spec G2). */
   setCart(cartId: string | null): void;
+  /** A short-lived host-signed identity token. Kept in memory only. */
+  setIdentity(token: string | null): void;
 }
 
 type Queued = [string, ...unknown[]];
@@ -17,6 +19,8 @@ export function installHostApi(win: Window & { ACE?: unknown }, handlers: HostHa
     open: () => handlers.open(),
     close: () => handlers.close(),
     setCart: (cartId) => handlers.setCart(typeof cartId === "string" && cartId.length > 0 ? cartId : null),
+    setIdentity: (token) =>
+      handlers.setIdentity(typeof token === "string" && token.length > 0 ? token : null),
   };
   win.ACE = api;
   if (!Array.isArray(queued)) return;
@@ -25,6 +29,7 @@ export function installHostApi(win: Window & { ACE?: unknown }, handlers: HostHa
     if (method === "open") api.open();
     else if (method === "close") api.close();
     else if (method === "setCart") api.setCart(args[0] as string | null);
+    else if (method === "setIdentity") api.setIdentity(args[0] as string | null);
   }
 }
 

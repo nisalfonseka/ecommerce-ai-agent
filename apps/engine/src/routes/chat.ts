@@ -1,4 +1,4 @@
-import { getConversation, listDisplay, withTenant } from "@ace/db";
+import { getConversation, getTenantSettings, listDisplay, withTenant } from "@ace/db";
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
@@ -61,9 +61,11 @@ export function registerChatRoutes(app: Hono<WidgetEnv>, deps: ChatDeps): void {
 
     return streamSSE(c, async (stream) => {
       const { emit, flush } = createEmitter(stream);
+      const settings = await withTenant(deps.db, prepared.widget.tenantId, (tx) => getTenantSettings(tx));
       emit("conversation", {
         conversationId: prepared.conversation.id,
         conversationToken: prepared.conversationToken,
+        privacyNoticeUrl: settings.privacyNoticeUrl,
       });
       await runPreparedTurn(deps, prepared, request, emit);
       await flush();
@@ -77,11 +79,13 @@ export function registerChatRoutes(app: Hono<WidgetEnv>, deps: ChatDeps): void {
     if (!claims || claims.tenantId !== tenantId || claims.conversationId !== conversationId) {
       return errorResponse(c, 404, "not_found", "Conversation not found.");
     }
-    const messages = await withTenant(deps.db, tenantId, async (tx) => {
+    const conversation = await withTenant(deps.db, tenantId, async (tx) => {
       const conversation = await getConversation(tx, conversationId);
-      return conversation && conversation.botId === botId ? listDisplay(tx, conversationId) : null;
+      return conversation && conversation.botId === botId
+        ? { messages: await listDisplay(tx, conversationId), status: conversation.status }
+        : null;
     });
-    if (!messages) return errorResponse(c, 404, "not_found", "Conversation not found.");
-    return c.json({ messages });
+    if (!conversation) return errorResponse(c, 404, "not_found", "Conversation not found.");
+    return c.json(conversation);
   });
 }

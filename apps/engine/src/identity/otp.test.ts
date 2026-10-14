@@ -84,6 +84,8 @@ describe.skipIf(testDb === null)("one-time-code verification", () => {
   const ctx = () => ({ tenantId, conversationId, ip: "203.0.113.10" });
 
   it("verifies SMS once and stores a 30-minute conversation identity", async () => {
+    const recorded: { tenantId: string; conversationId: string; channel: string; text: string }[] = [];
+    deps.outbox = { record: (entry) => recorded.push(entry) };
     expect(await startVerification(deps, ctx(), { channel: "sms", destination: "077 123 4567" })).toEqual({
       ok: true,
       maskedDestination: "+94*****4567",
@@ -91,6 +93,7 @@ describe.skipIf(testDb === null)("one-time-code verification", () => {
     });
     expect(sms).toHaveLength(1);
     expect(sms[0]?.to).toBe("+94771234567");
+    expect(recorded).toEqual([expect.objectContaining({ tenantId, conversationId, channel: "sms" })]);
     const code = /\b\d{6}\b/.exec(sms[0]?.text ?? "")?.[0];
     expect(code).toBe("000000");
     expect(await confirmVerification(deps, ctx(), { code: code ?? "" })).toEqual({

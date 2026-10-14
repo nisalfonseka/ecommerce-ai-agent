@@ -16,8 +16,10 @@ describe("loadConfig", () => {
     expect(config.masterKey).toHaveLength(32);
     expect(config.trustProxyHops).toBe(1);
     expect(config.allowDemoModel).toBe(true);
+    expect(config.isProduction).toBe(false);
     expect(config.notifyMode).toBe("log");
     expect(loadConfig({ ...valid, NODE_ENV: "production" }).allowDemoModel).toBe(false);
+    expect(loadConfig({ ...valid, NODE_ENV: "production" }).isProduction).toBe(true);
     expect(loadConfig({ ...valid, NODE_ENV: "production" }).notifyMode).toBe("remote");
     expect(() => loadConfig({ ...valid, NODE_ENV: "production", ACE_NOTIFY_MODE: "log" })).toThrow(
       /ACE_NOTIFY_MODE/,

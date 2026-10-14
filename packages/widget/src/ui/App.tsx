@@ -13,6 +13,7 @@ export interface HostControls {
   open(): void;
   close(): void;
   setCart(cartId: string | null): void;
+  setIdentity(token: string | null): void;
 }
 
 interface AppProps {
@@ -21,6 +22,7 @@ interface AppProps {
   storage: WidgetStorage;
   win: Window;
   initialCartId: string | null;
+  privacyNoticeUrl?: string;
   /** Receives open/close/setCart so window.ACE can drive the widget. */
   bindHost?: (controls: HostControls) => void;
 }
@@ -44,7 +46,18 @@ function friendlyError(error: unknown): string {
   return "Can't reach the assistant right now. Please check your connection and try again.";
 }
 
-export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: AppProps) {
+const NOTICE_VERSION = "2026-10-14";
+
+function isActionResponse(value: unknown): value is import("../api").ActionResponse {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { ui?: unknown }).ui) &&
+    "result" in value
+  );
+}
+
+export function App({ widgetKey, api, storage, win, initialCartId, privacyNoticeUrl, bindHost }: AppProps) {
   const [state, dispatch] = useReducer(reduce, initialCartId, initialState);
   const [open, setOpen] = useState(false);
   const [consent, setConsent] = useState(storage.consentGiven());
@@ -58,6 +71,8 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
   const panelRef = useRef<HTMLDivElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef(false);
+  const identityToken = useRef<string | null>(null);
+  const consentPosted = useRef(false);
   const close = () => {
     returnFocus.current = true;
     setOpen(false);
@@ -68,6 +83,9 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
       open: () => setOpen(true),
       close: () => close(),
       setCart: (cartId) => dispatch({ type: "set_cart", cartId }),
+      setIdentity: (token) => {
+        identityToken.current = token;
+      },
     });
   }, [bindHost]);
 
@@ -80,9 +98,32 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
       .then((history) => {
         dispatch({ type: "conversation", conversation: saved });
         dispatch({ type: "restored", messages: history.messages });
+        if (history.status === "handoff") dispatch({ type: "handoff", status: "waiting" });
       })
       .catch(() => storage.clearConversation(widgetKey));
   }, [api, storage, widgetKey]);
+
+  useEffect(() => {
+    if (!open || !state.handoff || !state.conversation) return;
+    let stopped = false;
+    const poll = async () => {
+      const current = stateRef.current.conversation;
+      if (!current) return;
+      try {
+        const history = await api.loadConversation(current.conversationId, current.conversationToken);
+        if (stopped) return;
+        dispatch({ type: "restored", messages: history.messages });
+        if (history.status !== "handoff") dispatch({ type: "handoff_closed" });
+      } catch {
+        // A later poll can recover; the composer remains usable.
+      }
+    };
+    const timer = window.setInterval(() => void poll(), 5_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [api, open, state.conversation, state.handoff]);
 
   useEffect(() => {
     listRef.current?.scrollTo?.({ top: listRef.current.scrollHeight });
@@ -117,11 +158,22 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
           message: text,
           ...(before.conversation ?? {}),
           ...(before.cartId ? { cartId: before.cartId } : {}),
+          ...(identityToken.current ? { identityToken: identityToken.current } : {}),
         },
         (event: ChatEvent) => {
           if (event.event === "conversation") {
             storage.saveConversation(widgetKey, event.data);
-            dispatch({ type: "conversation", conversation: event.data });
+            dispatch({
+              type: "conversation",
+              conversation: event.data,
+              privacyNoticeUrl: event.data.privacyNoticeUrl,
+            });
+            if (consent && !consentPosted.current) {
+              consentPosted.current = true;
+              void api.consent(event.data.conversationToken, NOTICE_VERSION).catch(() => {
+                consentPosted.current = false;
+              });
+            }
           } else if (event.event === "status") {
             dispatch({ type: "status", tool: event.data.tool });
           } else if (event.event === "reply") {
@@ -129,6 +181,8 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
             announceCart(event.data.cartId, event.data.ui, before.cartId);
           } else if (event.event === "error") {
             dispatch({ type: "error", message: event.data.message });
+          } else if (event.event === "handoff") {
+            dispatch({ type: "handoff", status: event.data.status });
           }
         },
       );
@@ -144,24 +198,29 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
     }
   }
 
-  async function runAction(type: string, input: Record<string, unknown>): Promise<void> {
+  async function runAction(type: string, input: Record<string, unknown>): Promise<unknown> {
     const conversation = stateRef.current.conversation;
-    if (busyRef.current || !conversation) return;
+    if (busyRef.current || !conversation) return null;
     busyRef.current = true;
     setBusy(true);
     const previous = stateRef.current.cartId;
     try {
-      const response = await api.action(type, {
+      const response = await api.action<unknown>(type, {
         ...conversation,
         actionId: uuid(),
         ...(previous ? { cartId: previous } : {}),
         input,
       });
-      dispatch({ type: "action_result", ui: response.ui, cartId: response.cartId });
-      if (!response.result.ok) dispatch({ type: "error", message: response.result.error.message });
-      announceCart(response.cartId, response.ui, previous);
+      if (isActionResponse(response)) {
+        dispatch({ type: "action_result", ui: response.ui, cartId: response.cartId });
+        if (!response.result.ok) dispatch({ type: "error", message: response.result.error.message });
+        announceCart(response.cartId, response.ui, previous);
+      }
+      if (type === "request_handoff") dispatch({ type: "handoff", status: "waiting" });
+      return response;
     } catch (error) {
       dispatch({ type: "error", message: friendlyError(error) });
+      return null;
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -213,14 +272,10 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
         <div class="messages" aria-live="polite" ref={listRef}>
           {state.messages.map((message) => (
             <div key={message.id} class={`message ${message.role}`}>
+              {message.role === "staff" && <span class="team-label">Team</span>}
               {message.text && <p>{message.text}</p>}
               {message.ui.map((part, index) => (
-                <Card
-                  key={`${message.id}-${index}`}
-                  part={part}
-                  busy={busy}
-                  onAction={(t, i) => void runAction(t, i)}
-                />
+                <Card key={`${message.id}-${index}`} part={part} busy={busy} onAction={runAction} />
               ))}
             </div>
           ))}
@@ -228,6 +283,16 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
           {state.error && (
             <p class="error" role="alert">
               {state.error}
+            </p>
+          )}
+          {state.handoff && (
+            <p class="handoff-status" aria-live="polite">
+              {state.handoff === "claimed" ? "A team member is here." : "Waiting for a team member…"}
+            </p>
+          )}
+          {state.handoffClosedNotice && (
+            <p class="handoff-status" aria-live="polite">
+              Back with the assistant.
             </p>
           )}
         </div>
@@ -256,7 +321,16 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
           <div class="consent">
             <p>
               This chat is an AI shopping assistant for this store. Your messages are stored to answer you and
-              to improve the service. Please don't share passwords or card details.
+              to improve the service. Please don't share passwords or card details.{" "}
+              {(state.privacyNoticeUrl ?? privacyNoticeUrl) && (
+                <a
+                  href={state.privacyNoticeUrl ?? privacyNoticeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Privacy notice
+                </a>
+              )}
             </p>
             <button
               type="button"
@@ -264,6 +338,13 @@ export function App({ widgetKey, api, storage, win, initialCartId, bindHost }: A
               onClick={() => {
                 storage.giveConsent();
                 setConsent(true);
+                const current = stateRef.current.conversation;
+                if (current && !consentPosted.current) {
+                  consentPosted.current = true;
+                  void api.consent(current.conversationToken, NOTICE_VERSION).catch(() => {
+                    consentPosted.current = false;
+                  });
+                }
               }}
             >
               Start chat

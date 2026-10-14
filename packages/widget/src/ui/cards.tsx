@@ -2,8 +2,10 @@ import type { UiPart, VariantChoice } from "@ace/agent";
 import { formatMoney, formatPriceRange } from "../money";
 import { safeUrl } from "../safe-url";
 import { CodSummary, DeliveryForm } from "./cod";
+import { HandoffOffer, HandoffRequested } from "./handoff";
+import { VerificationForm } from "./verify";
 
-export type RunAction = (type: string, input: Record<string, unknown>) => void;
+export type RunAction = (type: string, input: Record<string, unknown>) => Promise<unknown>;
 
 interface CardProps {
   part: UiPart;
@@ -192,6 +194,12 @@ export function Card({ part, busy, onAction }: CardProps) {
       return (
         <div class="card notice">To see order details, please verify your email or phone (coming soon).</div>
       );
+    case "verification_form":
+      return <VerificationForm channels={part.channels} onAction={onAction} />;
+    case "handoff":
+      return <HandoffRequested />;
+    case "handoff_offer":
+      return <HandoffOffer reason={part.reason} busy={busy} onAction={onAction} />;
     case "delivery_form":
       return (
         <DeliveryForm

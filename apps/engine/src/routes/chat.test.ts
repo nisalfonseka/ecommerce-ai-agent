@@ -350,6 +350,7 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
         { role: "user", text: "hi" },
         { role: "assistant", text: "Hi.", ui: [] },
       ],
+      status: "open",
     });
     expect(tenantB).not.toBe(tenantA);
   });

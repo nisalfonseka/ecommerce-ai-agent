@@ -37,6 +37,7 @@ function start(): void {
 
   let controls: HostControls | null = null;
   let initialCartId: string | null = null;
+  let initialIdentityToken: string | null = null;
   const pending: ((c: HostControls) => void)[] = [];
   const whenReady = (fn: (c: HostControls) => void) => (controls ? fn(controls) : pending.push(fn));
   installHostApi(window, {
@@ -45,6 +46,10 @@ function start(): void {
     setCart: (cartId) => {
       initialCartId = cartId;
       whenReady((c) => c.setCart(cartId));
+    },
+    setIdentity: (token) => {
+      initialIdentityToken = token;
+      whenReady((c) => c.setIdentity(token));
     },
   });
 
@@ -55,8 +60,10 @@ function start(): void {
       storage={storage}
       win={window}
       initialCartId={initialCartId}
+      privacyNoticeUrl={config.privacyNoticeUrl}
       bindHost={(c) => {
         controls = c;
+        if (initialIdentityToken) c.setIdentity(initialIdentityToken);
         for (const fn of pending.splice(0)) fn(c);
       }}
     />,

@@ -259,13 +259,13 @@ Chat route when `conversation.status = "handoff"`: the shopper message is append
 
 **Files:** Create `packages/widget/src/ui/{verify,handoff}.tsx`. Modify `src/{host,api,state,config}.ts`, `src/ui/{App,cards}.tsx`, `src/styles.ts`, `e2e/widget.e2e.ts`, tests.
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
   - `ACE.setIdentity(token | null)` (also queued before load); the token is sent as `identityToken` on chat requests and never stored in `localStorage` or `sessionStorage`; `setIdentity(null)` clears it.
   - `verification_form` part renders a channel choice, a destination field, a "Send code" button, then a 6-digit code field; posts `verify_start` / `verify_confirm`; shows the masked destination, "wrong code" (with remaining attempts not revealed), "locked, try later" and "try again in N minutes"; focus moves to the code field after sending; the code field uses `inputmode="numeric"` and `autocomplete="one-time-code"`; on success the form shows "Verified" and sends no extra chat message, because the identity is already stored server-side and the next turn picks it up.
   - Handoff: `handoff` part shows "A team member will reply here"; while `status = handoff` the widget polls `GET /v1/conversations/:id` every 5 s (stops when closed or the panel is hidden), renders `staff` messages with a "Team" label, and shows "Back with the assistant" after hand-back; the composer stays enabled and messages go to the same chat endpoint.
   - Consent: the existing consent step now also posts the consent record (Task 9 endpoint) when first given; text uses the tenant's `privacyNoticeUrl` returned by the conversation or config response.
   - Accessibility: new regions use `aria-live="polite"`, buttons are keyboard operable, Sinhala and Tamil strings render with the existing font stack. Bundle stays under the 60 kB gzip budget (assert in the build test).
-- [ ] **Step 2: Implement; checks; e2e (Playwright, `CHROME_PATH` as in AGENTS.md).** The e2e uses the log notifier and reads the code from the engine's log-only outbox endpoint that exists **only when `NODE_ENV !== "production"`** (`GET /v1/dev/outbox?conversation=`; refuses in production, tested). Commit `feat(widget): verification form, host identity and handoff states`.
+- [x] **Step 2: Implement; checks; e2e (Playwright, `CHROME_PATH` as in AGENTS.md).** The e2e uses the log notifier and reads the code from the engine's log-only outbox endpoint that exists **only when `NODE_ENV !== "production"`** (`GET /v1/dev/outbox?conversation=`; refuses in production, tested). The 35 widget tests, 158 engine tests (one real-platform skip), strict 22-task suite, all 13 typechecks, lint, engine/worker builds and three Chromium e2e flows passed on 2026-10-14; the widget is 14.8 kB gzipped. Commit `feat(widget): verification form, host identity and handoff states`.
 
 ### Task 8: `apps/dashboard` — minimal staff inbox
 
