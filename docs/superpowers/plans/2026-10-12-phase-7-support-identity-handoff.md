@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Draft (2026-10-12), branch `phase-7-support-identity-handoff` (worktree `.superpowers/worktrees/phase-7`, cut from `phase-6-search-sync-knowledge` @ `7ed16a3`; Phase 6 is implemented there and not merged to `main`). Owner decisions received 2026-10-12: SMS = **text.lk**, email = **Brevo**, staff handoff alerts = **email**, retention periods = **per merchant**. Everything here runs locally and in CI without paid accounts, using a log-only notifier; real delivery, live evals and provider retention checks are owner-gated.
+**Status:** In progress on `main` (2026-10-14). Tasks 1–2 are implemented and the strict PostgreSQL/RLS suite is green. Owner decisions received 2026-10-12: SMS = **text.lk**, email = **Brevo**, staff handoff alerts = **email**, retention periods = **per merchant**. Everything here runs locally and in CI without paid accounts, using a log-only notifier; real delivery, live evals and provider retention checks are owner-gated.
 
 **Goal:** A shopper can verify with an SMS or email code (or a signed host-site session) and then look up their own orders; the assistant hands difficult conversations to a human who answers from a minimal dashboard inbox and is alerted by email; and the merchant side of Sri Lanka's PDPA works: consent records, per-merchant retention, shopper export and deletion, a DPA template and a breach runbook.
 
@@ -92,13 +92,13 @@ export function normalizeEmail(input: string): string | null;                   
 //   host_session → owner.externalCustomerId, or owner.email / owner.phone when the identity carries them
 ```
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
   - Schema: an `email_otp` identity with a phone is rejected; `phone_otp` with an email is rejected; `host_session` without `externalCustomerId` is rejected; each valid shape parses.
   - `identityMatches` negatives: an `email_otp` identity never matches an owner that only has the same value in `phone`; a `phone_otp` never matches by email; an `email_otp` identity whose email equals `owner.email` after case folding matches; `phone_otp` `+94771234567` matches an owner stored as `+94771234567`.
   - `normalizePhone`: `0771234567`, `94771234567`, `+94 77 123 4567`, `077-1234567` → `+94771234567`; `12345`, `+0771234567`, letters → `null`. `normalizeEmail`: `"  A@B.com "` → `a@b.com`; `a+tag@gmail.com` stays as is; `not-an-email` → `null`.
   - Conformance (shared suite): a COD order placed with phone and email is found by `phone_otp` with the phone, found by `email_otp` with the email, and **not** found by a `phone_otp` whose phone is the shopper's email-only counterpart. Add the cases to `describeProviderConformance` and run them over the memory adapter and the idempotent wrapper.
-- [ ] **Step 2: Implement.** Keep the exported names; update memory and Medusa adapters only if their tests fail (they should keep passing because both already call `identityMatches`). Run the Medusa conformance only when `ACE_MEDUSA_SEED_OUTPUT` is set, as before.
-- [ ] **Step 3:** `pnpm lint:fix && pnpm lint && pnpm typecheck && pnpm test`. Commit `feat(contracts): tie identity matching to the verification method`.
+- [x] **Step 2: Implement.** Keep the exported names; update memory and Medusa adapters only if their tests fail (they should keep passing because both already call `identityMatches`). Run the Medusa conformance only when `ACE_MEDUSA_SEED_OUTPUT` is set, as before.
+- [x] **Step 3:** `pnpm lint:fix && pnpm lint && pnpm typecheck && pnpm test`. Commit `feat(contracts): tie identity matching to the verification method`.
 
 ### Task 2: Phase 7 tables, RLS and repos
 
@@ -123,9 +123,9 @@ conversations += identity jsonb|null /* VerifiedIdentity + expiresAt */, identit
 messages.kind += 'staff'
 ```
 
-- [ ] **Step 1: Failing tests.** `rls.test.ts` iterates `TENANT_TABLES`: extend the fixture so each new table has a row per tenant; tenant A reads zero of B's rows and cannot insert with B's `tenant_id`. Repo tests: settings defaults when no row; `getRetention` clamps out-of-range values; a verification row cascades with its conversation; `handoffs` status transitions reject going backwards; staff token lookup by hash only inside `withTenant`.
-- [ ] **Step 2: Implement.** `SHOPPER_DATA_TABLES` gains `{ handoffs, 180 }`, `{ verifications, 1 day → retention otpHours }`, `{ consents, 180 }`; update `shopper-data.test.ts` (it asserts every table with a `conversationId` column is registered or exempt; `privacy_requests` holds no shopper content and is exempt).
-- [ ] **Step 3:** Checks (DB tests need `ACE_TEST_DATABASE_URL`). Commit `feat(db): tenant settings, verifications, consents, handoffs and staff tokens with RLS`.
+- [x] **Step 1: Failing tests.** `rls.test.ts` iterates `TENANT_TABLES`: extend the fixture so each new table has a row per tenant; tenant A reads zero of B's rows and cannot insert with B's `tenant_id`. Repo tests: settings defaults when no row; `getRetention` clamps out-of-range values; a verification row cascades with its conversation; `handoffs` status transitions reject going backwards; staff token lookup by hash only inside `withTenant`.
+- [x] **Step 2: Implement.** `SHOPPER_DATA_TABLES` gains `{ handoffs, 180 }`, `{ verifications, 1 day → retention otpHours }`, `{ consents, 180 }`; update `shopper-data.test.ts` (it asserts every table with a `conversationId` column is registered or exempt; `privacy_requests` holds no shopper content and is exempt).
+- [x] **Step 3:** Checks (DB tests need `ACE_TEST_DATABASE_URL`). Commit `feat(db): tenant settings, verifications, consents, handoffs and staff tokens with RLS`.
 
 ### Task 3: `@ace/notify` — text.lk SMS and Brevo email
 

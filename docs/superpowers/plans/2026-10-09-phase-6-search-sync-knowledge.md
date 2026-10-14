@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implemented through Task 12 code and docs (2026-10-12) on `phase-6-search-sync-knowledge`; not pushed. Task 8 measured demo nDCG@5 0.851 (en 0.842, singlish 0.892, si 0.806, ta 0.862). Task 11 calibrated demo knowledge retrieval at 0.15 (20/20; 0.20 tied, and the lower threshold wins the documented recall-preserving tie-break). Lint, typecheck, builds, deterministic calibration and the full strict test suite are green, including PostgreSQL/pgvector, knowledge retrieval, engine, worker and the dropped-webhook exit test via `.env.test.local`. The local Medusa stack smoke remains pending because this Mac has no PostgreSQL client/server or Docker; current CI is pending because the branch is not pushed. Owner-gated: real-model search and knowledge calibration (no paid keys), VPS propagation, and the earlier Phase 2/3/5 gates.
+**Status:** Implemented and merged to `main` (2026-10-14). Task 8 measured demo nDCG@5 0.851 (en 0.842, singlish 0.892, si 0.806, ta 0.862). Task 11 calibrated demo knowledge retrieval at 0.15 (20/20; 0.20 tied, and the lower threshold wins the documented recall-preserving tie-break). Lint, typecheck, builds, deterministic calibration and the full strict test suite are green, including PostgreSQL/pgvector, knowledge retrieval, engine, worker and the dropped-webhook exit test via `.env.test.local`. The local Medusa stack smoke passed on 2026-10-14 with 0.225 s webhook price propagation, indexed Singlish search and a cited policy answer. Owner-gated: real-model search and knowledge calibration (no paid keys), VPS propagation, and the earlier Phase 2/3/5 gates.
 
 **Goal:** Shoppers find the right product even when the store's own search is weak or they write in Singlish, Sinhala or Tamil, and the agent answers policy questions from the merchant's documents, with citations. A per-store read model stays in sync through signed webhooks plus reconciliation, gets enriched attributes and embeddings, and serves hybrid search behind the unchanged `CommerceProvider` contract. Order webhooks turn into chat-assisted revenue.
 
@@ -779,10 +779,11 @@ Evals (`cases/knowledge.ts`): the eval runner gets `knowledge?: { title; markdow
 **Files:** Modify `scripts/store-stack.sh` and `scripts/dev-stack.sh` (start the worker; set the reference store's `ACE_WEBHOOK_URL`/`SECRET` from the engine admin call; set the demo store's `search.mode` to `index` with `demo:*` models), `apps/engine/src/seed.ts` (the demo tenant's store config gets `search: { mode: "index", embeddingModel: "demo:hash-v1", enrichmentModel: "demo:rules-v1" }` and two knowledge docs), `docs/workflow.md` (§A4–A7 commands, §B 15-minute reconcile, §I threshold and citations), `AGENTS.md` (Current status, Commands, repository layout marks Phase 6 packages as present), the roadmap (Phase 6 status), and this plan (checkboxes, measured numbers).
 
 - [x] **Step 1: Exit test, dropped webhook** (`apps/worker/src/exit.test.ts`, test database, memory provider): index a store. Change a price with `setPrice` and send **no** webhook. Run `sync.reconcile { full: false }` → the indexed price matches the live one. Then remove a product and run the full reconcile → it is marked deleted. *(Passed against the PostgreSQL/pgvector URL in `.env.test.local` on 2026-10-12.)*
-- [ ] **Step 2: Local stack check.** `scripts/store-stack.sh start` (Medusa + engine + worker), `pnpm seed`. Then: *(Stack wiring and readiness waits are implemented in `8611b1d`; this Mac has neither a PostgreSQL server nor Docker, so the smoke and latency measurement remain pending.)*
+- [x] **Step 2: Local stack check.** `scripts/store-stack.sh start` (Medusa + engine + worker), `pnpm seed`. *(Passed on 2026-10-14 with PostgreSQL 16 + pgvector.)*
   - Change a variant price in the Medusa admin API. Confirm the `catalog_variants` price updates within 60 s (log the measured latency in this plan).
   - Ask the chat "kalu gawuma ekak wedding ekata" and see index-backed results (engine log `search: index`).
   - Ask "can I exchange?" and see a cited answer, with the keyless demo model's scripted reply covering the tool call. Record the results here.
+  - Observed: the Medusa Admin API price update reached `catalog_variants` in **0.225 s**; "kalu gawuma ekak wedding ekata" returned Black Satin Wrap Dress; "can I exchange?" answered from **Returns policy › Exchanges**.
 - [x] **Step 3: CI.** The `check` job runs with the pgvector image, and the search relevance floor runs as part of `pnpm test`. The `image` job builds the image containing the worker. *(Configuration verified; current run awaits a push.)*
 - [ ] **Step 4 (owner-gated):** Run the S3 live relevance eval (Task 8 Step 4) and the knowledge calibration with the chosen embedding model. On staging (after Phase 3 Task 12), check that a price change on the reference store reaches the agent within 60 s.
 - [x] **Step 5:** Docs. Run `pnpm lint:fix && pnpm lint && pnpm typecheck && pnpm test`. Commit `docs: Phase 6 status, workflow and commands`.
@@ -790,10 +791,10 @@ Evals (`cases/knowledge.ts`): the eval runner gets `knowledge?: { title; markdow
 ## Phase 6 exit checklist
 
 - [ ] Search eval nDCG@5 ≥ 0.70 in CI with demo models (S3 floor), and ≥ 0.85 overall / ≥ 0.75 per language with the S1 model (owner-gated). *(Local strict run: demo 0.851 overall; CI and S1 remain pending.)*
-- [ ] A price change on the store is visible to the agent within 60 s: immediately in results (live re-check), and in the index via webhook (measured locally in Task 12; on staging when it exists).
+- [x] A price change on the store is visible to the agent within 60 s locally: the webhook updated the index in 0.225 s. The staging repeat remains owner-gated.
 - [x] Reconciliation repairs a deliberately dropped webhook (Task 12 Step 1).
 - [x] Forged or replayed webhooks are refused; duplicates enqueue once (Task 3).
-- [ ] Policy answers cite their source, and low-confidence questions are answered with "not sure" plus contact details (Task 11 evals).
+- [x] Policy answers cite their source, and low-confidence questions are answered with "not sure" plus contact details (Task 11 deterministic evals and local cited-answer smoke).
 - [x] The RLS test covers every new table; search and knowledge are isolated by tenant and store.
 - [x] Order webhooks produce chat-assisted revenue in `GET /admin/tenants/:id/attribution`.
 - [x] ADR-008 and ADR-009 written; S1–S3 recorded.

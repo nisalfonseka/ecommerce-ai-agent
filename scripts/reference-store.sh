@@ -61,7 +61,8 @@ start() {
   local psql
   psql="$("$ROOT/scripts/test-postgres.sh" bin psql)"
   url="${base%/postgres}/$DB"
-  [ -d "$BACKEND/node_modules" ] || (cd "$BACKEND" && npm ci --no-audit --no-fund --loglevel=error)
+  [ -x "$BACKEND/node_modules/.bin/medusa" ] \
+    || (cd "$BACKEND" && npm ci --no-audit --no-fund --loglevel=error)
 
   export DATABASE_URL="$url" PORT STOREFRONT_URL BACKEND_URL="http://localhost:$PORT"
   export STORE_CORS="${STORE_CORS:-$STOREFRONT_URL,http://localhost:5173}"

@@ -9,6 +9,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STATE="${TMPDIR:-/tmp}/ace-store-stack"
 ENGINE_PORT="${ACE_ENGINE_PORT:-8080}"
 SF_PORT="${ACE_STOREFRONT_PORT:-8000}"
+STORE_PORT="${ACE_STORE_PORT:-9000}"
 DB="${ACE_STORE_ENGINE_DB:-ace_store_engine}"
 APP_PASSWORD="ace_store_app_password"
 STOREFRONT="$ROOT/apps/reference-store/storefront"
@@ -135,7 +136,7 @@ start() {
 
   cd "$STOREFRONT"
   [ -d node_modules ] || npm ci --no-audit --no-fund --loglevel=error
-  export MEDUSA_BACKEND_URL="http://localhost:9000"
+  export MEDUSA_BACKEND_URL="http://localhost:$STORE_PORT"
   MEDUSA_PUBLISHABLE_KEY="$(node -e "console.log(require('$SEED_OUTPUT').publishableKey)")"
   MEDUSA_REGION_ID="$(node -e "console.log(require('$SEED_OUTPUT').regionId)")"
   export MEDUSA_PUBLISHABLE_KEY MEDUSA_REGION_ID NEXT_TELEMETRY_DISABLED=1
@@ -150,7 +151,7 @@ start() {
   echo "storefront:  http://localhost:$SF_PORT"
   echo "engine:      http://localhost:$ENGINE_PORT  (logs: $STATE/engine.log)"
   echo "worker:      running (logs: $STATE/worker.log)"
-  echo "medusa:      http://localhost:9000"
+  echo "medusa:      http://localhost:$STORE_PORT"
 }
 
 case "${1:-start}" in
