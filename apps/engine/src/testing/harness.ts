@@ -10,6 +10,7 @@ import {
 } from "@ace/db";
 import type { TestDatabase } from "@ace/db/testing";
 import { createDemoEmbedder } from "@ace/knowledge";
+import type { Notifier } from "@ace/notify";
 import { createProviderFactory } from "@ace/providers";
 import type { LanguageModel } from "ai";
 import { createApp } from "../app";
@@ -43,6 +44,17 @@ export async function createEngineHarness(testDb: TestDatabase) {
   const pool = createDb(testDb.appUrl);
   const logger = createLogger({ level: "silent" });
   const models: Record<string, LanguageModel> = {};
+  const notifications: { channel: "sms" | "email"; to: string; text: string }[] = [];
+  const notifier: Notifier = {
+    sendSms: async ({ to, text }) => {
+      notifications.push({ channel: "sms", to, text });
+      return { providerId: "test-sms" };
+    },
+    sendEmail: async ({ to, text }) => {
+      notifications.push({ channel: "email", to, text });
+      return { providerId: "test-email" };
+    },
+  };
   const providers = createProviderFactory({
     idempotencyStore: (t) => createPgIdempotencyStore(pool.db, t),
     masterKey: Buffer.alloc(32, 1),
@@ -92,6 +104,13 @@ export async function createEngineHarness(testDb: TestDatabase) {
     knowledge: { embedderFor: () => createDemoEmbedder() },
     visitorLimiter: createRateLimiter({ limitPerMinute: 1000 }),
     ipLimiter: createRateLimiter({ limitPerMinute: 1000 }),
+    masterKey: Buffer.alloc(32, 1),
+    otp: {
+      db: pool.db,
+      notifier,
+      masterKey: Buffer.alloc(32, 1),
+      ipLimiter: createRateLimiter({ limit: 1000, windowMs: 60 * 60 * 1000 }),
+    },
   };
   const app = createApp({
     logger,
@@ -108,6 +127,7 @@ export async function createEngineHarness(testDb: TestDatabase) {
     tenantId,
     botId,
     models,
+    notifications,
     provider: () => providers(tenantId, { id: storeId, platform: "memory" }),
     post: (path: string, body: unknown) =>
       app.request(path, { method: "POST", headers, body: JSON.stringify(body) }),

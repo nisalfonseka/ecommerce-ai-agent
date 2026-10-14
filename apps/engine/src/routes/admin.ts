@@ -17,6 +17,7 @@ import {
   revokeWidgetKey,
   schema,
   sealSecret,
+  setHostSessionSecret,
   setStoreWebhookSecret,
   usageReport,
   withTenant,
@@ -198,6 +199,20 @@ export function registerAdminRoutes(app: Hono<WidgetEnv>, deps: AdminDeps): void
     const stored = await withTenant(deps.db, tenantId, (tx) => setStoreWebhookSecret(tx, storeId, sealed));
     if (!stored) return errorResponse(c, 404, "not_found", "Unknown store.");
     return c.json({ secret, path: `/webhooks/${storeId}` }, 201);
+  });
+
+  // Rotation invalidates every token signed with the previous tenant secret. It is returned only once.
+  admin.post("/tenants/:tenantId/host-session-secret", async (c) => {
+    const tenantId = tenantParam(c.req.param("tenantId"));
+    if (!tenantId) return errorResponse(c, 404, "not_found", "Unknown tenant.");
+    const secret = randomBytes(32).toString("base64url");
+    const stored = await withTenant(deps.db, tenantId, async (tx) => {
+      const [tenant] = await tx.select({ id: schema.tenants.id }).from(schema.tenants).limit(1);
+      if (!tenant) return false;
+      await setHostSessionSecret(tx, tenantId, sealSecret(secret, deps.masterKey));
+      return true;
+    });
+    return stored ? c.json({ secret }, 201) : errorResponse(c, 404, "not_found", "Unknown tenant.");
   });
 
   admin.post("/tenants/:tenantId/bots", async (c) => {

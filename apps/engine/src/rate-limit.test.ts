@@ -23,4 +23,15 @@ describe("createRateLimiter", () => {
     limiter.check("fresh");
     expect(limiter.size()).toBe(1);
   });
+
+  it("supports a longer window for one-time-code IP limits", () => {
+    let now = 0;
+    const limiter = createRateLimiter({ limit: 2, windowMs: 3_600_000, now: () => now });
+    expect(limiter.check("ip")).toEqual({ ok: true });
+    expect(limiter.check("ip")).toEqual({ ok: true });
+    now = 60_000;
+    expect(limiter.check("ip")).toEqual({ ok: false, retryAfterS: 3540 });
+    now = 3_600_001;
+    expect(limiter.check("ip")).toEqual({ ok: true });
+  });
 });

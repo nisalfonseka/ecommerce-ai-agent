@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { MemoryCommerceProvider } from "@ace/adapter-memory";
-import { createDb, schema, upsertAttributedOrder, withTenant } from "@ace/db";
+import { createDb, openSecret, schema, upsertAttributedOrder, withTenant } from "@ace/db";
 import type { JobName, JobPayload, JobQueue } from "@ace/db/jobs";
 import { createTestDatabase } from "@ace/db/testing";
 import { createDemoEmbedder, ingestDocument } from "@ace/knowledge";
@@ -16,6 +16,7 @@ import { registerAdminRoutes } from "./admin";
 
 const testDb = await createTestDatabase();
 const ADMIN_KEY = "admin-test-key-0123456789";
+const MASTER_KEY = randomBytes(32);
 
 class RecordingQueue implements JobQueue {
   sent: JobName[] = [];
@@ -43,7 +44,7 @@ describe.skipIf(testDb === null)("admin API", () => {
     registerAdminRoutes(app, {
       db: pool.db,
       adminApiKeySha256: createHash("sha256").update(ADMIN_KEY).digest("hex"),
-      masterKey: randomBytes(32),
+      masterKey: MASTER_KEY,
       jobs,
       prices: loadModelPrices({
         models: {
@@ -106,6 +107,25 @@ describe.skipIf(testDb === null)("admin API", () => {
     expect(key).toMatch(/^pk_live_/);
     expect((await call("DELETE", `/admin/tenants/${tenantId}/widget-keys/${keyId}`)).status).toBe(204);
     expect((await call("DELETE", `/admin/tenants/${tenantId}/widget-keys/${keyId}`)).status).toBe(404);
+  });
+
+  it("rotates and returns a tenant host-session secret only in the response", async () => {
+    const { tenantId } = await json(await call("POST", "/admin/tenants", { name: "Host Sessions" }));
+    const path = `/admin/tenants/${tenantId}/host-session-secret`;
+    const first = await call("POST", path);
+    expect(first.status).toBe(201);
+    const firstSecret = (await json(first)).secret ?? "";
+    expect(Buffer.from(firstSecret, "base64url")).toHaveLength(32);
+    const secondSecret = (await json(await call("POST", path))).secret ?? "";
+    expect(secondSecret).not.toBe(firstSecret);
+    const [row] = await withTenant(pool.db, tenantId ?? "", (tx) =>
+      tx.select({ sealed: schema.tenantSettings.hostSessionSecretSealed }).from(schema.tenantSettings),
+    );
+    expect(row?.sealed).not.toBeNull();
+    expect(openSecret(row?.sealed ?? Buffer.alloc(0), MASTER_KEY)).toBe(secondSecret);
+    expect(
+      (await call("POST", "/admin/tenants/00000000-0000-4000-8000-000000000000/host-session-secret")).status,
+    ).toBe(404);
   });
 
   it("registers a Medusa store only with complete credentials, and never echoes them", async () => {

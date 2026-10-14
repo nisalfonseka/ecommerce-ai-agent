@@ -15,6 +15,8 @@ const ChatBodySchema = z.object({
   conversationToken: z.string().max(512).optional(),
   /** The host site's cart, sent with every message (G2). */
   cartId: z.string().min(1).max(200).optional(),
+  /** Tenant host-site session. Invalid or expired tokens are intentionally ignored. */
+  identityToken: z.string().max(4096).optional(),
 });
 
 const VISITOR_ID = /^[A-Za-z0-9_-]{8,64}$/;

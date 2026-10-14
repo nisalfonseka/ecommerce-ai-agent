@@ -18,10 +18,12 @@ import {
   type Db,
   getBotWithStore,
   getConversation,
+  getHostSessionSecretSealed,
   hasReadyKnowledge,
   loadMessages,
   type MessageInput,
   monthToDateCostMicros,
+  openSecret,
   recordToolCalls,
   recordTurn,
   releaseLease,
@@ -40,6 +42,8 @@ import { codPolicy, parsePersona, parseSession, parseStoreFacts } from "./bot-co
 import { budgetState, chooseModel, costMicros, type ModelPrices } from "./budget";
 import { toModelMessages } from "./history";
 import type { ErrorCode } from "./http-errors";
+import { currentIdentity } from "./identity/conversation-identity";
+import { verifyHostSession } from "./identity/host-session";
 import type { Emit } from "./sse";
 
 /** How long one turn may hold a conversation before another request can take it over. */
@@ -64,6 +68,8 @@ export interface TurnDeps {
   /** Provider retries per model before falling back (default: the agent's, i.e. once). */
   modelRetries?: number;
   now?: () => number;
+  /** Needed only to open a tenant's host-session signing secret. */
+  masterKey?: Buffer;
 }
 
 /** A refusal decided before the SSE stream opens, so it can be a plain HTTP error. */
@@ -91,6 +97,7 @@ export interface TurnRequest {
   conversationId?: string | undefined;
   conversationToken?: string | undefined;
   cartId?: string | undefined;
+  identityToken?: string | undefined;
   visitorId: string;
 }
 
@@ -226,6 +233,21 @@ export async function runPreparedTurn(
     const stored = await withTenant(deps.db, tenantId, (tx) => loadMessages(tx, conversationId));
     const history: ModelMessage[] = toModelMessages(stored.rows);
     const storeFacts = parseStoreFacts(prepared.bot.storeFacts);
+    let identity = currentIdentity(prepared.conversation, new Date(now()));
+    if (request.identityToken && deps.masterKey) {
+      try {
+        const sealed = await withTenant(deps.db, tenantId, (tx) => getHostSessionSecretSealed(tx));
+        if (sealed) {
+          const secret = Buffer.from(openSecret(sealed, deps.masterKey), "base64url");
+          identity = verifyHostSession(request.identityToken, secret, new Date(now()));
+        } else {
+          identity = null;
+        }
+      } catch (error) {
+        deps.logger.warn({ err: error, tenantId }, "host session could not be verified");
+        identity = null;
+      }
+    }
     const readyKnowledge = await withTenant(deps.db, tenantId, (tx) =>
       hasReadyKnowledge(tx, prepared.store.id),
     );
@@ -263,6 +285,7 @@ export async function runPreparedTurn(
       cod: codPolicy(storeFacts),
       knowledge,
       cartId: request.cartId ?? prepared.conversation.cartId,
+      identity,
       onToolStart: (name) => emit("status", { tool: name }),
       onUnexpectedError: (error) => deps.logger.error({ err: error, turnId }, "tool failed unexpectedly"),
       now,

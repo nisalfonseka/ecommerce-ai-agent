@@ -18,7 +18,7 @@ adapter**. The agent only knows the universal commerce contract, never Shopify, 
 
 ## Current status
 
-**Phases 1–6 are built on `main`, except what waits on the owner. Phase 7 Tasks 1–2 are implemented.** The
+**Phases 1–6 are built on `main`, except what waits on the owner. Phase 7 Tasks 1–4 are implemented.** The
 deterministic and PostgreSQL/pgvector-backed checks are green. The local Medusa stack smoke passed on 2026-10-14:
 webhook price propagation took 0.225 s, Singlish indexed search returned the expected dress, and the exchange answer
 cited the Returns policy. On hold:
@@ -26,7 +26,7 @@ cited the Returns policy. On hold:
 - the VPS staging deploy (Phase 3 Task 12) and the Phase 5 staging exit, which also needs PayHere sandbox credentials
 - Phase 6 live search/knowledge calibration and staging propagation check (paid embedding key + VPS)
 
-Decided: D1 = Medusa v2 and D4 = no pilot client yet, so the store is generic (ADR-006). COD is confirmed by a UI action (ADR-007, provisional). E1 and E2 are built provisionally (ADR-004; `model-prices.json` with null prices). Without API keys, `scripts/dev-stack.sh start` (memory store) and `scripts/store-stack.sh start` (Medusa reference store + storefront) run the engine, worker, indexed search and cited knowledge with deterministic demo models. **Next:** continue Phase 7 from Task 3. Do not scaffold later phases early.
+Decided: D1 = Medusa v2 and D4 = no pilot client yet, so the store is generic (ADR-006). COD is confirmed by a UI action (ADR-007, provisional). E1 and E2 are built provisionally (ADR-004; `model-prices.json` with null prices). Without API keys, `scripts/dev-stack.sh start` (memory store) and `scripts/store-stack.sh start` (Medusa reference store + storefront) run the engine, worker, indexed search and cited knowledge with deterministic demo models. **Next:** continue Phase 7 from Task 5. Do not scaffold later phases early.
 
 ## Architecture rules (non-negotiable)
 

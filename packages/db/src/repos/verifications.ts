@@ -9,6 +9,8 @@ export interface VerificationInput {
   channel: "sms" | "email";
   /** HMAC of the normalised destination; never the destination itself. */
   destinationHash: string;
+  /** Envelope-encrypted normalized destination, needed to build the identity only after confirmation. */
+  destinationSealed: Buffer;
   /** HMAC(code ‖ salt); never the code. */
   codeHash: string;
   salt: string;
@@ -41,6 +43,7 @@ export async function createVerification(
       conversationId: input.conversationId,
       channel: input.channel,
       destinationHash: input.destinationHash,
+      destinationSealed: input.destinationSealed,
       codeHash: input.codeHash,
       salt: input.salt,
       expiresAt: input.expiresAt,
@@ -48,6 +51,35 @@ export async function createVerification(
     .returning();
   if (!row) throw new Error("verification insert returned no row");
   return row;
+}
+
+/** Includes an expired row so callers can distinguish `expired` from `no_pending`. */
+export async function getLatestUnconsumedVerification(
+  tx: Tx,
+  conversationId: string,
+): Promise<VerificationRow | null> {
+  const [row] = await tx
+    .select()
+    .from(verifications)
+    .where(and(eq(verifications.conversationId, conversationId), isNull(verifications.consumedAt)))
+    .orderBy(desc(verifications.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Serialises rate-limit checks and row creation for a destination and conversation. */
+export async function lockVerificationStart(
+  tx: Tx,
+  conversationId: string,
+  destinationHash: string,
+): Promise<void> {
+  const keys = [
+    `verification-conversation:${conversationId}`,
+    `verification-destination:${destinationHash}`,
+  ].sort();
+  for (const key of keys) {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+  }
 }
 
 /** The conversation's live code: unconsumed and not expired at `now`. `attempts` shows how much of the cap is spent. */

@@ -443,6 +443,8 @@ export const verifications = pgTable(
     /** 'sms' | 'email' */
     channel: text("channel").notNull(),
     destinationHash: text("destination_hash").notNull(),
+    /** Envelope-encrypted normalized destination; opened only after the code verifies. */
+    destinationSealed: bytea("destination_sealed").notNull(),
     codeHash: text("code_hash").notNull(),
     salt: text("salt").notNull(),
     attempts: integer("attempts").notNull().default(0),

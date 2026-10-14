@@ -50,6 +50,13 @@
       "when": 1791822505748,
       "tag": "0006_phase7_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791964608726,
+      "tag": "0007_verification_destination",
+      "breakpoints": true
     }
   ]
 }

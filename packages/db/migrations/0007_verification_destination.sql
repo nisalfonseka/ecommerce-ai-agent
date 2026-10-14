@@ -1,0 +1,1 @@
+ALTER TABLE "verifications" ADD COLUMN "destination_sealed" "bytea" NOT NULL;

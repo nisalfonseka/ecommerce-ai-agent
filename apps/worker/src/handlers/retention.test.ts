@@ -139,6 +139,7 @@ describe.skipIf(testDb === null)("retention.purge", () => {
           conversationId,
           channel: "email",
           destinationHash: "d",
+          destinationSealed: Buffer.from("sealed"),
           codeHash: "c",
           salt: "s",
           expiresAt: createdAt,

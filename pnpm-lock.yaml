@@ -184,6 +184,9 @@ importers:
 
   apps/engine:
     dependencies:
+      '@ace/notify':
+        specifier: workspace:*
+        version: link:../../packages/notify
       '@ace/search':
         specifier: workspace:*
         version: link:../../packages/search

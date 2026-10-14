@@ -12,6 +12,7 @@ const EnvSchema = z.object({
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(1),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  ACE_NOTIFY_MODE: z.enum(["log", "remote"]).optional(),
 });
 
 export interface EngineConfig {
@@ -26,6 +27,7 @@ export interface EngineConfig {
   otlpEndpoint: string | undefined;
   /** The keyless demo model ("demo:*") is allowed only outside production. */
   allowDemoModel: boolean;
+  notifyMode: "log" | "remote";
 }
 
 /** Validates the environment. Errors name the variable and the rule, never the value (it may be a secret). */
@@ -36,6 +38,10 @@ export function loadConfig(env: Record<string, string | undefined>): EngineConfi
     throw new Error(`Invalid engine configuration: ${problems.join("; ")}`);
   }
   const e = parsed.data;
+  const notifyMode = e.ACE_NOTIFY_MODE ?? (e.NODE_ENV === "production" ? "remote" : "log");
+  if (e.NODE_ENV === "production" && notifyMode === "log") {
+    throw new Error("Invalid engine configuration: ACE_NOTIFY_MODE: log is forbidden in production");
+  }
   return {
     databaseUrl: e.DATABASE_URL,
     masterKey: Buffer.from(e.ACE_MASTER_KEY, "base64"),
@@ -46,5 +52,6 @@ export function loadConfig(env: Record<string, string | undefined>): EngineConfi
     trustProxyHops: e.TRUST_PROXY_HOPS,
     otlpEndpoint: e.OTEL_EXPORTER_OTLP_ENDPOINT,
     allowDemoModel: e.NODE_ENV !== "production",
+    notifyMode,
   };
 }

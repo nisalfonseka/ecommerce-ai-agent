@@ -10,6 +10,8 @@ import {
   createTenant,
   issueWidgetKey,
   resolveWidgetKey,
+  sealSecret,
+  setHostSessionSecret,
   withTenant,
 } from "@ace/db";
 import { createTestDatabase } from "@ace/db/testing";
@@ -21,12 +23,14 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { createConversationTokens } from "../auth/conversation-token";
+import { signHostSession } from "../identity/host-session";
 import { createLogger } from "../log";
 import { createRateLimiter } from "../rate-limit";
 import { registerChatRoutes } from "./chat";
 
 const testDb = await createTestDatabase();
 const ORIGIN = "https://shop.test";
+const MASTER_KEY = Buffer.alloc(32, 6);
 
 function failingModel(): MockLanguageModelV4 {
   return new MockLanguageModelV4({
@@ -141,6 +145,7 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
       knowledge: { embedderFor: () => createDemoEmbedder() },
       visitorLimiter: createRateLimiter({ limitPerMinute: 1000 }),
       ipLimiter: createRateLimiter({ limitPerMinute: 1000 }),
+      masterKey: MASTER_KEY,
     });
   });
 
@@ -194,6 +199,41 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
     );
     expect(trace.rows[0]).toMatchObject({ tool_names: ["search_products"], busy_until: null });
     expect(trace.rows[0]?.prompt_version).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+  });
+
+  it("uses a valid host session for one turn and treats an invalid token as anonymous", async () => {
+    const secret = Buffer.alloc(32, 5);
+    await withTenant(pool.db, tenantA, (tx) =>
+      setHostSessionSecret(tx, tenantA, sealSecret(secret.toString("base64url"), MASTER_KEY)),
+    );
+    const token = signHostSession(
+      {
+        sub: "host-customer-1",
+        email: "customer@example.com",
+        emailVerified: true,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+      secret,
+    );
+    models = {
+      "test:primary": scriptedModel([
+        callTool("lookup", "lookup_order", { orderNumber: "ACE-1001" }),
+        say("It has shipped."),
+      ]),
+    };
+    const valid = await turn(keyA, { message: "track ACE-1001", identityToken: token });
+    const validUi = valid.find((event) => event.event === "reply")?.data.ui as { type: string }[];
+    expect(validUi.map((part) => part.type)).toContain("order");
+
+    models = {
+      "test:primary": scriptedModel([
+        callTool("lookup", "lookup_order", { orderNumber: "ACE-1001" }),
+        say("Please verify first."),
+      ]),
+    };
+    const invalid = await turn(keyA, { message: "track ACE-1001", identityToken: `${token}x` });
+    const invalidUi = invalid.find((event) => event.event === "reply")?.data.ui as { type: string }[];
+    expect(invalidUi.map((part) => part.type)).toContain("verification_required");
   });
 
   it("wires ready store knowledge into the turn and sends cited passages to the model", async () => {

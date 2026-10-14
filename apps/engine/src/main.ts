@@ -3,6 +3,7 @@ import { resolveEmbeddingModel } from "@ace/agent";
 import { createDb, createPgIdempotencyStore, resolveWidgetKey } from "@ace/db";
 import { openJobQueue } from "@ace/db/jobs";
 import { embedderFor } from "@ace/knowledge";
+import { createNotifier } from "@ace/notify";
 import { createProviderFactory } from "@ace/providers";
 import { serve } from "@hono/node-server";
 import { sql } from "drizzle-orm";
@@ -27,6 +28,7 @@ const prices = loadModelPrices(
 );
 const logger = createLogger({ level: config.logLevel });
 const { db, close } = createDb(config.databaseUrl);
+const notifier = createNotifier({ ...process.env, ACE_NOTIFY_MODE: config.notifyMode });
 const resolveEmbedder = (spec: string) =>
   embedderFor(spec, { allowDemo: config.allowDemoModel, resolve: resolveEmbeddingModel });
 
@@ -60,9 +62,16 @@ const turnDeps = {
   logger,
   prices,
   knowledge: { embedderFor: resolveEmbedder },
+  masterKey: config.masterKey,
   visitorLimiter: createRateLimiter({ limitPerMinute: 20 }),
   ipLimiter: createRateLimiter({ limitPerMinute: 60 }),
   trustProxyHops: config.trustProxyHops,
+  otp: {
+    db,
+    notifier,
+    masterKey: config.masterKey,
+    ipLimiter: createRateLimiter({ limit: 20, windowMs: 60 * 60 * 1000 }),
+  },
 };
 registerChatRoutes(app, turnDeps);
 registerActionRoutes(app, turnDeps);

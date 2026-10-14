@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress on `main` (2026-10-14). Tasks 1–2 are implemented and the strict PostgreSQL/RLS suite is green. Owner decisions received 2026-10-12: SMS = **text.lk**, email = **Brevo**, staff handoff alerts = **email**, retention periods = **per merchant**. Everything here runs locally and in CI without paid accounts, using a log-only notifier; real delivery, live evals and provider retention checks are owner-gated.
+**Status:** In progress on `main` (2026-10-14). Tasks 1–4 are implemented and the strict PostgreSQL/RLS suite is green. Owner decisions received 2026-10-12: SMS = **text.lk**, email = **Brevo**, staff handoff alerts = **email**, retention periods = **per merchant**. Everything here runs locally and in CI without paid accounts, using a log-only notifier; real delivery, live evals and provider retention checks are owner-gated.
 
 **Goal:** A shopper can verify with an SMS or email code (or a signed host-site session) and then look up their own orders; the assistant hands difficult conversations to a human who answers from a minimal dashboard inbox and is alerted by email; and the merchant side of Sri Lanka's PDPA works: consent records, per-merchant retention, shopper export and deletion, a DPA template and a breach runbook.
 
@@ -111,7 +111,7 @@ tenantSettings { tenantId pk; retention jsonb;            // { messagesDays 30..
                  handoffEmails text[]; otp jsonb;          // { allowedCountryCodes: string[], channels: ("sms"|"email")[] }
                  requireConsent boolean default true; privacyNoticeUrl text|null;
                  hostSessionSecretSealed bytea|null; contactInfo text|null /* shown on "not sure" answers */ }
-verifications { conversationId FK cascade; channel text ('sms'|'email'); destinationHash text; codeHash text; salt text;
+verifications { conversationId FK cascade; channel text ('sms'|'email'); destinationHash text; destinationSealed bytea; codeHash text; salt text;
                 attempts int default 0; expiresAt timestamptz; consumedAt timestamptz|null }
 consents      { conversationId FK cascade; noticeVersion text; noticeUrl text|null }
 handoffs      { conversationId FK cascade; reason text; summary text; status text ('open'|'claimed'|'resolved');
@@ -168,8 +168,8 @@ export function deriveKey(masterKey: Buffer, label: "ace/otp/v1" | "ace/identity
 export function identityHash(key: Buffer, tenantId: string, kind: "email" | "phone", normalized: string): string;
 export function hashCode(key: Buffer, code: string, salt: string): string;
 // otp.ts
-export interface OtpDeps { db: Db; notifier: Notifier; masterKey: Buffer; now?: () => Date; random?: (n: number) => Buffer }
-export type StartResult = { ok: true; maskedDestination: string; expiresInSeconds: 600 } | { ok: false; reason: "invalid_destination" | "channel_disabled" | "rate_limited"; retryAfterSeconds?: number };
+export interface OtpDeps { db: Db; notifier: Notifier; masterKey: Buffer; now?: () => Date; random?: (n: number) => Buffer; ipLimiter?: RateLimiter }
+export type StartResult = { ok: true; maskedDestination: string; expiresInSeconds: 600 } | { ok: false; reason: "invalid_destination" | "channel_disabled" | "rate_limited" | "unavailable"; retryAfterSeconds?: number };
 export function startVerification(deps: OtpDeps, ctx: { tenantId: string; conversationId: string; ip: string },
   input: { channel: "sms" | "email"; destination: string }): Promise<StartResult>;
 export type ConfirmResult = { ok: true; identity: VerifiedIdentity } | { ok: false; reason: "invalid_code" | "expired" | "locked" | "no_pending" };
@@ -179,7 +179,7 @@ export function confirmVerification(deps: OtpDeps, ctx: { tenantId: string; conv
 export function verifyHostSession(token: string, secret: Buffer, now?: Date): VerifiedIdentity | null;
 export function signHostSession(claims: { sub: string; email?: string; emailVerified?: boolean; phone?: string; phoneVerified?: boolean; exp: number }, secret: Buffer): string; // for tests and docs
 // conversation-identity.ts
-export function currentIdentity(conversation: { identity: unknown }, now: Date): VerifiedIdentity | null; // null once expired (30 min)
+export function currentIdentity(conversation: { identity: unknown; identityExpiresAt?: Date | string | null }, now: Date): VerifiedIdentity | null; // null once expired (30 min)
 ```
 
 Engine behaviour:
@@ -189,7 +189,7 @@ Engine behaviour:
 - Rate limits: DB-backed counters over `verifications` rows for per-destination and per-conversation; the existing in-memory limiter for per-IP. All are enforced in `startVerification`, before any send.
 - Send failure: the row is rolled back (no pending code) and the shopper gets `unavailable`; a `NotifyError` never carries the destination to the response.
 
-- [ ] **Step 1: Failing tests** (test database, fake `Notifier` recording sends, injected `now`/`random`).
+- [x] **Step 1: Failing tests** (test database, fake `Notifier` recording sends, injected `now`/`random`).
   - Happy path SMS: start → one `sendSms` to the normalised number with a 6-digit code in the text; confirm with that code → identity `phone_otp` with only `phone`; saved on the conversation; `currentIdentity` is null at +30 min + 1 s and valid at +29 min.
   - Email path likewise; destination case folded.
   - **Review Focus 2:** 6th wrong attempt → `locked`, and the right code afterwards is still refused; a code is single use (second confirm → `no_pending`); an expired code (10 min + 1 s) → `expired`; the 4th start for one destination within an hour → `rate_limited`; the 6th start for one conversation → `rate_limited`; the 21st start from one IP → `rate_limited`; `+1…` destination with default settings → `invalid_destination` and no send; start for destination B then confirming the code that was sent to A is impossible (one pending code per conversation; a new start invalidates the old one).
@@ -198,8 +198,8 @@ Engine behaviour:
   - **Review Focus 1:** with no identity, `lookup_order` → `NEEDS_VERIFICATION`; after verification the same call returns the order for the owner and `NOT_FOUND` for another shopper's order number; an expired identity behaves as none; conversation A's identity is never used for conversation B (including the same visitor id); a conversation token for tenant B cannot call `verify_confirm` for tenant A's conversation (404).
   - Host session: valid token → `host_session` identity for the turn; wrong signature, tampered payload, `exp` in the past, `exp` more than 24 h ahead, missing `sub`, other tenant's secret → anonymous; `emailVerified: false` drops the email from the identity.
   - Logs: run start and confirm with a capturing logger and assert no destination, code or message text appears.
-- [ ] **Step 2: Implement.** ADR-010: HMAC domain separation, why the code is hashed (database read exposure), 30-minute identity window, no enumeration, host sessions are per-turn.
-- [ ] **Step 3:** Checks. Commit `feat(engine): one-time code verification and host-session identity`.
+- [x] **Step 2: Implement.** ADR-010: HMAC domain separation, why the code is hashed (database read exposure), 30-minute identity window, no enumeration, host sessions are per-turn. The normalized destination is envelope-encrypted because confirmation receives only a code; its HMAC remains the rate-limit and privacy lookup key.
+- [x] **Step 3:** Checks. `pnpm lint`, all 13 package typechecks and all 22 test tasks passed with strict PostgreSQL tests on 2026-10-14. Commit `feat(engine): one-time code verification and host-session identity`.
 
 ### Task 5: Order-support tools, prompt and evals
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { say, scriptedModel } from "@ace/agent/testing";
+import { callTool, say, scriptedModel } from "@ace/agent/testing";
 import { acquireTurnLease, schema, withTenant } from "@ace/db";
 import { createTestDatabase } from "@ace/db/testing";
 import { eq } from "drizzle-orm";
@@ -43,6 +43,96 @@ describe.skipIf(testDb === null)("POST /v1/actions/:type", () => {
     h.models["test:primary"] = model;
     await h.chat({ ...ids, message: "what did I add?" });
     expect(JSON.stringify(model.doGenerateCalls[0]?.prompt)).toContain("[shopper action] add_to_cart");
+  });
+
+  it("starts and confirms verification without exposing contact data in action messages", async () => {
+    const ids = await newConversation();
+    const startAction = {
+      ...ids,
+      actionId: randomUUID(),
+      input: { channel: "email", destination: " Customer@Example.COM " },
+    };
+    const beforeSends = h.notifications.length;
+    const started = await h.post("/v1/actions/verify_start", startAction);
+    expect(started.status).toBe(200);
+    expect(await started.json()).toEqual({
+      ok: true,
+      maskedDestination: "c***@e***.com",
+      expiresInSeconds: 600,
+    });
+    const sent = h.notifications.at(-1);
+    expect(sent).toMatchObject({ channel: "email", to: "customer@example.com" });
+    expect(await (await h.post("/v1/actions/verify_start", startAction)).json()).toEqual({
+      ok: true,
+      maskedDestination: "c***@e***.com",
+      expiresInSeconds: 600,
+    });
+    expect(h.notifications).toHaveLength(beforeSends + 1);
+    const code = /\b\d{6}\b/.exec(sent?.text ?? "")?.[0] ?? "";
+    const confirmAction = {
+      ...ids,
+      actionId: randomUUID(),
+      input: { code },
+    };
+    const confirmed = await h.post("/v1/actions/verify_confirm", confirmAction);
+    expect(await confirmed.json()).toEqual({ ok: true, verified: true });
+    expect(await (await h.post("/v1/actions/verify_confirm", confirmAction)).json()).toEqual({
+      ok: true,
+      verified: true,
+    });
+
+    const stored = await withTenant(h.pool.db, h.tenantId, async (tx) => ({
+      conversation: (
+        await tx.select().from(schema.conversations).where(eq(schema.conversations.id, ids.conversationId))
+      )[0],
+      messages: await tx
+        .select({ payload: schema.messages.payload })
+        .from(schema.messages)
+        .where(eq(schema.messages.conversationId, ids.conversationId)),
+    }));
+    expect(stored.conversation?.identity).toMatchObject({
+      method: "email_otp",
+      email: "customer@example.com",
+    });
+    expect(stored.conversation?.identityHash).toEqual(expect.any(String));
+    expect(JSON.stringify(stored.messages)).not.toContain("customer@example.com");
+
+    h.models["test:primary"] = scriptedModel([
+      callTool("lookup", "lookup_order", { orderNumber: "ACE-1001" }),
+      say("Your order has shipped."),
+    ]);
+    const events = await h.chat({ ...ids, message: "Where is order ACE-1001?" });
+    const reply = events.find((event) => event.event === "reply")?.data as {
+      ui?: { type: string }[];
+    };
+    expect(reply.ui?.map((part) => part.type)).toContain("order");
+
+    const other = await newConversation();
+    h.models["test:primary"] = scriptedModel([
+      callTool("lookup", "lookup_order", { orderNumber: "ACE-1001" }),
+      say("Please verify first."),
+    ]);
+    const otherEvents = await h.chat({ ...other, message: "Where is order ACE-1001?" });
+    const otherReply = otherEvents.find((event) => event.event === "reply")?.data as {
+      ui?: { type: string }[];
+    };
+    expect(otherReply.ui?.map((part) => part.type)).toContain("verification_required");
+
+    await withTenant(h.pool.db, h.tenantId, (tx) =>
+      tx
+        .update(schema.conversations)
+        .set({ identityExpiresAt: new Date(Date.now() - 1) })
+        .where(eq(schema.conversations.id, ids.conversationId)),
+    );
+    h.models["test:primary"] = scriptedModel([
+      callTool("lookup", "lookup_order", { orderNumber: "ACE-1001" }),
+      say("Please verify again."),
+    ]);
+    const expiredEvents = await h.chat({ ...ids, message: "Where is order ACE-1001?" });
+    const expiredReply = expiredEvents.find((event) => event.event === "reply")?.data as {
+      ui?: { type: string }[];
+    };
+    expect(expiredReply.ui?.map((part) => part.type)).toContain("verification_required");
   });
 
   it("applies a repeated actionId once (double click)", async () => {

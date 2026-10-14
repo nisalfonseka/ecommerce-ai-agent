@@ -458,6 +458,7 @@ describe.skipIf(testDb === null)("repositories (as ace_app)", () => {
       conversationId,
       channel: "email" as const,
       destinationHash: over.destinationHash ?? "dest_1",
+      destinationSealed: Buffer.from("sealed"),
       codeHash: "code_hash",
       salt: "salt_1",
       expiresAt: over.expiresAt ?? new Date(Date.now() + 600_000),

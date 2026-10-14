@@ -74,6 +74,23 @@ export async function saveSessionAndRelease(
     .where(eq(conversations.id, conversationId));
 }
 
+export async function saveConversationIdentity(
+  tx: Tx,
+  conversationId: string,
+  input: { identity: unknown; identityHash: string; expiresAt: Date },
+): Promise<boolean> {
+  const rows = await tx
+    .update(conversations)
+    .set({
+      identity: input.identity,
+      identityHash: input.identityHash,
+      identityExpiresAt: input.expiresAt,
+    })
+    .where(eq(conversations.id, conversationId))
+    .returning({ id: conversations.id });
+  return rows.length > 0;
+}
+
 export async function loadMessages(
   tx: Tx,
   conversationId: string,
