@@ -92,4 +92,28 @@ describe("runCase", () => {
       { type: "verification_form", channels: ["sms", "email"], reason: "order_lookup" },
     ]);
   });
+
+  it("scores a scripted human handoff without an external service", async () => {
+    const model = scriptedModel([
+      callTool("c1", "request_human", { reason: "complaint", summary: "Shopper needs help." }),
+      say("A team member will reply here."),
+    ]);
+    const result = await runCase(
+      {
+        id: "handoff-scripted",
+        language: "en",
+        tags: ["handoff"],
+        description: "deterministic handoff",
+        turns: [
+          {
+            user: "I need a person",
+            expect: { toolsCalled: ["request_human"], uiTypes: ["handoff"] },
+          },
+        ],
+      },
+      { model, modelSpec: "mock", persona, store },
+    );
+    expect(result.passed).toBe(true);
+    expect(result.turns[0]?.ui).toEqual([{ type: "handoff", status: "requested" }]);
+  });
 });

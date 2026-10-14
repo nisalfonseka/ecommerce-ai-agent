@@ -17,6 +17,7 @@ import { createRateLimiter } from "./rate-limit";
 import { registerActionRoutes } from "./routes/actions";
 import { registerAdminRoutes } from "./routes/admin";
 import { registerChatRoutes } from "./routes/chat";
+import { registerStaffRoutes } from "./routes/staff";
 import { registerWebhookRoutes } from "./routes/webhooks";
 
 const config = loadConfig(process.env);
@@ -44,6 +45,8 @@ const app = createApp({
   },
   resolveWidgetKey: (key) => resolveWidgetKey(db, key),
 });
+// Producer only: the engine enqueues, the worker consumes.
+const jobQueue = await openJobQueue(config.databaseUrl, "producer");
 
 const turnDeps = {
   db,
@@ -72,11 +75,11 @@ const turnDeps = {
     masterKey: config.masterKey,
     ipLimiter: createRateLimiter({ limit: 20, windowMs: 60 * 60 * 1000 }),
   },
+  jobs: jobQueue.queue,
 };
 registerChatRoutes(app, turnDeps);
 registerActionRoutes(app, turnDeps);
-// Producer only: the engine enqueues, the worker (Phase 6) consumes.
-const jobQueue = await openJobQueue(config.databaseUrl, "producer");
+registerStaffRoutes(app, { db, jobs: jobQueue.queue });
 registerAdminRoutes(app, {
   db,
   adminApiKeySha256: config.adminApiKeySha256,

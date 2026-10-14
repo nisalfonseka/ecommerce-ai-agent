@@ -246,14 +246,14 @@ export function resolveHandoff(deps, tenantId, handoffId): Promise<void>;   // c
 
 Chat route when `conversation.status = "handoff"`: the shopper message is appended (kind `user`), the SSE stream emits `handoff { status: "claimed" | "waiting" }` and `done`, and **the model is not called** (no cost, no reply).
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
   - `request_human` creates exactly one open handoff per conversation (second call returns the same id, `created: false`); the summary is stored through `redactPii`; the conversation becomes `handoff`.
   - **Review Focus 4:** while `handoff`, a shopper message never calls the model (spy) and is stored for staff; staff reply is appended as `kind: "staff"` and appears in `GET /v1/conversations/:id`; two staff claiming at once → one `claimed`, one `already_claimed`; reply by a different staff name before claim → `not_claimed_by_you`; hand-back while no turn is leased resumes the bot on the next message; tenant A's staff token on tenant B's handoff → 404 with no data; revoked or malformed token → 401.
   - Notification: `handoff.notify` sends one Brevo email per handoff to every address in `handoffEmails` (subject and body contain the reason, the redacted summary, and a dashboard link — **not** the transcript); a retried job does not send twice (`notified_at`); no addresses configured → logs a warning and completes; a `NotifyError("unavailable")` rethrows for retry, `rejected` completes with a logged error code.
   - Triggers: two failing tool results in a row → `handoff_offer` part; a successful turn resets; two knowledge misses → offer; the click action opens the handoff with reason `tool_failure` / `not_sure`.
   - Prompt snapshot: refund, cancellation and return requests, an explicit ask for a person, and a complaint all call `request_human`; the model never promises an outcome or a time other than the configured expectation.
-- [ ] **Step 2: Evals** (10 cases × four languages: asks for a person, refund, cancellation, angry complaint, "is a human there?", repeated tool failure, a normal question that must NOT hand off). Deterministic parts pass; live scoring is owner-gated.
-- [ ] **Step 3: Implement; ADR-011** (states, silence in code, polling, staff tokens, no transcript in email). Checks. Commit `feat(engine): human handoff, staff API and email alerts`.
+- [x] **Step 2: Evals** (10 cases × four languages: asks for a person, refund, cancellation, angry complaint, "is a human there?", repeated tool failure, a normal question that must NOT hand off). Deterministic parts pass; live scoring is owner-gated.
+- [x] **Step 3: Implement; ADR-011** (states, silence in code, polling, staff tokens, no transcript in email). `pnpm lint`, all 13 package typechecks and all 22 strict PostgreSQL test tasks passed on 2026-10-14; engine and worker production builds passed. Live scoring remains owner-gated. Commit `feat(engine): human handoff, staff API and email alerts`.
 
 ### Task 7: Widget — verification, identity and handoff
 

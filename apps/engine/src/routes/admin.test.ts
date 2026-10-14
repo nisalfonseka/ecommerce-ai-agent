@@ -128,6 +128,32 @@ describe.skipIf(testDb === null)("admin API", () => {
     ).toBe(404);
   });
 
+  it("issues and revokes staff tokens and updates tenant support settings", async () => {
+    const { tenantId } = await json(await call("POST", "/admin/tenants", { name: "Staff Admin" }));
+    const tokenResponse = await call("POST", `/admin/tenants/${tenantId}/staff-tokens`, {
+      name: "Support Desk",
+    });
+    expect(tokenResponse.status).toBe(201);
+    const issued = (await tokenResponse.json()) as { id: string; token: string };
+    expect(issued.token).toMatch(new RegExp(`^st_${tenantId}\\.`));
+
+    const settings = await call("PUT", `/admin/tenants/${tenantId}/settings`, {
+      handoffEmails: ["support@shop.lk"],
+      contactInfo: "A team member will reply here during business hours.",
+    });
+    expect(settings.status).toBe(200);
+    expect(await settings.json()).toMatchObject({
+      handoffEmails: ["support@shop.lk"],
+      contactInfo: "A team member will reply here during business hours.",
+    });
+    expect(
+      (await call("PUT", `/admin/tenants/${tenantId}/settings`, { handoffEmails: ["bad"] })).status,
+    ).toBe(400);
+
+    expect((await call("DELETE", `/admin/tenants/${tenantId}/staff-tokens/${issued.id}`)).status).toBe(204);
+    expect((await call("DELETE", `/admin/tenants/${tenantId}/staff-tokens/${issued.id}`)).status).toBe(404);
+  });
+
   it("registers a Medusa store only with complete credentials, and never echoes them", async () => {
     const { tenantId } = await json(await call("POST", "/admin/tenants", { name: "Medusa Store" }));
     const credentials = {

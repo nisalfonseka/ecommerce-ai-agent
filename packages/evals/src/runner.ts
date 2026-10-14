@@ -32,6 +32,13 @@ export async function runCase(evalCase: EvalCase, options: RunCaseOptions): Prom
         turnId: `${evalCase.id}_t${index + 1}`,
         identity: evalCase.setup?.identity ?? null,
         verification: { channels: ["sms", "email"] },
+        handoff: {
+          request: async () => ({
+            id: `handoff_${evalCase.id}`,
+            created: true,
+            expectedResponse: "A team member will reply here.",
+          }),
+        },
         session,
         cod: evalCase.setup?.cod ? { maxTotal: null, allowedCities: null, countryCode: "LK" } : null,
         knowledge,

@@ -27,6 +27,8 @@ export type UiPart =
   | { type: "order"; order: Order }
   | { type: "verification_required"; reason: string }
   | { type: "verification_form"; channels: ("sms" | "email")[]; reason: "order_lookup" }
+  | { type: "handoff"; status: "requested" }
+  | { type: "handoff_offer"; reason: "tool_failure" | "not_sure" }
   /** Cash on delivery: the form the shopper fills in (never the model). `prefill` re-opens a draft for editing. */
   | {
       type: "delivery_form";

@@ -10,6 +10,8 @@ export {
   type CodPolicy,
   type CreateToolContextInput,
   createToolContext,
+  type HandoffPort,
+  type HandoffReason,
   observeMoney,
   type ToolContext,
   type ToolLogEntry,

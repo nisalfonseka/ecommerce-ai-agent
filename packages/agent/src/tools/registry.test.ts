@@ -14,6 +14,9 @@ describe("buildTools", () => {
       conversationId: "c",
       turnId: "t",
       knowledge: { search: async () => [] },
+      handoff: {
+        request: async () => ({ id: "ho", created: true, expectedResponse: "A team member will reply." }),
+      },
     });
     expect(Object.keys(buildTools(ctx)).sort()).toEqual(
       [
@@ -22,6 +25,7 @@ describe("buildTools", () => {
         "get_product",
         "list_orders",
         "lookup_order",
+        "request_human",
         "search_knowledge",
         "search_products",
         "start_checkout",
@@ -29,7 +33,7 @@ describe("buildTools", () => {
         "view_cart",
       ].sort(),
     );
-    expect(ALL_TOOLS).toHaveLength(12);
+    expect(ALL_TOOLS).toHaveLength(13);
   });
 
   it("adds start_cod_order only when the tenant enabled cash on delivery", () => {
@@ -64,6 +68,7 @@ describe("unexpected errors", () => {
     start_checkout: {},
     lookup_order: { orderNumber: "ACE-1001" },
     list_orders: { limit: 5 },
+    request_human: { reason: "other", summary: "Help requested." },
     start_cod_order: {},
     cod_quote: {
       name: "Nimali",
@@ -118,6 +123,7 @@ describe("unexpected errors", () => {
         },
         onUnexpectedError: () => reported.push(def.name),
         knowledge: { search: () => Promise.reject(new Error("socket hang up")) },
+        handoff: { request: () => Promise.reject(new Error("socket hang up")) },
       });
       const result = await def.run(ctx, def.inputSchema.parse(inputs[def.name]), "c1");
       expect(result, def.name).toMatchObject({ ok: false, error: { code: "UPSTREAM_UNAVAILABLE" } });

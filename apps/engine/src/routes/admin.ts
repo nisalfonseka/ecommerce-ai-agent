@@ -12,13 +12,17 @@ import {
   enrichmentReport,
   getDocument,
   getSyncState,
+  getTenantSettings,
   issueWidgetKey,
   listDocuments,
+  revokeStaffToken,
   revokeWidgetKey,
   schema,
   sealSecret,
   setHostSessionSecret,
   setStoreWebhookSecret,
+  tenantSettingsPatchSchema,
+  upsertTenantSettings,
   usageReport,
   withTenant,
 } from "@ace/db";
@@ -40,6 +44,7 @@ import { eq } from "drizzle-orm";
 import type { Hono, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
+import { issueStaffToken } from "../auth/staff";
 import type { WidgetEnv } from "../auth/widget";
 import { PersonaSchema, StoreFactsSchema } from "../bot-config";
 import type { ModelPrices } from "../budget";
@@ -119,6 +124,7 @@ const WidgetKeyBody = z.object({
     .min(1)
     .max(20),
 });
+const StaffTokenBody = z.strictObject({ name: z.string().trim().min(1).max(120) });
 
 /** "https://shop.example.lk" yes; paths, queries, non-http schemes or unparseable strings no. Never throws. */
 function isBareOrigin(value: string): boolean {
@@ -213,6 +219,41 @@ export function registerAdminRoutes(app: Hono<WidgetEnv>, deps: AdminDeps): void
       return true;
     });
     return stored ? c.json({ secret }, 201) : errorResponse(c, 404, "not_found", "Unknown tenant.");
+  });
+
+  admin.post("/tenants/:tenantId/staff-tokens", async (c) => {
+    const tenantId = tenantParam(c.req.param("tenantId"));
+    const body = StaffTokenBody.safeParse(await c.req.json().catch(() => null));
+    if (!tenantId) return errorResponse(c, 404, "not_found", "Unknown tenant.");
+    if (!body.success) return errorResponse(c, 400, "invalid_input", "A staff token needs a name.");
+    const issued = await withTenant(deps.db, tenantId, async (tx) => {
+      const [tenant] = await tx.select({ id: schema.tenants.id }).from(schema.tenants).limit(1);
+      return tenant ? issueStaffToken(tx, tenantId, body.data.name) : null;
+    });
+    return issued ? c.json(issued, 201) : errorResponse(c, 404, "not_found", "Unknown tenant.");
+  });
+
+  admin.delete("/tenants/:tenantId/staff-tokens/:id", async (c) => {
+    const tenantId = tenantParam(c.req.param("tenantId"));
+    const id = c.req.param("id");
+    if (!tenantId || !UUID.safeParse(id).success)
+      return errorResponse(c, 404, "not_found", "Unknown staff token.");
+    const revoked = await withTenant(deps.db, tenantId, (tx) => revokeStaffToken(tx, id));
+    return revoked ? c.body(null, 204) : errorResponse(c, 404, "not_found", "Unknown staff token.");
+  });
+
+  admin.put("/tenants/:tenantId/settings", async (c) => {
+    const tenantId = tenantParam(c.req.param("tenantId"));
+    const body = tenantSettingsPatchSchema.safeParse(await c.req.json().catch(() => null));
+    if (!tenantId) return errorResponse(c, 404, "not_found", "Unknown tenant.");
+    if (!body.success) return errorResponse(c, 400, "invalid_input", "Invalid tenant settings.");
+    const settings = await withTenant(deps.db, tenantId, async (tx) => {
+      const [tenant] = await tx.select({ id: schema.tenants.id }).from(schema.tenants).limit(1);
+      if (!tenant) return null;
+      await upsertTenantSettings(tx, tenantId, body.data);
+      return getTenantSettings(tx);
+    });
+    return settings ? c.json(settings) : errorResponse(c, 404, "not_found", "Unknown tenant.");
   });
 
   admin.post("/tenants/:tenantId/bots", async (c) => {

@@ -2,6 +2,7 @@ import { resolveEmbeddingModel, resolveModel } from "@ace/agent";
 import { createPgIdempotencyStore, type Db, schema, withTenant } from "@ace/db";
 import type { JobQueue } from "@ace/db/jobs";
 import { embedderFor } from "@ace/knowledge";
+import type { Notifier } from "@ace/notify";
 import { createProviderFactory } from "@ace/providers";
 import { createDemoEnricher, createLlmEnricher, type Enricher, parseStoreSearchConfig } from "@ace/search";
 import { eq } from "drizzle-orm";
@@ -35,6 +36,8 @@ export function createWorkerDeps(input: {
   logger: Logger;
   masterKey: Buffer;
   allowDemoModels: boolean;
+  notifier: Notifier;
+  dashboardBaseUrl: string;
   now?: () => Date;
 }): WorkerDeps {
   const { db, logger, allowDemoModels } = input;
@@ -47,6 +50,8 @@ export function createWorkerDeps(input: {
     db,
     jobs: input.jobs,
     logger,
+    notifier: input.notifier,
+    dashboardBaseUrl: input.dashboardBaseUrl,
     providerFor: async (tenantId, storeId) => providers(tenantId, await loadStore(db, tenantId, storeId)),
     storeSearchConfig: async (tenantId, storeId) =>
       parseStoreSearchConfig((await loadStore(db, tenantId, storeId)).config),

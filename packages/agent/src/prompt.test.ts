@@ -32,6 +32,8 @@ describe("composeInstructions", () => {
       "Please use the verification form",
       "Never guess an order",
       "request_human",
+      "explicitly asks for a person",
+      "Never promise a handoff outcome or response time",
     ]) {
       expect(text.toLowerCase()).toContain(rule.toLowerCase());
     }

@@ -10,19 +10,22 @@ import {
   createTenant,
   issueWidgetKey,
   resolveWidgetKey,
+  schema,
   sealSecret,
   setHostSessionSecret,
   withTenant,
 } from "@ace/db";
+import type { JobQueue } from "@ace/db/jobs";
 import { createTestDatabase } from "@ace/db/testing";
 import { createDemoEmbedder, ingestDocument } from "@ace/knowledge";
 import { createProviderFactory } from "@ace/providers";
 import { APICallError, type LanguageModel } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { createConversationTokens } from "../auth/conversation-token";
+import { handBack, openHandoff } from "../handoff/service";
 import { signHostSession } from "../identity/host-session";
 import { createLogger } from "../log";
 import { createRateLimiter } from "../rate-limit";
@@ -369,5 +372,70 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
   it("rejects malformed bodies and empty messages with 400", async () => {
     expect((await chat(keyA, { nope: true })).status).toBe(400);
     expect((await chat(keyA, { message: "   " })).status).toBe(400);
+  });
+
+  it("stores shopper messages without calling the model while a human owns the conversation", async () => {
+    models["test:primary"] = scriptedModel([say("Initial reply")]);
+    const first = await turn(keyA, { message: "hello" });
+    const conversation = conversationOf(first);
+    await openHandoff(
+      { db: pool.db, jobs: { send: async () => undefined } as JobQueue },
+      { tenantId: tenantA, conversationId: conversation.conversationId },
+      { reason: "asked_for_person", summary: "Shopper asked for a person." },
+    );
+    const shouldStayUnused = scriptedModel([]);
+    models["test:primary"] = shouldStayUnused;
+    const during = await turn(keyA, {
+      message: "Are you there?",
+      ...conversation,
+    });
+    expect(during.map((event) => event.event)).toEqual(["conversation", "handoff", "done"]);
+    expect(during.find((event) => event.event === "handoff")?.data).toEqual({ status: "waiting" });
+    expect(shouldStayUnused.doGenerateCalls).toHaveLength(0);
+
+    const transcript = await app.request(`/v1/conversations/${conversation.conversationId}`, {
+      headers: {
+        authorization: `Bearer ${keyA}`,
+        origin: ORIGIN,
+        "x-conversation-token": conversation.conversationToken,
+      },
+    });
+    expect(await transcript.json()).toMatchObject({
+      messages: expect.arrayContaining([{ role: "user", text: "Are you there?" }]),
+    });
+
+    const active = await withTenant(pool.db, tenantA, async (tx) => {
+      const [row] = await tx
+        .select({ id: schema.handoffs.id })
+        .from(schema.handoffs)
+        .where(eq(schema.handoffs.conversationId, conversation.conversationId));
+      return row;
+    });
+    if (!active) throw new Error("active handoff missing");
+    await handBack({ db: pool.db, jobs: { send: async () => undefined } as JobQueue }, tenantA, active.id);
+    models["test:primary"] = scriptedModel([say("Back with the assistant.")]);
+    const resumed = await turn(keyA, { ...conversation, message: "continue" });
+    expect(resumed.find((event) => event.event === "reply")?.data.text).toBe("Back with the assistant.");
+  });
+
+  it("offers a human after two consecutive tool failures and resets after success", async () => {
+    const failingTurn = () =>
+      scriptedModel([
+        callTool("missing", "get_product", { productId: "does-not-exist" }),
+        say("I could not retrieve that product."),
+      ]);
+    models["test:primary"] = failingTurn();
+    const first = await turn(keyA, { message: "show the missing product" });
+    const conversation = conversationOf(first);
+    const firstUi = first.find((event) => event.event === "reply")?.data.ui as { type: string }[];
+    expect(firstUi.map((part) => part.type)).not.toContain("handoff_offer");
+
+    models["test:primary"] = failingTurn();
+    const second = await turn(keyA, { ...conversation, message: "try the missing product again" });
+    const secondUi = second.find((event) => event.event === "reply")?.data.ui as {
+      type: string;
+      reason?: string;
+    }[];
+    expect(secondUi).toContainEqual({ type: "handoff_offer", reason: "tool_failure" });
   });
 });

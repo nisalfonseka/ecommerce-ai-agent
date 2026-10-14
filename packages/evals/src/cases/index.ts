@@ -1,5 +1,6 @@
 import type { EvalCase } from "../types";
 import { EN_CASES } from "./en";
+import { HANDOFF_CASES } from "./handoff";
 import { KNOWLEDGE_CASES } from "./knowledge";
 import { ORDER_CASES } from "./orders";
 import { SAFETY_CASES } from "./safety";
@@ -15,4 +16,5 @@ export const ALL_CASES: EvalCase[] = [
   ...SAFETY_CASES,
   ...KNOWLEDGE_CASES,
   ...ORDER_CASES,
+  ...HANDOFF_CASES,
 ];

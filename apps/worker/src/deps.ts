@@ -2,6 +2,7 @@ import type { CommerceProvider } from "@ace/contracts";
 import type { Db } from "@ace/db";
 import type { JobQueue } from "@ace/db/jobs";
 import type { Embedder } from "@ace/knowledge";
+import type { Notifier } from "@ace/notify";
 import type { Enricher, StoreSearchConfig } from "@ace/search";
 import type { Logger } from "pino";
 
@@ -9,6 +10,8 @@ export interface WorkerDeps {
   db: Db;
   jobs: JobQueue;
   logger: Logger;
+  notifier: Notifier;
+  dashboardBaseUrl: string;
   /** The store's adapter behind the idempotency layer; never the search-index decorator (the worker syncs live). */
   providerFor(tenantId: string, storeId: string): Promise<CommerceProvider>;
   storeSearchConfig(tenantId: string, storeId: string): Promise<StoreSearchConfig>;

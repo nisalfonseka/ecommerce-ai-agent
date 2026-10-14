@@ -24,6 +24,22 @@ export interface CodPolicy {
   countryCode: string;
 }
 
+export type HandoffReason =
+  | "asked_for_person"
+  | "refund_or_return"
+  | "cancellation"
+  | "complaint"
+  | "tool_failure"
+  | "not_sure"
+  | "other";
+
+export interface HandoffPort {
+  request(input: {
+    reason: HandoffReason;
+    summary: string;
+  }): Promise<{ id: string; created: boolean; expectedResponse: string }>;
+}
+
 /** Server-side state for one turn. Built by the engine; the model can never set any of it. */
 export interface ToolContext {
   readonly provider: CommerceProvider;
@@ -32,6 +48,8 @@ export interface ToolContext {
   readonly identity: VerifiedIdentity | null;
   /** Enabled verification channels for a deterministic form; null hides verification tools. */
   readonly verification: { channels: ("sms" | "email")[] } | null;
+  /** Engine-owned human handoff; null hides the model tool. */
+  readonly handoff: HandoffPort | null;
   readonly session: SessionState;
   /** Cash on delivery for this bot; null when the tenant has not enabled it. */
   readonly cod: CodPolicy | null;
@@ -42,6 +60,8 @@ export interface ToolContext {
   readonly ui: UiPart[];
   /** Minor-unit amounts read from the provider this turn; the grounding check allows only these. */
   readonly observedAmounts: Set<number>;
+  /** Set by search_knowledge when retrieval has no confident passage; consumed by engine handoff triggers. */
+  knowledgeMiss: boolean;
   /** Receives errors that are neither ToolFailure nor CommerceError (bugs, outages) for logging; never shown to the model. */
   readonly onUnexpectedError: (error: unknown) => void;
   /** Called with the tool name before each tool runs (e.g. to stream "searching…"). */
@@ -56,6 +76,7 @@ export interface CreateToolContextInput {
   turnId: string;
   identity?: VerifiedIdentity | null;
   verification?: { channels: ("sms" | "email")[] } | null;
+  handoff?: HandoffPort | null;
   session?: SessionState;
   cod?: CodPolicy | null;
   knowledge?: KnowledgeSearch | null;
@@ -75,12 +96,14 @@ export function createToolContext(input: CreateToolContextInput): ToolContext {
     turnId: input.turnId,
     identity: input.identity ?? null,
     verification: input.verification ?? null,
+    handoff: input.handoff ?? null,
     session: input.session ?? createSession(),
     cod: input.cod ?? null,
     knowledge: input.knowledge ?? null,
     cartId: input.cartId ?? null,
     ui: [],
     observedAmounts: new Set(),
+    knowledgeMiss: false,
     onUnexpectedError: input.onUnexpectedError ?? ignore,
     onToolStart: input.onToolStart ?? ignore,
     toolLog: [],

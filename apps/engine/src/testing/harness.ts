@@ -8,6 +8,7 @@ import {
   resolveWidgetKey,
   withTenant,
 } from "@ace/db";
+import type { JobName, JobPayload, JobQueue } from "@ace/db/jobs";
 import type { TestDatabase } from "@ace/db/testing";
 import { createDemoEmbedder } from "@ace/knowledge";
 import type { Notifier } from "@ace/notify";
@@ -45,6 +46,12 @@ export async function createEngineHarness(testDb: TestDatabase) {
   const logger = createLogger({ level: "silent" });
   const models: Record<string, LanguageModel> = {};
   const notifications: { channel: "sms" | "email"; to: string; text: string }[] = [];
+  const queued: { name: JobName; data: unknown }[] = [];
+  const jobs: JobQueue = {
+    send: async <N extends JobName>(name: N, data: JobPayload<N>) => {
+      queued.push({ name, data });
+    },
+  };
   const notifier: Notifier = {
     sendSms: async ({ to, text }) => {
       notifications.push({ channel: "sms", to, text });
@@ -111,6 +118,7 @@ export async function createEngineHarness(testDb: TestDatabase) {
       masterKey: Buffer.alloc(32, 1),
       ipLimiter: createRateLimiter({ limit: 1000, windowMs: 60 * 60 * 1000 }),
     },
+    jobs,
   };
   const app = createApp({
     logger,
@@ -128,6 +136,7 @@ export async function createEngineHarness(testDb: TestDatabase) {
     botId,
     models,
     notifications,
+    queued,
     provider: () => providers(tenantId, { id: storeId, platform: "memory" }),
     post: (path: string, body: unknown) =>
       app.request(path, { method: "POST", headers, body: JSON.stringify(body) }),

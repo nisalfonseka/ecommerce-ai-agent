@@ -34,6 +34,8 @@ export interface SessionState {
   codDraft?: CodDraft | null;
   /** The last COD order and the idempotency key that placed it, so a retried Confirm returns it again. */
   lastOrder?: { key: string; order: Order } | null;
+  consecutiveToolFailures?: number;
+  consecutiveKnowledgeMisses?: number;
 }
 
 export function createSession(): SessionState {

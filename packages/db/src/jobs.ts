@@ -12,6 +12,7 @@ export const JOBS = {
   knowledgeIngest: "knowledge.ingest",
   orderPlaced: "order.placed",
   retentionPurge: "retention.purge",
+  handoffNotify: "handoff.notify",
 } as const;
 export type JobName = (typeof JOBS)[keyof typeof JOBS];
 
@@ -26,6 +27,7 @@ export const JobPayloadSchemas = {
   [JOBS.knowledgeIngest]: z.object({ tenantId: z.uuid(), storeId: z.uuid(), documentId: z.uuid() }),
   [JOBS.orderPlaced]: z.object({ tenantId: z.uuid(), storeId: z.uuid(), eventId: z.string().min(1) }),
   [JOBS.retentionPurge]: z.object({}),
+  [JOBS.handoffNotify]: z.object({ tenantId: z.uuid(), handoffId: z.uuid() }),
 } satisfies { [N in JobName]: z.ZodType };
 
 export type JobPayload<N extends JobName> = z.infer<(typeof JobPayloadSchemas)[N]>;

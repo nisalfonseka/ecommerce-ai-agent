@@ -15,6 +15,8 @@ const EnvSchema = z.object({
   /** Full reconcile: also marks products the store removed as deleted. */
   FULL_RECONCILE_CRON: z.string().min(9).default("30 2 * * *"),
   RETENTION_CRON: z.string().min(9).default("0 3 * * *"),
+  ACE_NOTIFY_MODE: z.enum(["log", "remote"]).optional(),
+  DASHBOARD_BASE_URL: z.url({ protocol: /^https?$/ }).default("http://localhost:3000"),
 });
 
 export interface WorkerConfig {
@@ -27,6 +29,8 @@ export interface WorkerConfig {
   retentionCron: string;
   /** Keyless demo models ("demo:*") are allowed only outside production. */
   allowDemoModels: boolean;
+  notifyMode: "log" | "remote";
+  dashboardBaseUrl: string;
 }
 
 /** Validates the environment. Errors name the variable and the rule, never the value (it may be a secret). */
@@ -37,6 +41,10 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     throw new Error(`Invalid worker configuration: ${problems.join("; ")}`);
   }
   const e = parsed.data;
+  const notifyMode = e.ACE_NOTIFY_MODE ?? (e.NODE_ENV === "production" ? "remote" : "log");
+  if (e.NODE_ENV === "production" && notifyMode === "log") {
+    throw new Error("Invalid worker configuration: ACE_NOTIFY_MODE: log is forbidden in production");
+  }
   return {
     databaseUrl: e.DATABASE_URL,
     masterKey: Buffer.from(e.ACE_MASTER_KEY, "base64"),
@@ -46,5 +54,7 @@ export function loadWorkerConfig(env: Record<string, string | undefined>): Worke
     fullReconcileCron: e.FULL_RECONCILE_CRON,
     retentionCron: e.RETENTION_CRON,
     allowDemoModels: e.NODE_ENV !== "production",
+    notifyMode,
+    dashboardBaseUrl: e.DASHBOARD_BASE_URL,
   };
 }

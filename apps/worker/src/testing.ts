@@ -3,6 +3,7 @@ import type { CommerceProvider } from "@ace/contracts";
 import { createStore, createTenant, type Db, withTenant } from "@ace/db";
 import type { JobName, JobPayload, JobQueue } from "@ace/db/jobs";
 import { createDemoEmbedder } from "@ace/knowledge";
+import { createLogNotifier } from "@ace/notify";
 import { createDemoEnricher, parseStoreSearchConfig } from "@ace/search";
 import type { WorkerDeps, WorkerJob } from "./deps";
 import { createLogger } from "./log";
@@ -62,6 +63,8 @@ export function testDeps(
     db,
     jobs: new RecordingQueue(),
     logger: createLogger({ level: "silent" }),
+    notifier: createLogNotifier(() => undefined),
+    dashboardBaseUrl: "http://localhost:3000",
     providerFor: async () => {
       if (!provider) throw new Error("no provider in this test");
       return provider;

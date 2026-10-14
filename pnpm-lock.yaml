@@ -266,6 +266,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@ace/notify':
+        specifier: workspace:*
+        version: link:../../packages/notify
       '@ai-sdk/anthropic':
         specifier: ^4.0.76
         version: 4.0.76(zod@4.6.5)

@@ -1,10 +1,12 @@
+import { createNotifier } from "@ace/notify";
 import { loadWorkerConfig } from "./config";
 import { createLogger } from "./log";
 import { startWorker } from "./worker";
 
 const config = loadWorkerConfig(process.env);
 const logger = createLogger({ level: config.logLevel });
-const worker = await startWorker({ config, logger });
+const notifier = createNotifier({ ...process.env, ACE_NOTIFY_MODE: config.notifyMode });
+const worker = await startWorker({ config, logger, notifier });
 logger.info({ concurrency: config.concurrency }, "worker started");
 
 let stopping = false;

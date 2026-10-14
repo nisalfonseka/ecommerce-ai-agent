@@ -3,6 +3,7 @@ import type { PgBoss } from "pg-boss";
 import type { JobHandler, WorkerDeps } from "./deps";
 import { handleEmbedProduct } from "./handlers/embed";
 import { handleEnrichProduct } from "./handlers/enrich";
+import { handleHandoffNotify } from "./handlers/handoff-notify";
 import { handleKnowledgeIngest } from "./handlers/knowledge";
 import { handleOrderPlaced } from "./handlers/order-placed";
 import { handleRetentionPurge } from "./handlers/retention";
@@ -17,6 +18,7 @@ export const HANDLERS: Record<JobName, JobHandler> = {
   [JOBS.knowledgeIngest]: handleKnowledgeIngest,
   [JOBS.orderPlaced]: handleOrderPlaced,
   [JOBS.retentionPurge]: handleRetentionPurge,
+  [JOBS.handoffNotify]: handleHandoffNotify,
 };
 
 export interface RegisterOptions {

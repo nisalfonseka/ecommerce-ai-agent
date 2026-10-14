@@ -23,6 +23,14 @@ describe("golden cases", () => {
     expect(new Set(orders.map((c) => c.language))).toEqual(new Set(["en", "si", "ta", "singlish"]));
   });
 
+  it("has ten handoff cases in each supported language", () => {
+    const handoffs = ALL_CASES.filter((c) => c.id.startsWith("handoff-"));
+    expect(handoffs).toHaveLength(40);
+    for (const language of ["en", "si", "ta", "singlish"] as const) {
+      expect(handoffs.filter((c) => c.language === language)).toHaveLength(10);
+    }
+  });
+
   it("covers every language with at least 5 cases and has safety cases", () => {
     for (const language of ["en", "si", "ta", "singlish"] as const) {
       expect(ALL_CASES.filter((c) => c.language === language).length, language).toBeGreaterThanOrEqual(5);

@@ -16,6 +16,7 @@ import {
   type ConversationRow,
   createConversation,
   type Db,
+  getActiveHandoff,
   getBotWithStore,
   getConversation,
   getHostSessionSecretSealed,
@@ -32,6 +33,7 @@ import {
   saveSessionAndRelease,
   withTenant,
 } from "@ace/db";
+import type { JobQueue } from "@ace/db/jobs";
 import { createKnowledgeSearch, type Embedder } from "@ace/knowledge";
 import type { ProviderFactory } from "@ace/providers";
 import { parseStoreSearchConfig } from "@ace/search";
@@ -41,6 +43,8 @@ import type { createConversationTokens } from "./auth/conversation-token";
 import type { WidgetIdentity } from "./auth/widget";
 import { codPolicy, parsePersona, parseSession, parseStoreFacts } from "./bot-config";
 import { budgetState, chooseModel, costMicros, type ModelPrices } from "./budget";
+import { openHandoff } from "./handoff/service";
+import { updateHandoffTriggers } from "./handoff/triggers";
 import { toModelMessages } from "./history";
 import type { ErrorCode } from "./http-errors";
 import { currentIdentity } from "./identity/conversation-identity";
@@ -71,6 +75,8 @@ export interface TurnDeps {
   now?: () => number;
   /** Needed only to open a tenant's host-session signing secret. */
   masterKey?: Buffer;
+  /** Enables human handoff creation from the agent tool. */
+  jobs?: JobQueue;
 }
 
 /** A refusal decided before the SSE stream opens, so it can be a plain HTTP error. */
@@ -216,6 +222,13 @@ export async function runPreparedTurn(
   let model = prepared.bot.model;
 
   try {
+    if (prepared.conversation.status === "handoff") {
+      const status = await appendHandoffMessage(deps, prepared, request);
+      released = true;
+      emit("handoff", { status });
+      emit("done", {});
+      return;
+    }
     const spent = await withTenant(deps.db, tenantId, (tx) =>
       monthToDateCostMicros(tx, prepared.bot.id, new Date(now())),
     );
@@ -253,6 +266,7 @@ export async function runPreparedTurn(
       readyKnowledge: await hasReadyKnowledge(tx, prepared.store.id),
       settings: await getTenantSettings(tx),
     }));
+    const handoffJobs = deps.jobs;
     let knowledge = null;
     if (tenantFeatures.readyKnowledge && deps.knowledge) {
       const search = parseStoreSearchConfig(prepared.store.config);
@@ -292,6 +306,18 @@ export async function runPreparedTurn(
         tenantFeatures.settings.otp.channels.length > 0
           ? { channels: tenantFeatures.settings.otp.channels }
           : null,
+      handoff: handoffJobs
+        ? {
+            request: async (input) => ({
+              ...(await openHandoff(
+                { db: deps.db, jobs: handoffJobs, now: () => new Date(now()) },
+                { tenantId, conversationId },
+                input,
+              )),
+              expectedResponse: storeFacts.handoffResponse ?? "A team member will reply here.",
+            }),
+          }
+        : null,
       onToolStart: (name) => emit("status", { tool: name }),
       onUnexpectedError: (error) => deps.logger.error({ err: error, turnId }, "tool failed unexpectedly"),
       now,
@@ -321,6 +347,11 @@ export async function runPreparedTurn(
     const allowed = new Set([...ctx.observedAmounts, ...shopperAmounts(request.message)]);
     const scrubbed = result.ungroundedAmounts.length > 0;
     const text = scrubbed ? scrubPrices(result.text, allowed, SCRUBBED_PRICE) : result.text;
+    const handoffOffer = updateHandoffTriggers(ctx.session, {
+      toolFailed: ctx.toolLog.some((entry) => !entry.ok),
+      knowledgeMiss: ctx.knowledgeMiss,
+    });
+    if (handoffOffer) result.ui.push({ type: "handoff_offer", reason: handoffOffer });
 
     await withTenant(deps.db, tenantId, async (tx) => {
       await appendMessages(
@@ -378,6 +409,30 @@ export async function runPreparedTurn(
       );
     }
   }
+}
+
+async function appendHandoffMessage(
+  deps: TurnDeps,
+  prepared: PreparedTurn,
+  request: TurnRequest,
+): Promise<"claimed" | "waiting"> {
+  const { tenantId } = prepared.widget;
+  return withTenant(deps.db, tenantId, async (tx) => {
+    const stored = await loadMessages(tx, prepared.conversation.id);
+    const handoff = await getActiveHandoff(tx, prepared.conversation.id);
+    await appendMessages(tx, tenantId, prepared.conversation.id, stored.nextSeq, [
+      {
+        kind: "model",
+        payload: { role: "user", content: request.message },
+        display: { role: "user", text: request.message },
+      },
+    ]);
+    await saveSessionAndRelease(tx, prepared.conversation.id, {
+      session: prepared.conversation.session,
+      cartId: request.cartId ?? prepared.conversation.cartId,
+    });
+    return handoff?.status === "claimed" ? "claimed" : "waiting";
+  });
 }
 
 /** Hard budget cap: store the exchange and a trace, call no model (spec §4.7 "contact us" mode). */

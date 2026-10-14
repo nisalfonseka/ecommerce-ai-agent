@@ -12,6 +12,8 @@ export const PersonaSchema = z.object({
 export const StoreFactsSchema = z.object({
   currency: z.string().regex(/^[A-Z]{3}$/),
   deliveryInfo: z.string().max(500).optional(),
+  /** Exact expectation returned after a handoff; the model must not invent a response time. */
+  handoffResponse: z.string().trim().min(1).max(300).optional(),
   /** Cash on delivery (contract orders.place_cod). Off unless enabled; limits are enforced in tool code. */
   cod: z
     .object({
@@ -45,6 +47,8 @@ const SessionSchema = z.object({
     .nullable()
     .optional(),
   lastOrder: z.object({ key: z.string(), order: OrderSchema }).nullable().optional(),
+  consecutiveToolFailures: z.number().int().min(0).optional(),
+  consecutiveKnowledgeMisses: z.number().int().min(0).optional(),
 });
 
 export function parsePersona(value: unknown): Persona {

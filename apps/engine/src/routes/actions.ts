@@ -13,6 +13,7 @@ import { z } from "zod";
 import type { WidgetEnv } from "../auth/widget";
 import { codPolicy, parseSession, parseStoreFacts } from "../bot-config";
 import { clientIp } from "../client-ip";
+import { openHandoff } from "../handoff/service";
 import { errorResponse } from "../http-errors";
 import { currentIdentity } from "../identity/conversation-identity";
 import { confirmVerification, type OtpDeps, startVerification } from "../identity/otp";
@@ -43,6 +44,8 @@ const VERIFICATION_INPUTS = {
   verify_start: z.object({ channel: z.enum(["sms", "email"]), destination: z.string().min(1).max(254) }),
   verify_confirm: z.object({ code: z.string().max(32) }),
 } as const;
+
+const HandoffActionInput = z.strictObject({ reason: z.enum(["tool_failure", "not_sure"]) });
 
 type ActionType = keyof typeof ACTION_INPUTS;
 type VerificationActionType = keyof typeof VERIFICATION_INPUTS;
@@ -82,6 +85,43 @@ function remoteAddress(env: unknown): string {
 export function registerActionRoutes(app: Hono<WidgetEnv>, deps: ActionDeps): void {
   app.post("/v1/actions/:type", async (c) => {
     const type = c.req.param("type");
+    if (type === "request_handoff") {
+      const body = ActionBodySchema.safeParse(await c.req.json().catch(() => null));
+      const input = body.success ? HandoffActionInput.safeParse(body.data.input) : null;
+      if (!body.success || !input?.success) {
+        return errorResponse(c, 400, "invalid_input", "Invalid handoff request.");
+      }
+      if (!deps.jobs) return errorResponse(c, 503, "unavailable", "Human support is unavailable.");
+      const { tenantId } = c.var.widget;
+      let prepared: Awaited<ReturnType<typeof leaseExistingConversation>>;
+      try {
+        prepared = await leaseExistingConversation(
+          deps,
+          c.var.widget,
+          body.data.conversationId,
+          body.data.conversationToken,
+        );
+      } catch (error) {
+        if (error instanceof TurnError) return errorResponse(c, error.status, error.code, error.message);
+        throw error;
+      }
+      try {
+        const opened = await openHandoff(
+          { db: deps.db, jobs: deps.jobs, now: () => new Date((deps.now ?? Date.now)()) },
+          { tenantId, conversationId: prepared.conversation.id },
+          {
+            reason: input.data.reason,
+            summary:
+              input.data.reason === "tool_failure"
+                ? "Shopper accepted help after repeated tool failures."
+                : "Shopper accepted help after repeated unanswered questions.",
+          },
+        );
+        return c.json({ opened: true, handoffId: opened.id });
+      } finally {
+        await withTenant(deps.db, tenantId, (tx) => releaseLease(tx, prepared.conversation.id));
+      }
+    }
     if (isVerificationActionType(type)) {
       const body = ActionBodySchema.safeParse(await c.req.json().catch(() => null));
       if (!body.success) {

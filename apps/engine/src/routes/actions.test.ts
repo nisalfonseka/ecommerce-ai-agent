@@ -148,6 +148,54 @@ describe.skipIf(testDb === null)("POST /v1/actions/:type", () => {
     expect((await h.provider().getCart(first.cartId))?.itemCount).toBe(1);
   });
 
+  it("opens one handoff when the shopper accepts an automatic offer", async () => {
+    const ids = await newConversation();
+    const action = {
+      ...ids,
+      actionId: randomUUID(),
+      input: { reason: "tool_failure" },
+    };
+    const first = await h.post("/v1/actions/request_handoff", action);
+    const second = await h.post("/v1/actions/request_handoff", action);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const [one, two] = (await Promise.all([first.json(), second.json()])) as {
+      opened: boolean;
+      handoffId: string;
+    }[];
+    expect(one?.handoffId).toBe(two?.handoffId);
+    const [conversation] = await withTenant(h.pool.db, h.tenantId, (tx) =>
+      tx
+        .select({ status: schema.conversations.status })
+        .from(schema.conversations)
+        .where(eq(schema.conversations.id, ids.conversationId)),
+    );
+    expect(conversation?.status).toBe("handoff");
+  });
+
+  it("lets the model request one redacted handoff through the engine port", async () => {
+    const ids = await newConversation();
+    const queuedBefore = h.queued.length;
+    h.models["test:primary"] = scriptedModel([
+      callTool("handoff", "request_human", {
+        reason: "complaint",
+        summary: "Shopper at shopper@example.com says the parcel is damaged.",
+      }),
+      say("A team member will reply here."),
+    ]);
+    const events = await h.chat({ ...ids, message: "I need a person" });
+    const reply = events.find((event) => event.event === "reply")?.data as { ui: { type: string }[] };
+    expect(reply.ui).toContainEqual({ type: "handoff", status: "requested" });
+    const [handoff] = await withTenant(h.pool.db, h.tenantId, (tx) =>
+      tx
+        .select({ summary: schema.handoffs.summary, status: schema.handoffs.status })
+        .from(schema.handoffs)
+        .where(eq(schema.handoffs.conversationId, ids.conversationId)),
+    );
+    expect(handoff).toEqual({ summary: "Shopper at [email] says the parcel is damaged.", status: "open" });
+    expect(h.queued).toHaveLength(queuedBefore + 1);
+  });
+
   it("changes a line's quantity and starts checkout", async () => {
     const ids = await newConversation();
     const added = (await (

@@ -21,6 +21,7 @@ function isActionPayload(value: unknown): value is ActionPayload {
 export function toModelMessages(rows: StoredMessage[]): ModelMessage[] {
   return rows.flatMap((row): ModelMessage[] => {
     if (row.kind === "model") return [row.payload as ModelMessage];
+    if (row.kind === "staff") return [row.payload as ModelMessage];
     if (row.kind === "action" && isActionPayload(row.payload)) {
       return [{ role: "user", content: `[shopper action] ${row.payload.summary}` }];
     }

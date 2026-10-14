@@ -23,7 +23,10 @@ export const searchKnowledgeTool = defineTool({
   run: (ctx, input) =>
     runTool(async () => {
       const passages = await ctx.knowledge?.search(input.query, { limit: MAX_PASSAGES });
-      if (!passages || passages.length === 0) return { found: false as const };
+      if (!passages || passages.length === 0) {
+        ctx.knowledgeMiss = true;
+        return { found: false as const };
+      }
       for (const passage of passages) {
         for (const amount of shopperAmounts(passage.text)) ctx.observedAmounts.add(amount);
       }

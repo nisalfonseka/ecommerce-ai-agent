@@ -1,5 +1,6 @@
 import { createDb, type Db } from "@ace/db";
 import { createTestDatabase } from "@ace/db/testing";
+import { createLogNotifier } from "@ace/notify";
 import { IdempotentCommerceProvider } from "@ace/providers";
 import { afterAll, describe, expect, it } from "vitest";
 import { createLogger } from "./log";
@@ -14,6 +15,8 @@ const wiring = (db: Db, allowDemoModels: boolean) =>
     logger: createLogger({ level: "silent" }),
     masterKey: Buffer.alloc(32, 4),
     allowDemoModels,
+    notifier: createLogNotifier(() => undefined),
+    dashboardBaseUrl: "http://localhost:3000",
   });
 
 describe("createWorkerDeps models", () => {

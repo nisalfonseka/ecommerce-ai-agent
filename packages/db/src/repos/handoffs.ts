@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type { Tx } from "../client";
 import { handoffs } from "../schema";
 
@@ -148,14 +148,20 @@ export async function markHandoffNotified(tx: Tx, id: string, now: Date): Promis
 /** The staff inbox: newest first, optionally limited to some statuses. */
 export async function listHandoffs(
   tx: Tx,
-  options: { status?: HandoffStatus[]; limit?: number },
+  options: { status?: HandoffStatus[]; limit?: number; cursor?: { createdAt: Date; id: string } },
 ): Promise<HandoffRow[]> {
-  const where =
+  const status =
     options.status && options.status.length > 0 ? inArray(handoffs.status, options.status) : undefined;
+  const cursor = options.cursor
+    ? or(
+        lt(handoffs.createdAt, options.cursor.createdAt),
+        and(eq(handoffs.createdAt, options.cursor.createdAt), lt(handoffs.id, options.cursor.id)),
+      )
+    : undefined;
   return tx
     .select(HANDOFF_COLUMNS)
     .from(handoffs)
-    .where(where)
+    .where(and(status, cursor))
     .orderBy(desc(handoffs.createdAt), desc(handoffs.id))
     .limit(Math.min(Math.max(options.limit ?? 50, 1), 200));
 }

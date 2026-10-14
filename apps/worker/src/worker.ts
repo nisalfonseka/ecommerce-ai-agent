@@ -1,5 +1,6 @@
 import { createDb } from "@ace/db";
 import { openJobQueue } from "@ace/db/jobs";
+import { createLogNotifier, type Notifier } from "@ace/notify";
 import type { Logger } from "pino";
 import type { WorkerConfig } from "./config";
 import type { WorkerDeps } from "./deps";
@@ -18,6 +19,7 @@ export async function startWorker(options: {
   config: WorkerConfig;
   logger: Logger;
   providerFor?: WorkerDeps["providerFor"];
+  notifier?: Notifier;
 }): Promise<{ stop(): Promise<void> }> {
   const { config, logger } = options;
   const { db, close } = createDb(config.databaseUrl);
@@ -29,6 +31,8 @@ export async function startWorker(options: {
       logger,
       masterKey: config.masterKey,
       allowDemoModels: config.allowDemoModels,
+      notifier: options.notifier ?? createLogNotifier(() => undefined),
+      dashboardBaseUrl: config.dashboardBaseUrl,
     });
     if (options.providerFor) deps.providerFor = options.providerFor;
     await registerHandlers(queue.boss, deps, { concurrency: config.concurrency });

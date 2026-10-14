@@ -13,6 +13,7 @@ describe("ToolContext", () => {
     expect(ctx.cartId).toBeNull();
     expect(ctx.identity).toBeNull();
     expect(ctx.verification).toBeNull();
+    expect(ctx.handoff).toBeNull();
     expect(ctx.knowledge).toBeNull();
     expect(ctx.session.shown).toEqual([]);
     expect(typeof ctx.onUnexpectedError).toBe("function");

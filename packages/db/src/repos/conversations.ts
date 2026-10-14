@@ -5,7 +5,7 @@ import { conversations, messages } from "../schema";
 export type ConversationRow = typeof conversations.$inferSelect;
 
 export interface MessageInput {
-  kind: "model" | "action";
+  kind: "model" | "action" | "staff";
   /** For "model": an AI SDK ModelMessage. For "action": the action event. Stored as JSON. */
   payload: unknown;
   /** What the shopper sees on reload; omit for tool steps. */

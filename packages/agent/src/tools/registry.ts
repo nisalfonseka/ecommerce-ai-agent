@@ -5,6 +5,7 @@ import { addToCartTool, startCheckoutTool, updateCartLineTool, viewCartTool } fr
 import { checkAvailabilityTool, getProductTool, searchProductsTool } from "./catalog";
 import { codQuoteAction, placeCodOrderAction, startCodOrderTool } from "./cod";
 import type { CommerceToolDef } from "./define";
+import { requestHumanTool } from "./handoff";
 import { searchKnowledgeTool } from "./knowledge";
 import { listOrdersTool, lookupOrderTool } from "./orders";
 import { startVerificationTool } from "./verification";
@@ -21,6 +22,7 @@ export const ALL_TOOLS: CommerceToolDef<z.ZodType, unknown>[] = [
   lookupOrderTool,
   listOrdersTool,
   startVerificationTool,
+  requestHumanTool,
   searchKnowledgeTool,
 ];
 
