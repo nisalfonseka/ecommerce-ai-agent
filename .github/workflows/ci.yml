@@ -58,6 +58,12 @@ jobs:
       ACE_DOMAIN: localhost
       # Throwaway CI-only value (32 random bytes, base64); never used outside this job.
       ACE_MASTER_KEY: NSHgkAbZNUQ/n9Qmk6nLBFuv+CcVDnsKJVzV9n5+7y8=
+      # Required production notifier configuration. The image smoke sends no notifications.
+      TEXTLK_API_TOKEN: ci-textlk-token
+      TEXTLK_SENDER_ID: CI
+      BREVO_API_KEY: ci-brevo-key
+      BREVO_SENDER_NAME: CI
+      BREVO_SENDER_EMAIL: ci@example.invalid
     steps:
       - uses: actions/checkout@v4
       - name: Build the engine and dashboard images
