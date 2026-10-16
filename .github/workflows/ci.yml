@@ -45,6 +45,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm --filter @ace/dashboard build
 
   image:
     # The engine image and compose stack: build, migrate, start, health check, seed and an admin call.
@@ -59,8 +60,8 @@ jobs:
       ACE_MASTER_KEY: NSHgkAbZNUQ/n9Qmk6nLBFuv+CcVDnsKJVzV9n5+7y8=
     steps:
       - uses: actions/checkout@v4
-      - name: Build the engine image
-        run: docker compose build migrate
+      - name: Build the engine and dashboard images
+        run: docker compose build migrate dashboard
       - name: Start postgres, migrate and the engine
         run: docker compose up -d --wait engine
       - name: Health, seed and admin API inside the network

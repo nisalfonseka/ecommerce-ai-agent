@@ -83,6 +83,18 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  dashboard:
+    image: ${ACE_DASHBOARD_IMAGE:-ace-dashboard:local}
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    restart: unless-stopped
+    environment:
+      ENGINE_INTERNAL_URL: http://engine:8080
+      DASHBOARD_PUBLIC_URL: https://dashboard.${ACE_DOMAIN}
+    depends_on:
+      - engine
+
   caddy:
     image: caddy:2
     restart: unless-stopped
@@ -97,6 +109,7 @@ services:
       - caddy_config:/config
     depends_on:
       - engine
+      - dashboard
 
   backup:
     image: pgvector/pgvector:pg16

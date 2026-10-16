@@ -6,3 +6,8 @@
 		flush_interval -1
 	}
 }
+
+dashboard.{$ACE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy dashboard:3000
+}
