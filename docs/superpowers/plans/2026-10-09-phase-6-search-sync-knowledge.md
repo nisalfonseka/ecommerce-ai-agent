@@ -790,7 +790,7 @@ Evals (`cases/knowledge.ts`): the eval runner gets `knowledge?: { title; markdow
 
 ## Phase 6 exit checklist
 
-- [ ] Search eval nDCG@5 ≥ 0.70 in CI with demo models (S3 floor), and ≥ 0.85 overall / ≥ 0.75 per language with the S1 model (owner-gated). *(The demo floor passed in CI #41; S1 remains pending.)*
+- [ ] Search eval nDCG@5 ≥ 0.70 in CI with demo models (S3 floor), and ≥ 0.85 overall / ≥ 0.75 per language with the S1 model (owner-gated). *(The demo floor passed in CI #44; S1 remains pending.)*
 - [x] A price change on the store is visible to the agent within 60 s locally: the webhook updated the index in 0.225 s. The staging repeat remains owner-gated.
 - [x] Reconciliation repairs a deliberately dropped webhook (Task 12 Step 1).
 - [x] Forged or replayed webhooks are refused; duplicates enqueue once (Task 3).
@@ -799,4 +799,4 @@ Evals (`cases/knowledge.ts`): the eval runner gets `knowledge?: { title; markdow
 - [x] Order webhooks produce chat-assisted revenue in `GET /admin/tenants/:id/attribution`.
 - [x] ADR-008 and ADR-009 written; S1–S3 recorded.
 - [x] `pnpm lint && pnpm typecheck && pnpm test` green, including the db, search and worker integration tests in CI
-  (CI #41, 2026-10-16).
+  (CI #44, 2026-10-16).

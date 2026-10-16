@@ -491,9 +491,9 @@ Needs Phase 0's VPS, domain, DNS and off-site backup target.
 
 ## Phase 3 exit checklist
 
-- [x] RLS test proves tenant A cannot read tenant B (every tenant table), in CI against Postgres (CI #41).
+- [x] RLS test proves tenant A cannot read tenant B (every tenant table), in CI against Postgres (CI #44).
 - [ ] A chat turn streams end-to-end on staging (status events, then the reply) for both demo tenants.
-- [x] Cost per conversation is visible via `GET /admin/tenants/:id/usage` (image smoke in CI #41).
+- [x] Cost per conversation is visible via `GET /admin/tenants/:id/usage` (image smoke in CI #44).
 - [x] Conformance passes against the idempotent provider over Postgres.
 - [ ] E1 and E2 answered; ADR-004 and ADR-005 written.
-- [x] `pnpm lint && pnpm typecheck && pnpm test` green, including the db integration tests in CI (CI #41).
+- [x] `pnpm lint && pnpm typecheck && pnpm test` green, including the db integration tests in CI (CI #44).
