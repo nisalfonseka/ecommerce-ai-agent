@@ -535,6 +535,25 @@ export const privacyRequests = pgTable("privacy_requests", {
   createdAt: createdAt(),
 });
 
+/** Short-lived JSON export. The row is deleted atomically on download, or by the daily retention purge. */
+export const privacyExports = pgTable(
+  "privacy_exports",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => privacyRequests.id, { onDelete: "cascade" }),
+    /** Selector copies contain HMAC/UUID values only and let a later deletion remove an earlier bundle. */
+    subjectHash: text("subject_hash"),
+    conversationId: uuid("conversation_id"),
+    payload: jsonb("payload").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [unique("privacy_exports_request").on(t.requestId)],
+);
+
 /** Tables guarded by `tenant_id` (tenants itself is guarded by `id`). The RLS test iterates this list. */
 export const TENANT_TABLES = [
   "stores",
@@ -559,4 +578,5 @@ export const TENANT_TABLES = [
   "handoffs",
   "staff_tokens",
   "privacy_requests",
+  "privacy_exports",
 ] as const;

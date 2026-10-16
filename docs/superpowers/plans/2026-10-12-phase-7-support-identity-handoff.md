@@ -293,14 +293,14 @@ Chat route when `conversation.status = "handoff"`: the shopper message is append
 // subject resolution: email/phone → normalise (Task 1) → identityHash → conversations.identity_hash; conversationId → that conversation.
 ```
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
   - Consent: recorded once; refused-consent path returns 409 and creates no conversation; a second consent is a no-op.
   - Retention: tenant A with `messagesDays: 30` has 40-day-old messages purged while tenant B (default 180) keeps its 40-day-old rows; out-of-range settings are clamped; `otpHours: 1` purges two-hour-old verifications; billing tables untouched.
   - **Review Focus 5:** seed one shopper across conversations (verified by email in one, by phone in another with the same visitor), handoffs with sealed contact, consents, verifications, tool calls, traces, queued jobs mentioning the conversation: delete by email removes the email-verified conversation and everything attached; delete by phone likewise; a conversation of a **different** shopper on the same visitor id is **not** deleted unless it has the same identity hash (and the receipt says how many conversations matched); a second run is a no-op with zero counts; `offboard` leaves no row in any `SHOPPER_DATA_TABLES` table for that tenant and does not touch another tenant; pending `handoff.notify` and `sync.*` jobs for deleted conversations complete harmlessly.
   - Export: contains only the subject's rows; never includes another conversation's messages or any other shopper's contact data; the download link works once and expires; the bundle contains no tool payloads or traces.
   - Receipts and logs hold counts only.
-- [ ] **Step 2: Docs** (written, not code): `dpa-template.md` (processor/controller roles, subprocessors list: LLM providers, Brevo, text.lk, hosting; retention table; deletion SLAs; breach notification duty and timeline); `breach.md` (detect → contain → assess → notify controllers → record), `provider-retention.md` (a checklist of the data-retention and training-opt-out settings to confirm per provider account; **unchecked until the owner verifies**).
-- [ ] **Step 3: Implement; checks.** Commit `feat(privacy): consent records, per-merchant retention, export and deletion`.
+- [x] **Step 2: Docs** (written, not code): `dpa-template.md` (processor/controller roles, subprocessors list: LLM providers, Brevo, text.lk, hosting; retention table; deletion SLAs; breach notification duty and timeline); `breach.md` (detect → contain → assess → notify controllers → record), `provider-retention.md` (a checklist of the data-retention and training-opt-out settings to confirm per provider account; **unchecked until the owner verifies**).
+- [x] **Step 3: Implement; checks.** First-chat consent is carried as `consentNoticeVersion` so conversation creation and the consent record commit atomically; the token-authenticated consent endpoint remains idempotent for later notice versions. On 2026-10-16 lint, all 14 workspace typechecks, all 23 strict PostgreSQL test tasks, engine/worker/dashboard/widget production builds, and all three Chromium widget e2e flows passed. Commit `feat(privacy): consent records, per-merchant retention, export and deletion`.
 
 ### Task 10: Exit verification and docs
 
@@ -314,8 +314,8 @@ Chat route when `conversation.status = "handoff"`: the shopper message is append
 ## Phase 7 exit checklist
 
 - [ ] An order cannot be read without verification: the security suite passes (Task 10 Step 1).
-- [ ] Deletion removes all of a shopper's data (and `offboard` all of a tenant's), shown by receipts (Task 9).
-- [ ] Per-merchant retention periods are honoured by the purge (Task 9).
+- [x] Deletion removes all of a shopper's data (and `offboard` all of a tenant's), shown by receipts (Task 9).
+- [x] Per-merchant retention periods are honoured by the purge (Task 9).
 - [ ] A handoff reaches staff by email and a human reply reaches the shopper; the bot stays silent meanwhile (Task 6, 8).
 - [ ] Order-support and handoff evals pass with live models (**owner-gated**; deterministic parts green in CI).
 - [ ] Real SMS and email delivery confirmed with text.lk and Brevo accounts (**owner-gated**).

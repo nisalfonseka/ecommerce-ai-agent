@@ -221,6 +221,10 @@ describe("App", () => {
     expect(q<HTMLAnchorElement>("a")?.href).toBe("https://shop.example.lk/privacy");
     await act(async () => button("Start chat")?.click());
     await openAndSend("hello");
+    expect(fake.chat).toHaveBeenCalledWith(
+      expect.objectContaining({ consentNoticeVersion: "2026-10-14" }),
+      expect.any(Function),
+    );
     expect(fake.api.consent).toHaveBeenCalledWith("t1", "2026-10-14");
   });
 

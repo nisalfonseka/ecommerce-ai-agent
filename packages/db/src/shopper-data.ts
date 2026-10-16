@@ -15,6 +15,7 @@ export const SHOPPER_DATA_TABLES: readonly { table: string; retentionDays: numbe
   // Default tenant_settings.retention.otpHours (24 h); the per-tenant value comes from the settings row.
   { table: "verifications", retentionDays: 1 },
   { table: "consents", retentionDays: 180 },
+  { table: "privacy_exports", retentionDays: 1 },
 ];
 
 /**

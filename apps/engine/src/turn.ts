@@ -26,6 +26,7 @@ import {
   type MessageInput,
   monthToDateCostMicros,
   openSecret,
+  recordConsent,
   recordToolCalls,
   recordTurn,
   releaseLease,
@@ -105,6 +106,7 @@ export interface TurnRequest {
   conversationToken?: string | undefined;
   cartId?: string | undefined;
   identityToken?: string | undefined;
+  consentNoticeVersion?: string | undefined;
   visitorId: string;
 }
 
@@ -154,12 +156,23 @@ export async function prepareTurn(
   return withTenant(deps.db, tenantId, async (tx) => {
     const loaded = await getBotWithStore(tx, botId);
     if (!loaded) throw notFound();
+    const settings = await getTenantSettings(tx);
+    if (settings.requireConsent && request.consentNoticeVersion === undefined) {
+      throw new TurnError(409, "consent_required", "Consent is required before starting chat.");
+    }
     const created = await createConversation(tx, tenantId, {
       botId,
       visitorId: request.visitorId,
       session: createSession(),
       cartId: request.cartId ?? null,
     });
+    if (request.consentNoticeVersion !== undefined) {
+      await recordConsent(tx, tenantId, {
+        conversationId: created.id,
+        noticeVersion: request.consentNoticeVersion,
+        noticeUrl: settings.privacyNoticeUrl,
+      });
+    }
     const conversation = await acquireTurnLease(tx, created.id, deps.leaseMs ?? DEFAULT_LEASE_MS);
     if (!conversation) throw new Error("lease on a new conversation failed");
     return {

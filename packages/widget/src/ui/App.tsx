@@ -159,6 +159,7 @@ export function App({ widgetKey, api, storage, win, initialCartId, privacyNotice
           ...(before.conversation ?? {}),
           ...(before.cartId ? { cartId: before.cartId } : {}),
           ...(identityToken.current ? { identityToken: identityToken.current } : {}),
+          ...(consent && !before.conversation ? { consentNoticeVersion: NOTICE_VERSION } : {}),
         },
         (event: ChatEvent) => {
           if (event.event === "conversation") {

@@ -1,8 +1,8 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { MemoryCommerceProvider } from "@ace/adapter-memory";
 import { createDb, openSecret, schema, upsertAttributedOrder, withTenant } from "@ace/db";
-import type { JobName, JobPayload, JobQueue } from "@ace/db/jobs";
+import { JOBS, type JobName, type JobPayload, type JobQueue } from "@ace/db/jobs";
 import { createTestDatabase } from "@ace/db/testing";
 import { createDemoEmbedder, ingestDocument } from "@ace/knowledge";
 import { makePdf, textPage } from "@ace/knowledge/testing";
@@ -152,6 +152,74 @@ describe.skipIf(testDb === null)("admin API", () => {
 
     expect((await call("DELETE", `/admin/tenants/${tenantId}/staff-tokens/${issued.id}`)).status).toBe(204);
     expect((await call("DELETE", `/admin/tenants/${tenantId}/staff-tokens/${issued.id}`)).status).toBe(404);
+  });
+
+  it("queues privacy work with hashed subjects and lists PII-free receipts", async () => {
+    const { tenantId } = await json(await call("POST", "/admin/tenants", { name: "Privacy Admin" }));
+    const rawEmail = " Shopper@Example.COM ";
+    const queued = await call("POST", `/admin/tenants/${tenantId}/privacy/export`, { email: rawEmail });
+    expect(queued.status).toBe(202);
+    const { requestId } = await json(queued);
+    const sent = jobs.sends.at(-1);
+    expect(sent).toMatchObject({
+      name: JOBS.shopperExport,
+      data: { tenantId, requestId, subjectHash: expect.any(String) },
+    });
+    expect(JSON.stringify(sent)).not.toContain("Shopper@Example.COM");
+    expect(
+      (
+        await call("POST", `/admin/tenants/${tenantId}/privacy/delete`, {
+          email: "a@b.lk",
+          phone: "0771234567",
+        })
+      ).status,
+    ).toBe(400);
+    expect((await call("POST", `/admin/tenants/${tenantId}/privacy/offboard`)).status).toBe(202);
+
+    const receipts = await call("GET", `/admin/tenants/${tenantId}/privacy/requests`);
+    expect(receipts.status).toBe(200);
+    const text = await receipts.text();
+    expect(text).not.toContain("subjectHash");
+    expect(text).not.toContain("shopper@example.com");
+    expect(JSON.parse(text)).toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({ id: requestId, type: "export", status: "pending", counts: {} }),
+        expect.objectContaining({ type: "offboard", status: "pending", counts: {} }),
+      ]),
+    });
+
+    await withTenant(pool.db, tenantId ?? "", (tx) =>
+      tx.insert(schema.privacyExports).values({
+        tenantId: tenantId ?? "",
+        requestId: requestId ?? "",
+        subjectHash: (sent?.data as { subjectHash?: string } | undefined)?.subjectHash ?? null,
+        payload: { conversations: [{ id: "safe-export" }] },
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    );
+    const downloadPath = `/admin/tenants/${tenantId}/privacy/requests/${requestId}/download`;
+    const download = await call("GET", downloadPath);
+    expect(download.status).toBe(200);
+    expect(download.headers.get("content-disposition")).toContain("privacy-export-");
+    expect(await download.json()).toEqual({ conversations: [{ id: "safe-export" }] });
+    expect((await call("GET", downloadPath)).status).toBe(404);
+
+    const expiredResponse = await call("POST", `/admin/tenants/${tenantId}/privacy/export`, {
+      conversationId: randomUUID(),
+    });
+    const expiredId = (await json(expiredResponse)).requestId ?? "";
+    await withTenant(pool.db, tenantId ?? "", (tx) =>
+      tx.insert(schema.privacyExports).values({
+        tenantId: tenantId ?? "",
+        requestId: expiredId,
+        conversationId: randomUUID(),
+        payload: { conversations: [] },
+        expiresAt: new Date(Date.now() - 1),
+      }),
+    );
+    expect(
+      (await call("GET", `/admin/tenants/${tenantId}/privacy/requests/${expiredId}/download`)).status,
+    ).toBe(404);
   });
 
   it("registers a Medusa store only with complete credentials, and never echoes them", async () => {

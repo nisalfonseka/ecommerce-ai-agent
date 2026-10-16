@@ -1,4 +1,11 @@
-import { type Db, listTenantIds, SHOPPER_DATA_TABLES, withTenant } from "@ace/db";
+import {
+  type Db,
+  getRetention,
+  getTenantSettings,
+  listTenantIds,
+  SHOPPER_DATA_TABLES,
+  withTenant,
+} from "@ace/db";
 import { JOBS } from "@ace/db/jobs";
 import { sql } from "drizzle-orm";
 import type { WorkerDeps, WorkerJob } from "../deps";
@@ -25,8 +32,26 @@ export async function purgeTenant(
   batchSize = BATCH_SIZE,
 ): Promise<Record<string, number>> {
   const counts: Record<string, number> = {};
+  // Raw verified contact is a short-lived capability. Keep the HMAC for later subject requests.
+  await withTenant(db, tenantId, (tx) =>
+    tx.execute(
+      sql`update conversations set identity = null, identity_expires_at = null where identity_expires_at < ${now}`,
+    ),
+  );
+  const settings = await withTenant(db, tenantId, (tx) => getTenantSettings(tx));
+  const retention = getRetention(settings);
   for (const { table, retentionDays } of SHOPPER_DATA_TABLES) {
-    const cutoff = new Date(now.getTime() - retentionDays * DAY_MS);
+    const configuredDays =
+      table === "conversations" || table === "messages" || table === "consents"
+        ? retention.messagesDays
+        : table === "tool_calls" || table === "turn_traces" || table === "webhook_events"
+          ? retention.tracesDays
+          : table === "handoffs"
+            ? retention.handoffDays
+            : table === "verifications"
+              ? retention.otpHours / 24
+              : retentionDays;
+    const cutoff = new Date(now.getTime() - configuredDays * DAY_MS);
     const name = sql.identifier(table);
     const age = sql.identifier(AGE_COLUMN[table] ?? "created_at");
     let deleted = 0;

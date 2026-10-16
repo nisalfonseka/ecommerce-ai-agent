@@ -13,10 +13,26 @@ export const JOBS = {
   orderPlaced: "order.placed",
   retentionPurge: "retention.purge",
   handoffNotify: "handoff.notify",
+  shopperExport: "privacy.export",
+  shopperDelete: "privacy.delete",
+  tenantOffboard: "privacy.offboard",
 } as const;
 export type JobName = (typeof JOBS)[keyof typeof JOBS];
 
 const productJob = z.object({ tenantId: z.uuid(), storeId: z.uuid(), productId: z.string().min(1) });
+const privacySubjectJob = z
+  .object({
+    tenantId: z.uuid(),
+    requestId: z.uuid(),
+    subjectHash: z.string().min(1).max(128).optional(),
+    conversationId: z.uuid().optional(),
+  })
+  .refine(
+    (value) => Number(value.subjectHash !== undefined) + Number(value.conversationId !== undefined) === 1,
+    {
+      message: "exactly one privacy subject is required",
+    },
+  );
 
 export const JobPayloadSchemas = {
   [JOBS.syncProduct]: productJob,
@@ -28,6 +44,9 @@ export const JobPayloadSchemas = {
   [JOBS.orderPlaced]: z.object({ tenantId: z.uuid(), storeId: z.uuid(), eventId: z.string().min(1) }),
   [JOBS.retentionPurge]: z.object({}),
   [JOBS.handoffNotify]: z.object({ tenantId: z.uuid(), handoffId: z.uuid() }),
+  [JOBS.shopperExport]: privacySubjectJob,
+  [JOBS.shopperDelete]: privacySubjectJob,
+  [JOBS.tenantOffboard]: z.object({ tenantId: z.uuid(), requestId: z.uuid() }),
 } satisfies { [N in JobName]: z.ZodType };
 
 export type JobPayload<N extends JobName> = z.infer<(typeof JobPayloadSchemas)[N]>;
@@ -69,7 +88,14 @@ const JOB_NAMES = Object.values(JOBS);
  * catalogue and the purge walks every tenant, so they get an hour; ingestion fetches and embeds a document.
  */
 function expireInSeconds(name: JobName): number {
-  if (name === JOBS.syncReconcile || name === JOBS.retentionPurge) return 3600;
+  if (
+    name === JOBS.syncReconcile ||
+    name === JOBS.retentionPurge ||
+    name === JOBS.shopperExport ||
+    name === JOBS.shopperDelete ||
+    name === JOBS.tenantOffboard
+  )
+    return 3600;
   if (name === JOBS.knowledgeIngest) return 900;
   return 300;
 }

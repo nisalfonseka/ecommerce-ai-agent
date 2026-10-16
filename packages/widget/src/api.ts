@@ -29,6 +29,8 @@ export interface ChatRequest {
   conversationToken?: string;
   cartId?: string;
   identityToken?: string;
+  /** Recorded atomically when this request creates the first conversation. */
+  consentNoticeVersion?: string;
 }
 
 export interface ActionResponse {

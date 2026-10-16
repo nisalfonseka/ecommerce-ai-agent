@@ -7,6 +7,8 @@ import { handleHandoffNotify } from "./handlers/handoff-notify";
 import { handleKnowledgeIngest } from "./handlers/knowledge";
 import { handleOrderPlaced } from "./handlers/order-placed";
 import { handleRetentionPurge } from "./handlers/retention";
+import { handleShopperDelete, handleTenantOffboard } from "./handlers/shopper-delete";
+import { handleShopperExport } from "./handlers/shopper-export";
 import { handleSyncProduct, handleSyncReconcile, handleSyncReconcileAll } from "./handlers/sync";
 
 export const HANDLERS: Record<JobName, JobHandler> = {
@@ -19,6 +21,9 @@ export const HANDLERS: Record<JobName, JobHandler> = {
   [JOBS.orderPlaced]: handleOrderPlaced,
   [JOBS.retentionPurge]: handleRetentionPurge,
   [JOBS.handoffNotify]: handleHandoffNotify,
+  [JOBS.shopperExport]: handleShopperExport,
+  [JOBS.shopperDelete]: handleShopperDelete,
+  [JOBS.tenantOffboard]: handleTenantOffboard,
 };
 
 export interface RegisterOptions {

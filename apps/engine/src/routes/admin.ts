@@ -49,6 +49,7 @@ import type { WidgetEnv } from "../auth/widget";
 import { PersonaSchema, StoreFactsSchema } from "../bot-config";
 import type { ModelPrices } from "../budget";
 import { errorResponse } from "../http-errors";
+import { registerPrivacyAdminRoutes } from "./privacy";
 
 export interface AdminDeps {
   db: Db;
@@ -156,6 +157,7 @@ function adminAuth(expectedSha256: string): MiddlewareHandler {
 export function registerAdminRoutes(app: Hono<WidgetEnv>, deps: AdminDeps): void {
   const admin = app.basePath("/admin");
   admin.use("*", adminAuth(deps.adminApiKeySha256));
+  registerPrivacyAdminRoutes(admin, deps);
   const BotBody = botBody(deps.prices);
 
   const tenantParam = (value: string | undefined): string | null =>

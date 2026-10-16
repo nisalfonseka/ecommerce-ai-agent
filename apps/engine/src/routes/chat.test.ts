@@ -30,6 +30,7 @@ import { signHostSession } from "../identity/host-session";
 import { createLogger } from "../log";
 import { createRateLimiter } from "../rate-limit";
 import { registerChatRoutes } from "./chat";
+import { registerConsentRoutes } from "./consent";
 
 const testDb = await createTestDatabase();
 const ORIGIN = "https://shop.test";
@@ -150,6 +151,7 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
       ipLimiter: createRateLimiter({ limitPerMinute: 1000 }),
       masterKey: MASTER_KEY,
     });
+    registerConsentRoutes(app, { db: pool.db, tokens });
   });
 
   afterAll(async () => {
@@ -161,7 +163,7 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
     app.request("/v1/chat", {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, origin: ORIGIN, "content-type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(body.conversationId ? body : { consentNoticeVersion: "test-notice-v1", ...body }),
     });
 
   async function turn(key: string, body: Record<string, unknown>) {
@@ -169,6 +171,48 @@ describe.skipIf(testDb === null)("POST /v1/chat and GET /v1/conversations/:id", 
     expect(res.status).toBe(200);
     return parseSse(await res.text());
   }
+
+  it("requires and atomically records consent for a new conversation, then treats repeats as no-ops", async () => {
+    const before = await withTenant(
+      pool.db,
+      tenantB,
+      async (tx) => (await tx.select().from(schema.conversations)).length,
+    );
+    const refused = await app.request("/v1/chat", {
+      method: "POST",
+      headers: { authorization: `Bearer ${keyB}`, origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ message: "hello without consent" }),
+    });
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ error: { code: "consent_required" } });
+    expect(
+      await withTenant(pool.db, tenantB, async (tx) => (await tx.select().from(schema.conversations)).length),
+    ).toBe(before);
+
+    models = { "test:primary": scriptedModel([say("Hello.")]) };
+    const events = await turn(keyB, { message: "hello with consent" });
+    const conversation = conversationOf(events);
+    const postConsent = () =>
+      app.request("/v1/consent", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${keyB}`,
+          origin: ORIGIN,
+          "content-type": "application/json",
+          "x-conversation-token": conversation.conversationToken,
+        },
+        body: JSON.stringify({ noticeVersion: "test-notice-v1" }),
+      });
+    expect((await postConsent()).status).toBe(204);
+    expect((await postConsent()).status).toBe(204);
+    const consentRows = await withTenant(pool.db, tenantB, (tx) =>
+      tx
+        .select()
+        .from(schema.consents)
+        .where(eq(schema.consents.conversationId, conversation.conversationId)),
+    );
+    expect(consentRows).toHaveLength(1);
+  });
 
   it("streams conversation, status, reply and done, and persists the turn", async () => {
     models = {

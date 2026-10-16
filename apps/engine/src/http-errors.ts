@@ -11,6 +11,7 @@ export type ErrorCode =
   | "invalid_signature"
   | "unavailable"
   | "turn_in_progress"
+  | "consent_required"
   | "conflict"
   | "internal"
   /** Knowledge upload: why the source could not be extracted (too_large also for an oversized body). */

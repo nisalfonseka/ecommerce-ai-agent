@@ -17,8 +17,14 @@ describe("createApi", () => {
     );
     const api = createApi({ api: "https://api.test", key: "pk_live_a", visitorId: "visitor-123", fetch });
     const events: ChatEvent[] = [];
-    await api.chat({ message: "hello", cartId: "cart_1", identityToken: "host.jwt" }, (event) =>
-      events.push(event),
+    await api.chat(
+      {
+        message: "hello",
+        cartId: "cart_1",
+        identityToken: "host.jwt",
+        consentNoticeVersion: "notice-v1",
+      },
+      (event) => events.push(event),
     );
     expect(events.map((e) => e.event)).toEqual(["conversation", "status", "reply", "done"]);
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
@@ -28,6 +34,7 @@ describe("createApi", () => {
       message: "hello",
       cartId: "cart_1",
       identityToken: "host.jwt",
+      consentNoticeVersion: "notice-v1",
     });
   });
 

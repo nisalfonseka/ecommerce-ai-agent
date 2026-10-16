@@ -86,7 +86,18 @@ async function insertPhase7Rows(tx: Tx, tenantId: string, conversationId: string
   await tx
     .insert(s.staffTokens)
     .values({ tenantId, name: "support", tokenHash: `hash_${tenantId}`, tokenPrefix: "st_abcdef" });
-  await tx.insert(s.privacyRequests).values({ tenantId, type: "export", subjectHash: "sh1" });
+  const [privacyRequest] = await tx
+    .insert(s.privacyRequests)
+    .values({ tenantId, type: "export", subjectHash: "sh1" })
+    .returning({ id: s.privacyRequests.id });
+  if (!privacyRequest) throw new Error("privacy request not created");
+  await tx.insert(s.privacyExports).values({
+    tenantId,
+    requestId: privacyRequest.id,
+    subjectHash: "sh1",
+    payload: { conversations: [] },
+    expiresAt: new Date(Date.now() + 86_400_000),
+  });
   await tx
     .update(s.conversations)
     .set({
@@ -281,6 +292,7 @@ describe.skipIf(testDb === null)("row-level security (as ace_app)", () => {
     "handoffs",
     "staff_tokens",
     "privacy_requests",
+    "privacy_exports",
   ] as const;
 
   it("rejects Phase 7 inserts for another tenant with a policy violation, never a constraint error", async () => {
@@ -288,6 +300,14 @@ describe.skipIf(testDb === null)("row-level security (as ace_app)", () => {
     // unique index or foreign key can fire, and only the WITH CHECK policy can reject it.
     const c = randomUUID();
     await withTenant(app.db, c, (tx) => tx.insert(s.tenants).values({ id: c, name: `Tenant C ${c}` }));
+    const cPrivacyRequest = await withTenant(app.db, c, async (tx) => {
+      const [row] = await tx
+        .insert(s.privacyRequests)
+        .values({ tenantId: c, type: "export" })
+        .returning({ id: s.privacyRequests.id });
+      if (!row) throw new Error("privacy request not created");
+      return row.id;
+    });
 
     /** A tenant-A conversation created inside the probe transaction (rolled back with it). */
     const freshConversation = async (tx: Tx): Promise<string> => {
@@ -325,6 +345,24 @@ describe.skipIf(testDb === null)("row-level security (as ace_app)", () => {
           .insert(s.staffTokens)
           .values({ tenantId, name: "n", tokenHash: `probe_${randomUUID()}`, tokenPrefix: "st_xxxxxx" }),
       privacy_requests: (tx, tenantId) => tx.insert(s.privacyRequests).values({ tenantId, type: "delete" }),
+      privacy_exports: async (tx, tenantId) => {
+        const requestId =
+          tenantId === c
+            ? cPrivacyRequest
+            : (
+                await tx
+                  .insert(s.privacyRequests)
+                  .values({ tenantId, type: "export" })
+                  .returning({ id: s.privacyRequests.id })
+              )[0]?.id;
+        if (!requestId) throw new Error("privacy request missing");
+        return tx.insert(s.privacyExports).values({
+          tenantId,
+          requestId,
+          payload: {},
+          expiresAt: new Date(Date.now() + 86_400_000),
+        });
+      },
     };
 
     for (const table of PHASE7_TABLES) {

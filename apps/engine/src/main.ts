@@ -18,6 +18,7 @@ import { createRateLimiter } from "./rate-limit";
 import { registerActionRoutes } from "./routes/actions";
 import { registerAdminRoutes } from "./routes/admin";
 import { registerChatRoutes } from "./routes/chat";
+import { registerConsentRoutes } from "./routes/consent";
 import { registerDevOutboxRoute } from "./routes/dev-outbox";
 import { registerStaffRoutes } from "./routes/staff";
 import { registerWebhookRoutes } from "./routes/webhooks";
@@ -82,6 +83,7 @@ const turnDeps = {
   jobs: jobQueue.queue,
 };
 registerChatRoutes(app, turnDeps);
+registerConsentRoutes(app, { db, tokens: turnDeps.tokens });
 registerActionRoutes(app, turnDeps);
 registerDevOutboxRoute(app, devOutbox ? { outbox: devOutbox, tokens: turnDeps.tokens } : null);
 registerStaffRoutes(app, { db, jobs: jobQueue.queue });

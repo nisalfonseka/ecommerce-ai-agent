@@ -36,7 +36,7 @@ describe("SHOPPER_DATA_TABLES", () => {
   it("registers the Phase 7 shopper tables with their default retention", () => {
     const days = Object.fromEntries(SHOPPER_DATA_TABLES.map((entry) => [entry.table, entry.retentionDays]));
     // verifications are purged by tenant_settings.retention.otpHours (default 24 h), so one day here.
-    expect(days).toMatchObject({ handoffs: 180, verifications: 1, consents: 180 });
+    expect(days).toMatchObject({ handoffs: 180, verifications: 1, consents: 180, privacy_exports: 1 });
   });
 });
 

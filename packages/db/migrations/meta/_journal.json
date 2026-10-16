@@ -57,6 +57,13 @@
       "when": 1791964608726,
       "tag": "0007_verification_destination",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792129312056,
+      "tag": "0008_privacy_exports",
+      "breakpoints": true
     }
   ]
 }

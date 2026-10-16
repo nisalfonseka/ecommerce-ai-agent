@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { PgBoss } from "pg-boss";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { installJobSchema, JOB_SCHEMA, JOBS, openJobQueue } from "./jobs";
+import { installJobSchema, JOB_SCHEMA, JOBS, JobPayloadSchemas, openJobQueue } from "./jobs";
 import { createTestDatabase, type TestDatabase } from "./testing";
 
 const testDb = await createTestDatabase();
@@ -63,6 +63,28 @@ describe.skipIf(testDb === null)("job queue (as ace_app)", () => {
     await expect(
       handle.queue.send(JOBS.syncProduct, { tenantId: "nope", storeId: randomUUID(), productId: "p" }),
     ).rejects.toThrow();
+  });
+
+  it("validates privacy jobs without putting raw contact data on the queue", () => {
+    const tenantId = randomUUID();
+    const requestId = randomUUID();
+    const subjectHash = "hmac-subject";
+    expect(JobPayloadSchemas[JOBS.shopperExport].parse({ tenantId, requestId, subjectHash })).toEqual({
+      tenantId,
+      requestId,
+      subjectHash,
+    });
+    expect(
+      JobPayloadSchemas[JOBS.shopperDelete].safeParse({
+        tenantId,
+        requestId,
+        email: "shopper@example.com",
+      }).success,
+    ).toBe(false);
+    expect(JobPayloadSchemas[JOBS.tenantOffboard].parse({ tenantId, requestId })).toEqual({
+      tenantId,
+      requestId,
+    });
   });
 
   it("collapses a burst with the same debounceKey into a leading and one trailing job", async () => {

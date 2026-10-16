@@ -21,6 +21,7 @@ import { createLogger } from "../log";
 import { createRateLimiter } from "../rate-limit";
 import { registerActionRoutes } from "../routes/actions";
 import { registerChatRoutes } from "../routes/chat";
+import { registerConsentRoutes } from "../routes/consent";
 
 export const TEST_ORIGIN = "https://shop.test";
 
@@ -126,6 +127,7 @@ export async function createEngineHarness(testDb: TestDatabase) {
     resolveWidgetKey: (k) => resolveWidgetKey(pool.db, k),
   });
   registerChatRoutes(app, deps);
+  registerConsentRoutes(app, { db: pool.db, tokens: deps.tokens });
   registerActionRoutes(app, deps);
 
   const headers = { authorization: `Bearer ${key}`, origin: TEST_ORIGIN, "content-type": "application/json" };
@@ -141,7 +143,8 @@ export async function createEngineHarness(testDb: TestDatabase) {
     post: (path: string, body: unknown) =>
       app.request(path, { method: "POST", headers, body: JSON.stringify(body) }),
     async chat(body: Record<string, unknown>): Promise<SseEvent[]> {
-      const res = await app.request("/v1/chat", { method: "POST", headers, body: JSON.stringify(body) });
+      const request = body.conversationId ? body : { consentNoticeVersion: "test-notice-v1", ...body };
+      const res = await app.request("/v1/chat", { method: "POST", headers, body: JSON.stringify(request) });
       if (res.status !== 200) throw new Error(`chat failed: ${res.status} ${await res.text()}`);
       return parseSse(await res.text());
     },

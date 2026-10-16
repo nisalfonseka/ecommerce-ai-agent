@@ -17,6 +17,8 @@ const ChatBodySchema = z.object({
   cartId: z.string().min(1).max(200).optional(),
   /** Tenant host-site session. Invalid or expired tokens are intentionally ignored. */
   identityToken: z.string().max(4096).optional(),
+  /** Lets the first request create the conversation and consent record in one transaction. */
+  consentNoticeVersion: z.string().trim().min(1).max(100).optional(),
 });
 
 const VISITOR_ID = /^[A-Za-z0-9_-]{8,64}$/;

@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { createBot, createDb, SHOPPER_DATA_TABLES, schema, type Tx, withTenant } from "@ace/db";
+import {
+  createBot,
+  createDb,
+  SHOPPER_DATA_TABLES,
+  schema,
+  type Tx,
+  upsertTenantSettings,
+  withTenant,
+} from "@ace/db";
 import { JOBS } from "@ace/db/jobs";
 import { createTestDatabase } from "@ace/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -28,6 +36,7 @@ async function tableCounts(tx: Tx): Promise<Counts> {
     handoffs: schema.handoffs,
     verifications: schema.verifications,
     consents: schema.consents,
+    privacy_exports: schema.privacyExports,
     usage_ledger: schema.usageLedger,
     attributed_orders: schema.attributedOrders,
   };
@@ -155,6 +164,22 @@ describe.skipIf(testDb === null)("retention.purge", () => {
           createdAt,
         })),
       );
+      const requests = await tx
+        .insert(schema.privacyRequests)
+        .values([
+          { tenantId, type: "export" },
+          { tenantId, type: "export" },
+        ])
+        .returning({ id: schema.privacyRequests.id });
+      await tx.insert(schema.privacyExports).values(
+        [expired("privacy_exports"), fresh("privacy_exports")].map((createdAt, index) => ({
+          tenantId,
+          requestId: requests[index]?.id ?? "",
+          payload: { conversations: [] },
+          expiresAt: new Date(NOW.getTime() + DAY),
+          createdAt,
+        })),
+      );
       await tx.insert(schema.usageLedger).values({
         tenantId,
         storeId,
@@ -202,6 +227,7 @@ describe.skipIf(testDb === null)("retention.purge", () => {
         handoffs: 1,
         verifications: 1,
         consents: 1,
+        privacy_exports: 1,
         usage_ledger: 1,
         attributed_orders: 1,
       });
@@ -229,6 +255,86 @@ describe.skipIf(testDb === null)("retention.purge", () => {
     const counts = await purgeTenant(app.db, tenantId, NOW, 2);
     expect(counts.webhook_events).toBe(5);
     expect((await withTenant(app.db, tenantId, tableCounts)).webhook_events).toBe(1);
+  });
+
+  it("uses each tenant's clamped retention settings, including OTP hours", async () => {
+    const fortyDaysAgo = new Date(NOW.getTime() - 40 * DAY);
+    const twoHoursAgo = new Date(NOW.getTime() - 2 * 60 * 60 * 1000);
+    const seed = async (custom: boolean) => {
+      const { tenantId, storeId } = await newStore(app.db);
+      await withTenant(app.db, tenantId, async (tx) => {
+        const bot = await createBot(tx, tenantId, {
+          storeId,
+          persona: {},
+          storeFacts: {},
+          model: "demo:x",
+          cheapModel: "demo:x",
+          budgetSoftUsdMicros: 1,
+          budgetHardUsdMicros: 2,
+        });
+        const [conversation] = await tx
+          .insert(schema.conversations)
+          .values({
+            tenantId,
+            botId: bot.id,
+            visitorId: "retention",
+            session: {},
+            lastMessageAt: NOW,
+            identity: { method: "email_otp", email: "expired@example.com" },
+            identityHash: "keep-the-hmac",
+            identityExpiresAt: twoHoursAgo,
+          })
+          .returning();
+        if (!conversation) throw new Error("conversation not created");
+        await tx.insert(schema.messages).values({
+          tenantId,
+          conversationId: conversation.id,
+          seq: 0,
+          kind: "model",
+          payload: {},
+          createdAt: fortyDaysAgo,
+        });
+        await tx.insert(schema.verifications).values({
+          tenantId,
+          conversationId: conversation.id,
+          channel: "email",
+          destinationHash: "hash",
+          destinationSealed: Buffer.from("sealed"),
+          codeHash: "code",
+          salt: "salt",
+          expiresAt: NOW,
+          consumedAt: twoHoursAgo,
+          createdAt: twoHoursAgo,
+        });
+        if (custom) {
+          await upsertTenantSettings(tx, tenantId, {
+            retention: { messagesDays: 30, otpHours: 1 },
+          });
+        }
+      });
+      return tenantId;
+    };
+    const a = await seed(true);
+    const b = await seed(false);
+
+    await purgeTenant(app.db, a, NOW);
+    await purgeTenant(app.db, b, NOW);
+
+    const remaining = (tenantId: string) =>
+      withTenant(app.db, tenantId, async (tx) => ({
+        messages: (await tx.select().from(schema.messages)).length,
+        verifications: (await tx.select().from(schema.verifications)).length,
+        conversation: (await tx.select().from(schema.conversations))[0],
+      }));
+    const remainingA = await remaining(a);
+    const remainingB = await remaining(b);
+    expect(remainingA).toMatchObject({ messages: 0, verifications: 0 });
+    expect(remainingB).toMatchObject({ messages: 1, verifications: 1 });
+    for (const result of [remainingA, remainingB]) {
+      expect(result.conversation?.identity).toBeNull();
+      expect(result.conversation?.identityExpiresAt).toBeNull();
+      expect(result.conversation?.identityHash).toBe("keep-the-hmac");
+    }
   });
   it("keeps purging the other tenants when one tenant's pass fails, then fails the job", async () => {
     const { tenantId: a } = await seedTenant();
