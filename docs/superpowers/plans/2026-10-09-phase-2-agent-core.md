@@ -3318,10 +3318,10 @@ Open: the full suite on at least one conversation model (paid key), Tamil/Singli
 
 ## Phase 2 exit checklist
 
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` green locally and in CI.
-- [ ] Memory adapter conformance: 21 passed / 1 skipped.
-- [ ] Every Review Focus item has a passing test (Tasks 2, 4, 5, 6, 7).
-- [ ] `pnpm evals` runs end-to-end and skips providers without keys.
+- [x] `pnpm lint && pnpm typecheck && pnpm test` green locally and in CI (CI #41, 2026-10-16).
+- [x] Memory adapter conformance passes (80 passed / 1 expected skip in CI #41; the suite grew after this plan).
+- [x] Every Review Focus item has a passing test (Tasks 2, 4, 5, 6, 7).
+- [x] `pnpm evals` runs end-to-end and skips providers without keys (verified 2026-10-16).
 - [ ] D3 decided after the owner runs the live evals (Task 10).
 
 ## Implementation notes (2026-10-09)

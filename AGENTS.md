@@ -28,6 +28,9 @@ dashboard, and a completed deletion receipt with row counts. On hold:
 - Phase 6 live search/knowledge calibration and staging propagation check (paid embedding key + VPS)
 - Phase 7 real text.lk/Brevo delivery, live order/handoff evals and provider-retention account verification
 
+GitHub Actions CI #41 passed all five jobs on 2026-10-16: strict checks, production images, widget e2e, Medusa
+conformance and reference-store e2e.
+
 Decided: D1 = Medusa v2 and D4 = no pilot client yet, so the store is generic (ADR-006). COD is confirmed by a UI action (ADR-007, provisional). E1 and E2 are built provisionally (ADR-004; `model-prices.json` with null prices). Without API keys, `scripts/dev-stack.sh start` (memory store) and `scripts/store-stack.sh start` (Medusa reference store + storefront) run the engine, worker, dashboard, indexed search and cited knowledge with deterministic demo models and a log-only notifier. **Next:** complete the owner-gated Phase 7 checks; do not begin Phase 8 until a pilot client and owner direction are available. Do not scaffold later phases early.
 
 ## Architecture rules (non-negotiable)

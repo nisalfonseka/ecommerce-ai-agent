@@ -256,5 +256,6 @@ CodQuote = { cartId; currency; subtotal: Money; deliveryFee: Money; total: Money
 - [x] Conformance v2 passes for memory (direct and through the engine decorator) and Medusa.
 - [x] Local e2e: chat card → shared cart → storefront checkout → COD order with attribution.
 - [x] COD through chat places exactly one order, only after Confirm (engine + agent tests; a model-driven run needs live evals).
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` green; CI `medusa` and `e2e` green.
+- [x] `pnpm lint && pnpm typecheck && pnpm test` green; CI `medusa` and `store-e2e` green in CI #41
+  (2026-10-16).
 - [ ] Staging exit (Task 11), when the owner unblocks staging.

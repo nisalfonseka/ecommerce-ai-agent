@@ -153,4 +153,4 @@ Interfaces:
 - [x] On the demo page, a shopper finds, adds and checks out (memory adapter) using chat and buttons; the cart badge updates (e2e test).
 - [x] `dist/ace.js` < 60 kB gzipped (build check: 12.1 kB).
 - [x] Keyboard-only use works; Esc closes; screen-reader labels present (render tests + e2e keyboard test).
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` green; e2e green.
+- [x] `pnpm lint && pnpm typecheck && pnpm test` green; widget e2e green in CI #41 (2026-10-16).

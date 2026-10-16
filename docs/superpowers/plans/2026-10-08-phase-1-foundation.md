@@ -2902,7 +2902,7 @@ git commit -m "ci: add lint, typecheck and test workflow; docs: add README"
 
 ## Phase 1 exit checklist
 
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` green locally and in CI — pending first push
+- [x] `pnpm lint && pnpm typecheck && pnpm test` green locally and in CI (latest proof: CI #41, 2026-10-16).
 - [x] Memory adapter: conformance suite 20 passed, 1 skipped (the NOT_SUPPORTED probe skips because the memory adapter declares every capability; suite extended per controller ruling R6).
 - [x] Every Review Focus item has a passing test (Tasks 1, 6, 7, 8).
 - [x] ADR-001 committed.
