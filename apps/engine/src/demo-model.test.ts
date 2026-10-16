@@ -56,4 +56,60 @@ describe("createDemoModel", () => {
     expect(result.text).toContain("Returns policy › Exchanges");
     expect(result.text).toContain("7 days");
   });
+
+  it("opens the verification form for local order-support demos", async () => {
+    const ctx = createToolContext({
+      provider: new MemoryCommerceProvider(),
+      conversationId: "c",
+      turnId: "t",
+      verification: { channels: ["sms", "email"] },
+    });
+    const result = await runTurn({
+      model: createDemoModel(),
+      ctx,
+      persona: { assistantName: "Nila", storeName: "Demo", languages: ["English"] },
+      store: { currency: "LKR" },
+      history: [],
+      userMessage: "Where is order ACE-1001?",
+    });
+    expect(result.toolCalls).toEqual([{ name: "lookup_order", input: { orderNumber: "ACE-1001" } }]);
+    expect(result.ui).toContainEqual({
+      type: "verification_form",
+      channels: ["sms", "email"],
+      reason: "order_lookup",
+    });
+  });
+
+  it("requests a human for refunds in local handoff demos", async () => {
+    const ctx = createToolContext({
+      provider: new MemoryCommerceProvider(),
+      conversationId: "c",
+      turnId: "t",
+      handoff: {
+        request: async () => ({
+          id: "h1",
+          created: true,
+          expectedResponse: "A team member will reply here.",
+        }),
+      },
+    });
+    const result = await runTurn({
+      model: createDemoModel(),
+      ctx,
+      persona: { assistantName: "Nila", storeName: "Demo", languages: ["English"] },
+      store: { currency: "LKR" },
+      history: [],
+      userMessage: "I need a refund for order ACE-1001",
+    });
+    expect(result.toolCalls).toEqual([
+      {
+        name: "request_human",
+        input: {
+          reason: "refund_or_return",
+          summary: "Shopper asks for a refund or return in the local demo.",
+        },
+      },
+    ]);
+    expect(result.ui).toContainEqual({ type: "handoff", status: "requested" });
+  });
 });

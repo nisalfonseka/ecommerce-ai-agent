@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
 test("a shopper finds, adds and checks out through the widget, and the conversation survives a reload", async ({
@@ -86,14 +89,19 @@ test("the development outbox completes a real OTP verification", async ({ page, 
     },
   });
   expect(started.ok()).toBe(true);
-  const outbox = await request.get(
-    `http://localhost:8080/v1/dev/outbox?conversation=${encodeURIComponent(conversationId)}`,
-    { headers },
-  );
-  expect(outbox.ok()).toBe(true);
-  const body = (await outbox.json()) as { messages: { text: string }[] };
-  const code = /\b\d{6}\b/.exec(body.messages[0]?.text ?? "")?.[0];
-  expect(code).toMatch(/^\d{6}$/);
+  let code = "";
+  await expect
+    .poll(async () => {
+      const outbox = await request.get(
+        `http://localhost:8080/v1/dev/outbox?conversation=${encodeURIComponent(conversationId)}`,
+        { headers },
+      );
+      if (!outbox.ok()) return "";
+      const body = (await outbox.json()) as { messages: { text: string }[] };
+      code = /\b\d{6}\b/.exec(body.messages[0]?.text ?? "")?.[0] ?? "";
+      return code;
+    })
+    .toMatch(/^\d{6}$/);
 
   const confirmed = await request.post("http://localhost:8080/v1/actions/verify_confirm", {
     headers,
@@ -105,4 +113,114 @@ test("the development outbox completes a real OTP verification", async ({ page, 
     },
   });
   expect(await confirmed.json()).toEqual({ ok: true, verified: true });
+});
+
+test("Phase 7: order verification, dashboard handoff reply and privacy deletion", async ({
+  page,
+  context,
+  request,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open shopping assistant" }).click();
+  const dialog = page.getByRole("dialog", { name: "Shopping assistant" });
+  await dialog.getByRole("button", { name: "Start chat" }).click();
+  await dialog.getByRole("textbox", { name: "Message" }).fill("Where is order ACE-1001?");
+  await dialog.getByRole("button", { name: "Send" }).click();
+  await expect(dialog.getByText("Verify to see order details")).toBeVisible();
+
+  await dialog.getByRole("radio", { name: "Email" }).check();
+  await dialog.getByRole("textbox", { name: "Email address" }).fill("customer@example.com");
+  await dialog.getByRole("button", { name: "Send code" }).click();
+  await expect(dialog.getByRole("textbox", { name: "6-digit code" })).toBeVisible();
+  const session = await page.evaluate(() => {
+    const script = document.querySelector<HTMLScriptElement>("script[data-key]");
+    const savedKey = Object.keys(localStorage).find((name) => name.startsWith("ace:conversation:"));
+    return {
+      key: script?.dataset.key,
+      saved: savedKey
+        ? (JSON.parse(localStorage.getItem(savedKey) ?? "null") as {
+            conversationId?: string;
+            conversationToken?: string;
+          } | null)
+        : null,
+    };
+  });
+  const conversationId = String(session.saved?.conversationId);
+  const conversationToken = String(session.saved?.conversationToken);
+  const widgetHeaders = {
+    authorization: `Bearer ${session.key}`,
+    origin: "http://localhost:5173",
+    "x-conversation-token": conversationToken,
+  };
+  let code = "";
+  await expect
+    .poll(async () => {
+      const outbox = await request.get(
+        `http://localhost:8080/v1/dev/outbox?conversation=${encodeURIComponent(conversationId)}`,
+        { headers: widgetHeaders },
+      );
+      if (!outbox.ok()) return "";
+      const body = (await outbox.json()) as { messages: { text: string }[] };
+      code = /\b\d{6}\b/.exec(body.messages[0]?.text ?? "")?.[0] ?? "";
+      return code;
+    })
+    .toMatch(/^\d{6}$/);
+  await dialog.getByRole("textbox", { name: "6-digit code" }).fill(code);
+  await dialog.getByRole("button", { name: "Verify" }).click();
+  await expect(dialog.getByText("Verified", { exact: true })).toBeVisible();
+
+  await dialog.getByRole("textbox", { name: "Message" }).fill("Where is order ACE-1001?");
+  await dialog.getByRole("button", { name: "Send" }).click();
+  await expect(dialog.getByText("Status: shipped", { exact: false })).toBeVisible();
+
+  await dialog.getByRole("textbox", { name: "Message" }).fill("I need a refund for order ACE-1001");
+  await dialog.getByRole("button", { name: "Send" }).click();
+  await expect(dialog.getByText("A team member will reply here.", { exact: true })).toBeVisible();
+
+  const stateDir = join(tmpdir(), "ace-dev");
+  const seeded = JSON.parse(readFileSync(join(stateDir, "seed.json"), "utf8")) as {
+    tenantId: string;
+    staffToken: string;
+  }[];
+  const local = seeded[0];
+  if (!local) throw new Error("local seed output is empty");
+  const staff = await context.newPage();
+  await staff.goto("http://localhost:3000/login");
+  await staff.getByLabel("Staff token").fill(local.staffToken);
+  await staff.getByRole("button", { name: "Sign in" }).click();
+  await staff.waitForURL("**/inbox");
+  await staff.getByRole("link").filter({ hasText: "refund or return" }).first().click();
+  await staff.getByRole("button", { name: "Claim" }).click();
+  await staff.waitForLoadState("networkidle");
+  await staff.getByLabel("Reply").fill("We received your refund request.");
+  await staff.getByRole("button", { name: "Send reply" }).click();
+  await expect(dialog.getByText("We received your refund request.", { exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+
+  const secrets = readFileSync(join(stateDir, "secrets"), "utf8");
+  const adminKey = /^ADMIN_KEY=(.+)$/m.exec(secrets)?.[1];
+  if (!adminKey) throw new Error("local admin key is missing");
+  const adminHeaders = { authorization: `Bearer ${adminKey}`, "content-type": "application/json" };
+  const deletion = await request.post(
+    `http://localhost:8080/admin/tenants/${local.tenantId}/privacy/delete`,
+    { headers: adminHeaders, data: { conversationId } },
+  );
+  expect(deletion.status()).toBe(202);
+  const requestId = String(((await deletion.json()) as { requestId?: string }).requestId);
+  await expect
+    .poll(
+      async () => {
+        const receipts = await request.get(
+          `http://localhost:8080/admin/tenants/${local.tenantId}/privacy/requests`,
+          { headers: { authorization: `Bearer ${adminKey}` } },
+        );
+        const body = (await receipts.json()) as {
+          items: { id: string; status: string; counts: Record<string, number> }[];
+        };
+        return body.items.find((item) => item.id === requestId);
+      },
+      { timeout: 15_000 },
+    )
+    .toMatchObject({ status: "completed", counts: { conversations: 1 } });
 });

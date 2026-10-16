@@ -30,6 +30,9 @@ function hasTool(options: LanguageModelV4CallOptions, name: string): boolean {
 }
 
 const POLICY_QUESTION = /\b(?:returns?|exchanges?|delivery|shipping|payments?|cod|size guide|care|wash)\b/i;
+const REFUND_OR_RETURN = /\b(?:refund|return)\b/i;
+const CANCELLATION = /\b(?:cancel|cancellation)\b/i;
+const ORDER_NUMBER = /\bACE-\d+\b/i;
 
 function knowledgeReply(options: LanguageModelV4CallOptions): string | null {
   const last = options.prompt.at(-1);
@@ -78,6 +81,48 @@ export function createDemoModel(): LanguageModelV4 {
       }
       const query = lastUserText(options);
       if (query) {
+        const handoffReason = REFUND_OR_RETURN.test(query)
+          ? "refund_or_return"
+          : CANCELLATION.test(query)
+            ? "cancellation"
+            : null;
+        if (handoffReason && hasTool(options, "request_human")) {
+          return {
+            content: [
+              {
+                type: "tool-call",
+                toolCallId: `demo-${Date.now()}`,
+                toolName: "request_human",
+                input: JSON.stringify({
+                  reason: handoffReason,
+                  summary:
+                    handoffReason === "refund_or_return"
+                      ? "Shopper asks for a refund or return in the local demo."
+                      : "Shopper asks for a cancellation in the local demo.",
+                }),
+              },
+            ],
+            finishReason: { unified: "tool-calls", raw: undefined },
+            usage,
+            warnings: [],
+          };
+        }
+        const orderNumber = ORDER_NUMBER.exec(query)?.[0]?.toUpperCase();
+        if (orderNumber && hasTool(options, "lookup_order")) {
+          return {
+            content: [
+              {
+                type: "tool-call",
+                toolCallId: `demo-${Date.now()}`,
+                toolName: "lookup_order",
+                input: JSON.stringify({ orderNumber }),
+              },
+            ],
+            finishReason: { unified: "tool-calls", raw: undefined },
+            usage,
+            warnings: [],
+          };
+        }
         const toolName =
           hasTool(options, "search_knowledge") && POLICY_QUESTION.test(query)
             ? "search_knowledge"

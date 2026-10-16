@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The reference store end to end, no API keys needed:
 #   Medusa backend :9000 (scripts/reference-store.sh) → engine :8080 on the Medusa adapter with the keyless demo
-#   model and COD on → worker (index, knowledge, webhooks) → storefront :8000 with the assistant widget installed.
+#   model and COD on → worker (index, knowledge, webhooks) → dashboard :3000 → storefront :8000.
 # Usage: scripts/store-stack.sh [start|stop]
 set -euo pipefail
 
@@ -10,6 +10,7 @@ STATE="${TMPDIR:-/tmp}/ace-store-stack"
 ENGINE_PORT="${ACE_ENGINE_PORT:-8080}"
 SF_PORT="${ACE_STOREFRONT_PORT:-8000}"
 STORE_PORT="${ACE_STORE_PORT:-9000}"
+DASHBOARD_PORT="${ACE_DASHBOARD_PORT:-3000}"
 DB="${ACE_STORE_ENGINE_DB:-ace_store_engine}"
 APP_PASSWORD="ace_store_app_password"
 STOREFRONT="$ROOT/apps/reference-store/storefront"
@@ -42,11 +43,12 @@ stop_pid() {
 
 stop() {
   stop_pid storefront
+  stop_pid dashboard
   stop_pid worker
   stop_pid engine
   "$ROOT/scripts/reference-store.sh" stop >/dev/null
   rm -f "$STATE/connection.json"
-  echo "stopped storefront, worker, engine and reference store (Postgres keeps running)"
+  echo "stopped storefront, dashboard, worker, engine and reference store (Postgres keeps running)"
 }
 
 wait_log() {
@@ -104,6 +106,7 @@ start() {
   master="$(head -c32 /dev/urandom | base64)"
   admin_key="store-admin-$(head -c12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
   NODE_ENV=development PORT="$ENGINE_PORT" DATABASE_URL="$app_url" ACE_MASTER_KEY="$master" \
+    ACE_NOTIFY_MODE=log \
     CONVERSATION_TOKEN_SECRET="$(head -c40 /dev/urandom | base64)" TRUST_PROXY_HOPS=0 \
     ADMIN_API_KEY_SHA256="$(printf %s "$admin_key" | sha256sum | cut -d' ' -f1)" \
     start_detached node --import tsx src/main.ts > "$STATE/engine.log" 2>&1 &
@@ -121,14 +124,23 @@ start() {
     STOREFRONT_URL="http://localhost:$SF_PORT" "$ROOT/scripts/reference-store.sh" start >/dev/null
 
   cd "$ROOT/apps/worker"
-  NODE_ENV=development DATABASE_URL="$app_url" ACE_MASTER_KEY="$master" \
+  NODE_ENV=development DATABASE_URL="$app_url" ACE_MASTER_KEY="$master" ACE_NOTIFY_MODE=log \
     start_detached node --import tsx src/main.ts > "$STATE/worker.log" 2>&1 &
   echo $! > "$STATE/worker.pid"
   wait_log "$STATE/worker.log" "worker started"
-  local tenant store
+  local tenant store staff_token
   tenant="$(node -e 'console.log(require(process.argv[1]).tenantId)' "$STATE/connection.json")"
   store="$(node -e 'console.log(require(process.argv[1]).storeId)' "$STATE/connection.json")"
   wait_store_ready "$tenant" "$store" "$admin_key"
+  staff_token="$(curl -fsS -X POST "http://localhost:$ENGINE_PORT/admin/tenants/$tenant/staff-tokens" \
+    -H "authorization: Bearer $admin_key" -H "content-type: application/json" \
+    --data '{"name":"Local Support"}' | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d).token))')"
+
+  cd "$ROOT/apps/dashboard"
+  ENGINE_INTERNAL_URL="http://localhost:$ENGINE_PORT" DASHBOARD_PUBLIC_URL="http://localhost:$DASHBOARD_PORT" \
+    start_detached node node_modules/next/dist/bin/next dev -p "$DASHBOARD_PORT" > "$STATE/dashboard.log" 2>&1 &
+  echo $! > "$STATE/dashboard.pid"
+  wait_for "http://localhost:$DASHBOARD_PORT/login"
 
   cd "$ROOT/packages/widget"
   node build.mjs >/dev/null
@@ -149,9 +161,11 @@ start() {
   echo $! > "$STATE/storefront.pid"
   wait_for "http://localhost:$SF_PORT/"
   echo "storefront:  http://localhost:$SF_PORT"
+  echo "dashboard:   http://localhost:$DASHBOARD_PORT  (logs: $STATE/dashboard.log)"
   echo "engine:      http://localhost:$ENGINE_PORT  (logs: $STATE/engine.log)"
   echo "worker:      running (logs: $STATE/worker.log)"
   echo "medusa:      http://localhost:$STORE_PORT"
+  echo "staff token: $staff_token"
 }
 
 case "${1:-start}" in

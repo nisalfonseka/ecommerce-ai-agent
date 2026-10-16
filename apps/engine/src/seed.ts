@@ -7,10 +7,12 @@ import {
   type Db,
   issueWidgetKey,
   schema,
+  upsertTenantSettings,
   withTenant,
 } from "@ace/db";
 import { createDemoEmbedder, ingestDocument } from "@ace/knowledge";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
+import { issueStaffToken } from "./auth/staff";
 
 const DEMO_TENANTS = ["Demo Clothing A", "Demo Clothing B"] as const;
 const DEMO_SEARCH = {
@@ -52,6 +54,8 @@ export interface SeededTenant {
   storeId: string;
   /** A fresh publishable widget key; earlier keys stay valid. */
   key: string;
+  /** Fresh local staff token, shown by the seed command once; only its hash is stored. */
+  staffToken: string;
 }
 
 /** Two demo tenants on the in-memory store (exit criterion: two isolated tenants). Safe to re-run. */
@@ -94,6 +98,12 @@ export async function seedDemoTenants(
           budgetHardUsdMicros: 10_000_000,
         });
       }
+      await upsertTenantSettings(tx, tenantId, {
+        retention: { messagesDays: 180, tracesDays: 30, handoffDays: 180, otpHours: 24 },
+        handoffEmails: ["support@example.test"],
+        requireConsent: true,
+        contactInfo: "A local support team member can reply in this chat.",
+      });
       await tx
         .update(schema.stores)
         .set({ config: { search: DEMO_SEARCH } })
@@ -130,7 +140,12 @@ export async function seedDemoTenants(
         documentIds.push(stored.id);
       }
       const issued = await issueWidgetKey(tx, tenantId, { botId: bot.id, allowedOrigins: options.origins });
-      return { botId: bot.id, storeId: bot.storeId, key: issued.key, documentIds };
+      await tx
+        .update(schema.staffTokens)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(schema.staffTokens.name, "Local Support"), isNull(schema.staffTokens.revokedAt)));
+      const staff = await issueStaffToken(tx, tenantId, "Local Support");
+      return { botId: bot.id, storeId: bot.storeId, key: issued.key, staffToken: staff.token, documentIds };
     });
     for (const documentId of result.documentIds) {
       const outcome = await ingestDocument(

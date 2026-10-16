@@ -13,20 +13,22 @@ adapter**. The agent only knows the universal commerce contract, never Shopify, 
 - Design and gap analysis: [`docs/superpowers/specs/2026-10-08-ai-commerce-engine-design.md`](docs/superpowers/specs/2026-10-08-ai-commerce-engine-design.md)
 - Start-to-end workflow: [`docs/workflow.md`](docs/workflow.md)
 - Roadmap (phases and exit criteria): [`docs/superpowers/plans/2026-10-08-roadmap.md`](docs/superpowers/plans/2026-10-08-roadmap.md)
-- Phase plans: [Phase 2](docs/superpowers/plans/2026-10-09-phase-2-agent-core.md) (Task 10 on hold), [Phase 3](docs/superpowers/plans/2026-10-09-phase-3-engine.md) (Task 12 on hold), [Phase 4](docs/superpowers/plans/2026-10-09-phase-4-widget.md), [Phase 5](docs/superpowers/plans/2026-10-09-phase-5-reference-store.md) (Task 11 staging on hold)
+- Phase plans: [Phase 2](docs/superpowers/plans/2026-10-09-phase-2-agent-core.md) (Task 10 on hold), [Phase 3](docs/superpowers/plans/2026-10-09-phase-3-engine.md) (Task 12 on hold), [Phase 4](docs/superpowers/plans/2026-10-09-phase-4-widget.md), [Phase 5](docs/superpowers/plans/2026-10-09-phase-5-reference-store.md) (Task 11 staging on hold), [Phase 7](docs/superpowers/plans/2026-10-12-phase-7-support-identity-handoff.md) (owner-gated exit checks remain)
 - Architecture decisions: `docs/adr/`
 
 ## Current status
 
-**Phases 1–6 are built on `main`, except what waits on the owner. Phase 7 Tasks 1–4 are implemented.** The
-deterministic and PostgreSQL/pgvector-backed checks are green. The local Medusa stack smoke passed on 2026-10-14:
-webhook price propagation took 0.225 s, Singlish indexed search returned the expected dress, and the exchange answer
-cited the Returns policy. On hold:
+**Phases 1–7 are implemented on `main`, except for owner-gated exit checks.** The deterministic and strict
+PostgreSQL/pgvector-backed checks are green. The local Medusa stack smoke passed on 2026-10-14: webhook price
+propagation took 0.225 s, Singlish indexed search returned the expected dress, and the exchange answer cited the
+Returns policy. On 2026-10-16 the local Phase 7 browser flow passed: OTP order lookup, handoff claim/reply in the staff
+dashboard, and a completed deletion receipt with row counts. On hold:
 - live evals and D3 (Phase 2 Task 10; no paid API keys yet)
 - the VPS staging deploy (Phase 3 Task 12) and the Phase 5 staging exit, which also needs PayHere sandbox credentials
 - Phase 6 live search/knowledge calibration and staging propagation check (paid embedding key + VPS)
+- Phase 7 real text.lk/Brevo delivery, live order/handoff evals and provider-retention account verification
 
-Decided: D1 = Medusa v2 and D4 = no pilot client yet, so the store is generic (ADR-006). COD is confirmed by a UI action (ADR-007, provisional). E1 and E2 are built provisionally (ADR-004; `model-prices.json` with null prices). Without API keys, `scripts/dev-stack.sh start` (memory store) and `scripts/store-stack.sh start` (Medusa reference store + storefront) run the engine, worker, indexed search and cited knowledge with deterministic demo models. **Next:** continue Phase 7 from Task 5. Do not scaffold later phases early.
+Decided: D1 = Medusa v2 and D4 = no pilot client yet, so the store is generic (ADR-006). COD is confirmed by a UI action (ADR-007, provisional). E1 and E2 are built provisionally (ADR-004; `model-prices.json` with null prices). Without API keys, `scripts/dev-stack.sh start` (memory store) and `scripts/store-stack.sh start` (Medusa reference store + storefront) run the engine, worker, dashboard, indexed search and cited knowledge with deterministic demo models and a log-only notifier. **Next:** complete the owner-gated Phase 7 checks; do not begin Phase 8 until a pilot client and owner direction are available. Do not scaffold later phases early.
 
 ## Architecture rules (non-negotiable)
 
@@ -71,8 +73,8 @@ Decided: D1 = Medusa v2 and D4 = no pilot client yet, so the store is generic (A
 ```text
 apps/
   engine/            HTTP API: chat (SSE), UI actions, webhooks, admin        (Phase 3)
-  worker/            pg-boss jobs: sync, enrichment, embeddings, attribution, retention
-  dashboard/         merchant inbox, settings, analytics                      (Phase 7)
+  worker/            pg-boss jobs: sync, enrichment, embeddings, attribution, handoff, privacy, retention
+  dashboard/         staff handoff inbox                                      (Phase 7)
   reference-store/   Medusa backend + Next.js storefront, own npm toolchain   (Phase 5, ADR-006)
 packages/
   contracts/         commerce contract + conformance suite                    (Phase 1)
@@ -114,13 +116,18 @@ pnpm search-evals --embedding google:gemini-embedding-001 --enrichment google:ge
 pnpm search-evals --knowledge --embedding google:gemini-embedding-001
                         # calibrate knowledgeThreshold for a real embedder; needs its API key; costs money
 scripts/test-postgres.sh start   # throwaway Postgres for @ace/db / @ace/engine integration tests (prints ACE_TEST_DATABASE_URL)
-pnpm seed               # two indexed demo tenants + two ready knowledge docs + widget keys (needs DATABASE_URL)
-scripts/dev-stack.sh start   # Postgres + engine + worker + indexed demo store on http://localhost:5173; `stop` to end
+pnpm seed               # two demo tenants + knowledge docs + widget keys + one-time staff tokens (needs DATABASE_URL)
+scripts/dev-stack.sh start   # Postgres + engine/worker :8080 + dashboard :3000 + demo store :5173; `stop` to end
 scripts/reference-store.sh start   # Medusa reference store on :9000 (ADR-006); keys + fixtures in ${TMPDIR:-/tmp}/ace-store/seed-output.json
 ACE_MEDUSA_SEED_OUTPUT=/tmp/ace-store/seed-output.json pnpm --filter @ace/adapter-medusa test   # Medusa conformance
-scripts/store-stack.sh start   # Medusa :9000 + engine/worker :8080 + indexed/cited storefront :8000; `stop` to end
+scripts/store-stack.sh start   # Medusa :9000 + engine/worker :8080 + dashboard :3000 + storefront :8000; `stop` to end
 (cd apps/reference-store/storefront && npm run e2e)   # Playwright: reference store end to end (starts and stops store-stack)
 pnpm --filter @ace/widget e2e   # Playwright: widget in Chromium against the dev stack (CHROME_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome in the cloud container)
+
+# Phase 7 order-access release gate
+ACE_TEST_DATABASE_URL="$(scripts/test-postgres.sh start | sed 's/^ACE_TEST_DATABASE_URL=//')" \
+  ACE_REQUIRE_DB_TESTS=1 \
+  pnpm --filter @ace/engine exec vitest run src/security/order-access.test.ts
 ```
 
 Keep this section in sync with the real scripts.
@@ -162,8 +169,8 @@ Keep this section in sync with the real scripts.
 - Store credentials are envelope-encrypted. Widget keys are publishable, with an origin allow-list.
 - Webhooks: verify signatures, dedupe by event ID, and process idempotently.
 - Retention defaults: messages 180 days, traces 30 days, OTP records 24 hours.
-- Shopper data export and deletion must keep working. Never add a store of shopper data without adding it to the
-  purge and export jobs.
+- Shopper export downloads are single-use and expire after 24 hours. Deletion and tenant offboarding retain billing
+  facts only. Never add a store of shopper data without adding it to the purge, export and deletion jobs.
 
 ## Workflow for every change
 

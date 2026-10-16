@@ -136,6 +136,7 @@ export async function createEngineHarness(testDb: TestDatabase) {
     pool,
     tenantId,
     botId,
+    key,
     models,
     notifications,
     queued,

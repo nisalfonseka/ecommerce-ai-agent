@@ -1,7 +1,8 @@
-import { createDb, listDocuments, resolveWidgetKey, schema, withTenant } from "@ace/db";
+import { createDb, getTenantSettings, listDocuments, resolveWidgetKey, schema, withTenant } from "@ace/db";
 import { createTestDatabase } from "@ace/db/testing";
 import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
+import { authenticateStaff } from "./auth/staff";
 import { seedDemoTenants, seedTenantId } from "./seed";
 
 const testDb = await createTestDatabase();
@@ -28,6 +29,7 @@ describe.skipIf(testDb === null)("seedDemoTenants", () => {
       const seeded = await withTenant(pool.db, tenant.tenantId, async (tx) => ({
         store: (await tx.select().from(schema.stores).where(eq(schema.stores.id, tenant.storeId)))[0],
         documents: await listDocuments(tx, tenant.storeId),
+        settings: await getTenantSettings(tx),
       }));
       expect(seeded.store?.config).toMatchObject({
         search: {
@@ -38,11 +40,30 @@ describe.skipIf(testDb === null)("seedDemoTenants", () => {
       });
       expect(seeded.documents).toHaveLength(2);
       expect(seeded.documents.every((document) => document.status === "ready")).toBe(true);
+      expect(seeded.settings).toMatchObject({
+        handoffEmails: ["support@example.test"],
+        requireConsent: true,
+        retention: { messagesDays: 180, tracesDays: 30, handoffDays: 180, otpHours: 24 },
+      });
+      const staffToken = tenant.staffToken;
+      expect(staffToken).toMatch(new RegExp(`^st_${tenant.tenantId}\\.`));
+      expect(await authenticateStaff(pool.db, `Bearer ${staffToken}`)).toMatchObject({
+        tenantId: tenant.tenantId,
+        name: "Local Support",
+      });
     }
     const second = await seedDemoTenants(pool.db, options);
     expect(second.map((t) => [t.tenantId, t.botId])).toEqual(first.map((t) => [t.tenantId, t.botId]));
     expect(second.map((t) => t.storeId)).toEqual(first.map((t) => t.storeId));
     expect(second[0]?.key).not.toBe(first[0]?.key);
+    for (const tenant of first)
+      expect(await authenticateStaff(pool.db, `Bearer ${tenant.staffToken}`)).toBeNull();
+    for (const tenant of second) {
+      expect(await authenticateStaff(pool.db, `Bearer ${tenant.staffToken}`)).toMatchObject({
+        tenantId: tenant.tenantId,
+        name: "Local Support",
+      });
+    }
   });
 });
 

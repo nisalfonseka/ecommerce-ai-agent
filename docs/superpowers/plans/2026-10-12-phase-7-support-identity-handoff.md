@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress on `main` (2026-10-14). Tasks 1–4 are implemented and the strict PostgreSQL/RLS suite is green. Owner decisions received 2026-10-12: SMS = **text.lk**, email = **Brevo**, staff handoff alerts = **email**, retention periods = **per merchant**. Everything here runs locally and in CI without paid accounts, using a log-only notifier; real delivery, live evals and provider retention checks are owner-gated.
+**Status:** Implementation and local exit verification are complete on `main` (2026-10-16); the strict PostgreSQL/RLS and order-access suites are green. Owner decisions received 2026-10-12: SMS = **text.lk**, email = **Brevo**, staff handoff alerts = **email**, retention periods = **per merchant**. Everything here runs locally and in CI without paid accounts, using a log-only notifier; real delivery, live evals and provider retention checks are owner-gated, so the phase exit is not yet fully signed off.
 
 **Goal:** A shopper can verify with an SMS or email code (or a signed host-site session) and then look up their own orders; the assistant hands difficult conversations to a human who answers from a minimal dashboard inbox and is alerted by email; and the merchant side of Sri Lanka's PDPA works: consent records, per-merchant retention, shopper export and deletion, a DPA template and a breach runbook.
 
@@ -306,19 +306,19 @@ Chat route when `conversation.status = "handoff"`: the shopper message is append
 
 **Files:** Modify `AGENTS.md` (status, commands, layout: `notify`, `dashboard`), `docs/workflow.md` (§G identity, §H handoff, §K retention), `docs/superpowers/plans/2026-10-08-roadmap.md` (Phase 7 status), this plan (checkboxes), `scripts/dev-stack.sh` / `store-stack.sh` (dashboard + notifier log mode), `apps/engine/src/seed.ts` (demo tenant settings and a staff token printed once).
 
-- [ ] **Step 1: Security suite.** `apps/engine/src/security/order-access.test.ts` collects the Review Focus 1 and 3 cases in one file that must stay green (named in AGENTS.md as a release gate).
-- [ ] **Step 2: Local end-to-end** (`scripts/dev-stack.sh start`, log notifier): chat → ask for an order → form → read the code from the dev outbox → order card; ask for a refund → handoff → staff claims and replies in the dashboard → shopper sees the reply; request a deletion → receipts show counts. Record the observed steps here (no screenshots needed).
+- [x] **Step 1: Security suite.** `apps/engine/src/security/order-access.test.ts` collects the Review Focus 1 and 3 cases in one file and is named in AGENTS.md as a release gate. It passed against strict PostgreSQL on 2026-10-16.
+- [x] **Step 2: Local end-to-end** (`scripts/dev-stack.sh start`, log notifier). Observed in Chromium on 2026-10-16: asking for `ACE-1001` rendered the verification form; the dev-outbox code verified the shopper; the shipped order card appeared; a refund request created a handoff; staff signed in, claimed it and replied in the dashboard; the reply appeared in the widget; the admin deletion request completed with a receipt reporting one deleted conversation. All four widget browser tests passed.
 - [ ] **Step 3 (owner-gated):** real delivery with the Task 3 smoke script; the provider retention checklist; live evals for order support and handoff.
-- [ ] **Step 4:** `pnpm lint:fix && pnpm lint && pnpm typecheck && pnpm test` (with `ACE_REQUIRE_DB_TESTS=1`); dashboard build; engine and worker builds. Commit `docs: Phase 7 status, workflow and commands`.
+- [x] **Step 4:** On 2026-10-16, `pnpm lint:fix`, lint, all 14 workspace typechecks and all 23 strict PostgreSQL test tasks passed. The engine ran 167 tests with one expected real-platform skip; engine, worker, dashboard and widget production builds passed, and the widget remained 14.8 kB gzipped. Commit `docs: Phase 7 status, workflow and commands`.
 
 ## Phase 7 exit checklist
 
-- [ ] An order cannot be read without verification: the security suite passes (Task 10 Step 1).
+- [x] An order cannot be read without verification: the security suite passes (Task 10 Step 1).
 - [x] Deletion removes all of a shopper's data (and `offboard` all of a tenant's), shown by receipts (Task 9).
 - [x] Per-merchant retention periods are honoured by the purge (Task 9).
-- [ ] A handoff reaches staff by email and a human reply reaches the shopper; the bot stays silent meanwhile (Task 6, 8).
+- [x] In local log-notifier mode, a handoff alert is emitted, a human reply reaches the shopper, and the bot stays silent meanwhile (Tasks 6, 8 and 10). Real email delivery remains owner-gated below.
 - [ ] Order-support and handoff evals pass with live models (**owner-gated**; deterministic parts green in CI).
 - [ ] Real SMS and email delivery confirmed with text.lk and Brevo accounts (**owner-gated**).
 - [ ] DPA template, breach runbook and provider retention checklist exist; the checklist is verified (**owner-gated**).
-- [ ] ADR-010 and ADR-011 written.
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` green, including db, engine, worker, widget and dashboard.
+- [x] ADR-010 and ADR-011 written.
+- [x] `pnpm lint && pnpm typecheck && pnpm test` green, including db, engine, worker, widget and dashboard.

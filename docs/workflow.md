@@ -33,7 +33,7 @@ and how the system improves afterwards. Architecture details are in the
 | A7 | Us | Register webhooks on the platform (product/inventory/order events) pointing to `/webhooks/:storeId`. | Test event received and verified |
 | A8 | Us + merchant | Run the **tenant acceptance eval**: generic golden conversations + 10 tenant-specific questions. Fix persona/knowledge until it passes. | ≥ 90% pass, no safety failures |
 | A9 | Us | Issue a widget key, set allowed origins, give the install snippet `<script src=".../ace.js" data-key="pk_…" async></script>`. Storefront passes the cart ID and, if logged in, a signed identity token. | Widget visible on staging |
-| A10 | Merchant | Soft launch (staff only) → public launch. Set up handoff notifications (email/WhatsApp to staff). | Live; dashboard shows conversations |
+| A10 | Merchant | Soft launch (staff only) → public launch. Configure staff handoff email recipients and issue staff dashboard tokens. | Live; dashboard shows handoffs |
 
 Phase 6 admin sequence (all calls use the admin bearer key):
 
@@ -98,7 +98,7 @@ sequenceDiagram
   participant A as Agent runtime
   participant T as Tools
   participant P as CommerceProvider
-  S->>G: POST /chat {conversationId?, text, cartId?, identityToken?} (SSE)
+  S->>G: POST /chat {conversationId?, text, cartId?, identityToken?, consentNoticeVersion?} (SSE)
   G->>G: check widget key + origin, rate limit, budget, length cap
   G->>G: resolve tenant/store/bot, load conversation + session state
   G->>A: run turn with ToolContext (server-side)
@@ -117,7 +117,7 @@ sequenceDiagram
 | Step | Detail |
 |---|---|
 | C1 | **Gateway:** publishable key → tenant; `Origin` must be on the allow-list; per-visitor and per-IP rate limits; message ≤ 2,000 chars; budget check. |
-| C2 | **Consent:** the first message in a new conversation shows the privacy notice; consent is recorded. |
+| C2 | **Consent:** when required, the widget supplies the displayed `consentNoticeVersion` on the first message. Conversation creation and the consent record commit atomically; a missing version is rejected before a conversation is created. |
 | C3 | **Context:** build `ToolContext` = tenant, store, provider instance, host `cartId`, `VerifiedIdentity` (from a signed token or an earlier OTP), locale, session state. **The model cannot set any of these.** |
 | C4 | **Prompt:** safety core + tenant persona + store facts + conversation summary + recent messages. |
 | C5 | **Tools:** only tools whose capabilities the adapter declares and the tenant enabled. |
@@ -203,27 +203,34 @@ sequenceDiagram
 
 > "Where is my order ACE-1001?"
 
-1. `lookup_order` is called. If `ToolContext.identity` is empty, the tool returns `needs_verification`.
-2. The agent calls `start_verification` → the widget shows a form (email or phone on the order) → OTP is sent →
-   verified identity is stored on the conversation (expires in 30 minutes).
-3. `lookup_order({orderNumber, identity})` → the adapter returns the order **only if it belongs to that identity**,
-   otherwise `null`. The agent says "I couldn't find an order with that number for you" either way, so it does not leak
-   whether the order exists.
-4. The answer comes from the order card: status, items, tracking link.
-5. Returns and exchanges: the agent explains the policy (flow I) and starts a handoff (flow H). Agent-run returns are a
-   later phase.
+1. `lookup_order` is called. If the engine-built `ToolContext.identity` is empty, the tool returns
+   `needs_verification`; the model cannot submit an identity or contact field to the tool.
+2. The agent calls `start_verification`, which only emits a verification form. The widget then uses deterministic
+   `verify_start` and `verify_confirm` UI actions. The code is entered into the form, never sent to the model, and a
+   successful email/phone verification is stored on the conversation for 30 minutes.
+3. A host site may instead pass a signed identity token. The engine verifies it with that merchant's secret, accepts
+   an expiry no more than 24 hours ahead, uses it for one turn, and never stores the token on the conversation.
+4. `lookup_order({orderNumber})` or `list_orders()` asks the live adapter with the verified identity. The adapter
+   returns an order only when the verification method matches its owner; a missing order and another shopper's order
+   both produce `null` and the same response, preventing enumeration.
+5. The answer comes from the order card: status, items and tracking link. Returns and exchanges use policy knowledge
+   (flow I) and start a handoff (flow H); the agent cannot modify an order.
 
 ---
 
 ## H. Human handoff
 
-Triggers: the shopper asks for a person; the same intent fails twice; negative sentiment; any refund/cancellation
-request; a policy question with low retrieval confidence; a tool failure that blocks progress.
+Triggers: the shopper asks for a person; two consecutive tool failures block progress; two consecutive knowledge
+searches miss; negative sentiment; or a refund, return, cancellation or complaint needs a person.
 
-1. `request_human({reason, summary})` creates a `handoff` with an AI-written summary.
-2. The merchant is notified (dashboard inbox + email/WhatsApp to staff).
-3. The shopper is told the expected response time (support hours from the tenant config) and can leave contact details.
-4. While a human owns the conversation, the bot stays silent. The human can hand it back.
+1. `request_human({reason, summary})` creates at most one active handoff per conversation. The stored summary is
+   redacted before it is queued or shown to staff.
+2. The notifier emails the configured staff recipients (or writes to the log-only development outbox). The message
+   contains a dashboard link and no shopper transcript.
+3. Staff sign in with a per-tenant token that the dashboard keeps in an HttpOnly, `SameSite=Strict` cookie. The inbox
+   calls the tenant-scoped `/staff/v1/*` API to list, claim, reply, hand back or resolve the handoff.
+4. While the conversation is in `handoff`, the engine stores shopper messages but does not call the model. The widget
+   polls for events every five seconds, so staff replies reach the shopper; hand-back reopens the conversation.
 
 ---
 
@@ -259,15 +266,23 @@ no confident passage means the assistant says it is not sure and directs the sho
 
 ## K. Data lifecycle (PDPA)
 
-- Consent recorded on the first message; the privacy notice links to the merchant's policy.
-- Retention: messages 180 days, traces 30 days, OTP records 24 hours (defaults, configurable per tenant).
+- If consent is required, the first chat request carries the notice version the shopper saw; conversation creation and
+  the consent record are atomic. `POST /v1/consent` idempotently records later accepted notice versions.
+- Retention defaults are messages and consent 180 days, traces and webhook receipts 30 days, handoffs 180 days, and
+  OTP records 24 hours. Each merchant can configure bounded periods. Expired raw verified-identity fields are cleared
+  while their HMAC remains available for privacy requests.
 - A daily `retention.purge` job (`RETENTION_CRON`, 03:00) deletes expired data per tenant, inside that tenant's RLS
   context, in batches of 1,000 for each table in `SHOPPER_DATA_TABLES` (conversations by last message, webhook
   events by receipt, others by creation). It logs counts per table, never content. A tenant whose pass fails is
   logged and skipped; the job then fails and is retried. `usage_ledger` and
   `attributed_orders` hold billing facts only and are kept.
-- Shopper requests (via the merchant): export and deletion by email or phone, handled by the admin API.
-- Breach runbook: detect → contain → notify merchants (controllers) promptly so they can meet their notification duty.
+- Merchant-authenticated admin routes queue shopper export or deletion by email, phone or conversation ID, and tenant
+  offboarding queues deletion of all shopper data. Job payloads contain only HMAC selectors or IDs, not raw contacts.
+- Exports contain display messages, handoff summaries, consent records and verification timestamps, but no tool
+  payloads or traces. The download works once and expires after 24 hours. Receipts and logs contain counts only;
+  deletion/offboarding preserve `usage_ledger` and `attributed_orders` billing facts.
+- Operational documents: [DPA template](legal/dpa-template.md), [breach runbook](runbooks/breach.md), and the
+  owner-verified [provider retention checklist](runbooks/provider-retention.md).
 
 ---
 

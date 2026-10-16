@@ -14,7 +14,15 @@ try {
     origins: (process.env.ACE_SEED_ORIGINS ?? "http://localhost:5173").split(",").map((o) => o.trim()),
   });
   if (process.argv.includes("--json")) console.log(JSON.stringify(tenants));
-  else console.table(tenants.map(({ name, tenantId, key }) => ({ name, tenantId, widgetKey: key })));
+  else
+    console.table(
+      tenants.map(({ name, tenantId, key, staffToken }) => ({
+        name,
+        tenantId,
+        widgetKey: key,
+        staffToken,
+      })),
+    );
 } finally {
   await close();
 }
